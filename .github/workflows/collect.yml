@@ -11,6 +11,10 @@ on:
       pages:
         description: "Pages per channel (20 posts each). Use 40+ for a backfill run."
         default: "3"
+      load_alerts:
+        description: "Also (re)load air-raid alerts dataset into Neon (one-off / daily refresh)"
+        type: boolean
+        default: false
 
 concurrency:
   group: collect
@@ -43,6 +47,13 @@ jobs:
           else
             echo "DATABASE_URL secret is not set: skipping DB load"
           fi
+      - name: Load air-raid alerts (manual runs with load_alerts=true)
+        if: ${{ github.event.inputs.load_alerts == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          git clone --depth 1 https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset.git /tmp/sirens
+          python src/load_to_db.py alerts --dataset /tmp/sirens/datasets --official
       - uses: actions/upload-artifact@v4
         with:
           name: telegram-data
