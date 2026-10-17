@@ -37,6 +37,7 @@ jobs:
         run: |
           python src/collect_telegram.py --channels kpszsu --query "ЗБИТО/ПОДАВЛЕНО" --tag _summaries --pages 3 --delay 1.0
           python src/parse_kpszsu.py
+          python src/parse_kharkiv_daily.py
       - name: Load into Neon
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -44,6 +45,7 @@ jobs:
           if [ -n "$DATABASE_URL" ]; then
             python src/load_to_db.py messages
             python src/load_to_db.py waves
+            python src/load_to_db.py kharkiv
           else
             echo "DATABASE_URL secret is not set: skipping DB load"
           fi

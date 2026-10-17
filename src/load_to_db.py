@@ -108,12 +108,31 @@ def cmd_waves(a):
     print(f"waves: {new} new, {changed} revised")
 
 
+def cmd_kharkiv(a):
+    """Load data/kharkiv_daily.jsonl (see parse_kharkiv_daily.py). Existing days are updated (figures can be corrected)."""
+    rows = [json.loads(l) for l in (ROOT / "data" / "kharkiv_daily.jsonl").open(encoding="utf-8")]
+    print(f"parsed {len(rows)} days")
+    if a.dry_run:
+        return
+    sql = ("INSERT INTO kharkiv_daily(date,msg_id,url,missiles,guided_bombs,mlrs,drones,fpv,city_attacked,districts,settlements_n) "
+           "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (date) DO UPDATE SET msg_id=EXCLUDED.msg_id, "
+           "missiles=EXCLUDED.missiles, guided_bombs=EXCLUDED.guided_bombs, mlrs=EXCLUDED.mlrs, drones=EXCLUDED.drones, "
+           "fpv=EXCLUDED.fpv, city_attacked=EXCLUDED.city_attacked, districts=EXCLUDED.districts, settlements_n=EXCLUDED.settlements_n")
+    with connect() as conn, conn.cursor() as cur:
+        cur.executemany(sql, [(r["date"], r["msg_id"], r["url"], r["missiles"], r["guided_bombs"], r["mlrs"], r["drones"],
+                               r["fpv"], r["city_attacked"], r["districts_attacked"], r["settlements_n"]) for r in rows])
+        conn.commit()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     pw = sub.add_parser("waves")
     pw.add_argument("--dry-run", action="store_true")
     pw.set_defaults(fn=cmd_waves)
+    pk = sub.add_parser("kharkiv")
+    pk.add_argument("--dry-run", action="store_true")
+    pk.set_defaults(fn=cmd_kharkiv)
     pa = sub.add_parser("alerts")
     pa.add_argument("--dataset", required=True)
     pa.add_argument("--official", action="store_true", help="also load raion/hromada-level official data")
