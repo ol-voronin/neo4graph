@@ -1,0 +1,50 @@
+name: collect
+
+# Collects public Telegram channels (keyless, via t.me/s) and loads them into Neon.
+# Requires repository secret DATABASE_URL (Neon connection string). Without it the job only uploads an artifact.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: "Pages per channel (20 posts each). Use 40+ for a backfill run."
+        default: "3"
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install "psycopg[binary]" python-dotenv
+      - name: Collect channels
+        run: python src/collect_telegram.py --all --pages "${{ github.event.inputs.pages || '3' }}" --delay 1.0
+      - name: Collect Air Force summaries (waves)
+        run: |
+          python src/collect_telegram.py --channels kpszsu --query "ЗБИТО/ПОДАВЛЕНО" --tag _summaries --pages 3 --delay 1.0
+          python src/parse_kpszsu.py
+      - name: Load into Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            python src/load_to_db.py messages
+            python src/load_to_db.py waves
+          else
+            echo "DATABASE_URL secret is not set: skipping DB load"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-data
+          path: data/
+          retention-days: 7

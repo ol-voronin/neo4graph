@@ -78,9 +78,42 @@ def cmd_messages(a):
             print(f"  {min(i + 2000, len(rows))}/{len(rows)}")
 
 
+def cmd_waves(a):
+    """Load data/waves_kpszsu.jsonl. Waves are versioned: changed figures create version+1, never overwrite."""
+    path = ROOT / "data" / "waves_kpszsu.jsonl"
+    waves = [json.loads(l) for l in path.open(encoding="utf-8")]
+    print(f"parsed {len(waves)} waves")
+    if a.dry_run:
+        return
+    cols = ["launched_drones", "launched_other", "launched_missiles", "shot_down_total", "hit_locations",
+            "debris_locations", "missiles_unspecified"]
+    new = changed = 0
+    with connect() as conn, conn.cursor() as cur:
+        for w in waves:
+            vals = [w["launched_drones"], w["launched_other"], w["launched_missiles_counted"], w["shot_down_total"],
+                    w["hit_locations"], w["debris_locations"], w["missiles_unspecified"]]
+            cur.execute("SELECT version, " + ",".join(cols) + " FROM waves WHERE id=%s ORDER BY version DESC LIMIT 1",
+                        (w["id"],))
+            row = cur.fetchone()
+            if row and list(row[1:]) == vals:
+                continue
+            version = (row[0] + 1) if row else 1
+            changed += 1 if row else 0
+            new += 0 if row else 1
+            cur.execute(
+                "INSERT INTO waves(id, version, date, kind, " + ",".join(cols) + ", source_url, source, precision, confidence) "
+                "VALUES (%s,%s,%s,%s," + ",".join(["%s"] * len(cols)) + ",%s,'kpszsu','oblast',0.9)",
+                (w["id"], version, w["date"], w["kind"], *vals, w["url"]))
+        conn.commit()
+    print(f"waves: {new} new, {changed} revised")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
+    pw = sub.add_parser("waves")
+    pw.add_argument("--dry-run", action="store_true")
+    pw.set_defaults(fn=cmd_waves)
     pa = sub.add_parser("alerts")
     pa.add_argument("--dataset", required=True)
     pa.add_argument("--official", action="store_true", help="also load raion/hromada-level official data")

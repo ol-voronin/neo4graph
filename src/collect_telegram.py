@@ -7,6 +7,7 @@ Usage:
   python src/collect_telegram.py --channels kpszsu mod_russia --pages 10
   python src/collect_telegram.py --all --pages 50          # all channels in channels.json
   python src/collect_telegram.py --all --since 2025-10-17  # go back until this date (UTC)
+  python src/collect_telegram.py --channels kpszsu --query "ЗБИТО/ПОДАВЛЕНО" --tag _summaries --pages 120
 
 Limits: the preview shows ~20 posts per page; pagination goes back via ?before=<id>.
 Deep history (years) is slow here; for that use Telethon with your own API keys (src/collect_telethon.py, TODO).
@@ -38,8 +39,14 @@ def clean(raw: str) -> str:
     return html.unescape(raw).strip()
 
 
-def fetch(channel: str, before: int | None = None) -> str:
-    url = f"https://t.me/s/{channel}" + (f"?before={before}" if before else "")
+def fetch(channel: str, before: int | None = None, query: str | None = None) -> str:
+    from urllib.parse import quote
+    params = []
+    if query:
+        params.append("q=" + quote(query))
+    if before:
+        params.append(f"before={before}")
+    url = f"https://t.me/s/{channel}" + ("?" + "&".join(params) if params else "")
     req = urllib.request.Request(url, headers=UA)
     return urllib.request.urlopen(req, timeout=25).read().decode("utf-8", "replace")
 
@@ -79,15 +86,15 @@ def load_existing(path: Path):
     return ids
 
 
-def collect(channel: str, pages: int, since: datetime | None, delay: float):
+def collect(channel: str, pages: int, since: datetime | None, delay: float, query: str | None = None, tag: str = ""):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUT_DIR / f"{channel}.jsonl"
+    path = OUT_DIR / f"{channel}{tag}.jsonl"
     seen = load_existing(path)
     new = 0
     before = None
     for _ in range(pages):
         try:
-            page = fetch(channel, before)
+            page = fetch(channel, before, query)
         except Exception as e:  # noqa: BLE001
             print(f"  {channel}: fetch error {e}")
             break
@@ -118,6 +125,8 @@ if __name__ == "__main__":
     ap.add_argument("--pages", type=int, default=5)
     ap.add_argument("--since", help="YYYY-MM-DD (UTC): stop paging once older than this")
     ap.add_argument("--delay", type=float, default=1.0)
+    ap.add_argument("--query", help="Telegram channel search text (history backfill of specific posts)")
+    ap.add_argument("--tag", default="", help="suffix for output file, e.g. _summaries")
     a = ap.parse_args()
     channels = a.channels or []
     if a.all:
@@ -125,4 +134,4 @@ if __name__ == "__main__":
         channels = [c["name"] for c in cfg["active"]]
     since = datetime.fromisoformat(a.since).replace(tzinfo=timezone.utc) if a.since else None
     for ch in channels:
-        collect(ch, a.pages, since, a.delay)
+        collect(ch, a.pages, since, a.delay, a.query, a.tag)
