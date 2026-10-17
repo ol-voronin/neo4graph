@@ -18,7 +18,7 @@ CREATE TABLE messages (
   source_id text REFERENCES sources(id),
   ts_published timestamptz NOT NULL,
   ts_collected timestamptz DEFAULT now(),
-  lang text, text text, url text, hash text UNIQUE,
+  lang text, text text, url text, hash text,  -- hash is NOT unique: identical repeated posts in monitoring feeds are real signal
   event_kind text CHECK (event_kind IN ('rhetoric','operational','anticorruption','decision','other')),
   threat_level smallint CHECK (threat_level BETWEEN 0 AND 3),
   novelty real, target_mentioned boolean, timeframe_mentioned boolean,
@@ -28,6 +28,7 @@ CREATE TABLE messages (
   embedding vector(1024)
 );
 CREATE INDEX messages_ts_idx ON messages (ts_published);
+CREATE INDEX messages_hash_idx ON messages (hash);
 CREATE INDEX messages_source_ts_idx ON messages (source_id, ts_published);
 CREATE INDEX messages_narrative_idx ON messages (narrative_id);
 
