@@ -49,6 +49,13 @@
       "role": "Kharkiv operational feed (very high frequency, short posts, repeats are real signal)"
     },
     {
+      "name": "monitor1654",
+      "country": "UA",
+      "type": "osint",
+      "title": "monitor 1654 | Kharkiv",
+      "role": "Kharkiv operational feed (Ukrainian-language; compare with tlknewsua for the same events)"
+    },
+    {
       "name": "mod_russia",
       "country": "RU",
       "type": "official",
