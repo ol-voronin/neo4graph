@@ -25,3 +25,14 @@ rank metrics (AUC) instead of a binary 7/20 label until per-city counts are avai
 ## Power
 Detecting a rise in P(massed) from 0.4 to 0.6 after a signal needs ~97 days per group (alpha .05, power .8); 0.4 -> 0.7 needs ~42.
 Current ground truth: 22 days Kharkiv, 18 days nationwide waves (all massed). It is the bottleneck, not the number of posts.
+
+## Update 2026-10-18 (recall sample + siren proxy)
+- Stratum C (32 purposive posts from Medvedev / Zelensky / MFA / Kremlin / Soloviev / RIA etc. with threat-like vocabulary): 4 positives
+  (Medvedev x2 explicit threats = 2, Zelensky warning that Russian airspace becomes unsafe = 2, US arms-cutoff threat = 1, borderline).
+- Rules recall on all 6 gold positives (A+B+C): 5/6 = 83% (Wilson 44-97%); purposive sampling makes this optimistic.
+  Missed: Zelensky's airspace warning (no keywords). Conclusion: rules are acceptable as a cheap prefilter only if tuned on a bigger positive set.
+- Siren proxy for Kharkiv: oblast `air_raid` alerts per day avg 19 (350 min) over the 22 days with governor summaries; Spearman between
+  intensity (10*missiles + drones) and alert count = -0.03, vs alert minutes = -0.10 (n=22, rough 95% band about +-0.43). Alerts run almost
+  every day, so they do NOT measure strike intensity. Do not use alert counts as the target.
+- Public history of daily missile/drone launches (2022+) was not found as a GitHub dataset reachable from here; t.me/s paging only reaches
+  ~17-30 days for busy channels. Candidates: Kaggle "Massive Missile Attacks on Ukraine", ISW/Air Force daily posts, Wikipedia timeline.
