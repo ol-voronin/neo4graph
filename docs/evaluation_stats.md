@@ -36,3 +36,13 @@ Current ground truth: 22 days Kharkiv, 18 days nationwide waves (all massed). It
   every day, so they do NOT measure strike intensity. Do not use alert counts as the target.
 - Public history of daily missile/drone launches (2022+) was not found as a GitHub dataset reachable from here; t.me/s paging only reaches
   ~17-30 days for busy channels. Candidates: Kaggle "Massive Missile Attacks on Ukraine", ISW/Air Force daily posts, Wikipedia timeline.
+
+## Recall of rules (purposive positive-rich samples C, 68 posts; total gold positives 11 across all strata)
+Positives by rule level: level 0 -> 3, level 1 -> 1, level 2 -> 5, level 3 -> 2 (of 11).
+Recall of rule>=1 = 8/11 = 73% (CI 43-90%); recall of rule>=2 = 7/11 = 64% (CI 35-85%). A keyword prefilter at level>=1 would lose ~27%
+of real threat posts (e.g. Zelensky's "we will respond" and the Houthi warning got level 0). Decision: do NOT use rules as an LLM prefilter
+for rhetoric channels; only skip by source type (alert/monitor feeds, short alert templates). Purposive samples are not random, so recall
+is optimistic/pessimistic in unknown direction; 11 positives is too few for tight intervals. Note: 32 rows of stratum `C_purposive`
+were found in the table that were not written in this session (same annotator tag `claude`); kept, but provenance unverified.
+Ground truth history: t.me/s paging resets the connection after ~400 posts of busy channels (kpszsu ~200 posts/day), so deep history
+is not reachable from here; ground truth grows through the 30-min cron instead.
