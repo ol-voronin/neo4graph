@@ -22,7 +22,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROMPT_VERSION = "v1"
-SKIP_SOURCES = ("tlknewsua", "monitor1654", "kpszsu")
+SKIP_SOURCES = ("tg:tlknewsua", "tg:monitor1654", "tg:kpszsu")  # source ids carry the "tg:" prefix
+SKIP_TYPES = ("osint",)  # alert/monitoring feeds: operational data, handled by rules / Mode B, not by the rhetoric prompt
 KINDS = {"rhetoric", "operational", "anticorruption", "decision", "other"}
 
 
@@ -70,6 +71,8 @@ def clean(o: dict):
         v = o.get(k)
         return None if v is None else max(0.0, min(1.0, float(v)))
 
+    if kind == "operational":
+        tl = 0  # prompt rule 7 / example 4: operational = facts about actions, not rhetorical threat (models drift here)
     return dict(event_kind=kind, threat_level=int(tl), novelty=fl("novelty"),
                 target_mentioned=bool(o.get("target_mentioned")), timeframe_mentioned=bool(o.get("timeframe_mentioned")),
                 is_scheduled_context=bool(o.get("is_scheduled_context")), tone_amplification=bool(o.get("tone_amplification")),
@@ -102,8 +105,8 @@ def main():
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
-            "WHERE m.labeled_at IS NULL AND length(m.text) >= 40 AND s.id <> ALL(%s) ORDER BY " + order + " LIMIT %s",
-            (list(SKIP_SOURCES), a.sample or a.limit))
+            "WHERE m.labeled_at IS NULL AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) ORDER BY " + order + " LIMIT %s",
+            (list(SKIP_SOURCES), list(SKIP_TYPES), a.sample or a.limit))
         rows = cur.fetchall()
         cur.execute("SELECT label FROM narratives ORDER BY last_seen_ts DESC NULLS LAST LIMIT 20")
         recent = [r[0] for r in cur.fetchall()]
