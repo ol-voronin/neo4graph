@@ -31,3 +31,14 @@ Options, from cheapest to best:
 ## Alerts (proxy, not strikes)
 `alerts` holds oblast-level sirens 2022-02-25 .. 2026-10-17 (volunteer data) plus raion/hromada-level official data.
 Alerts show threat presence, not impact. Do not use them as the "massive strike" label.
+
+
+## Kharkiv daily layer (added 2026-10-17)
+`src/parse_kharkiv_daily.py` parses the governor's daily summary (@synegubov, "Протягом минулої доби ...") into
+`kharkiv_daily`: oblast-level counts of missiles / guided bombs / MLRS / drones / FPV for the previous day, plus
+whether the city of Kharkiv and which districts were attacked.
+Caveat: counts are for the whole oblast, not the city. City-level massed day is approximated as
+`city_attacked AND (missiles >= 7 OR drones >= 20)`; sensitivity run: missiles 7..10. "БпЛА (тип встановлюється)" is
+included in `drones`; FPV and guided bombs are kept separate and are not counted toward the massed definition.
+Operational feeds (tlknewsua, monitor1654) are tracking posts ("на Липці", "Италмас на ...") with heavy repeats and
+are used as features, not as ground truth.

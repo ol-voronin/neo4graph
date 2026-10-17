@@ -58,3 +58,11 @@ CROSS JOIN (VALUES (1,1,'both','New Year'),(2,23,'RU','Defender of the Fatherlan
 -- 2026-10-17: regional channel discovery
 ALTER TABLE sources ADD COLUMN IF NOT EXISTS region text, ADD COLUMN IF NOT EXISTS tier text;
 -- 28 regional/national monitoring channels inserted (see channels.json, tier A/B); Kharkiv sources tagged region='Kharkivska'.
+
+-- 2026-10-17: Kharkiv daily summaries from the governor (@synegubov); OBLAST-level weapon counts + whether the city was hit
+CREATE TABLE IF NOT EXISTS kharkiv_daily (
+  date date PRIMARY KEY,                -- the day covered (post date - 1)
+  msg_id text, url text,
+  missiles int, guided_bombs int, mlrs int, drones int, fpv int,
+  city_attacked boolean, districts text[], settlements_n int
+);
