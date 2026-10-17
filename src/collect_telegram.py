@@ -86,12 +86,12 @@ def load_existing(path: Path):
     return ids
 
 
-def collect(channel: str, pages: int, since: datetime | None, delay: float, query: str | None = None, tag: str = ""):
+def collect(channel: str, pages: int, since: datetime | None, delay: float, query: str | None = None, tag: str = "", start_before: int | None = None):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / f"{channel}{tag}.jsonl"
     seen = load_existing(path)
     new = 0
-    before = None
+    before = start_before
     for _ in range(pages):
         try:
             page = fetch(channel, before, query)
@@ -123,6 +123,7 @@ if __name__ == "__main__":
     ap.add_argument("--channels", nargs="*")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--pages", type=int, default=5)
+    ap.add_argument("--before-id", type=int, help="start paging below this message id (resume deep backfills)")
     ap.add_argument("--since", help="YYYY-MM-DD (UTC): stop paging once older than this")
     ap.add_argument("--delay", type=float, default=1.0)
     ap.add_argument("--query", help="Telegram channel search text (history backfill of specific posts)")
@@ -134,4 +135,4 @@ if __name__ == "__main__":
         channels = [c["name"] for c in cfg["active"]]
     since = datetime.fromisoformat(a.since).replace(tzinfo=timezone.utc) if a.since else None
     for ch in channels:
-        collect(ch, a.pages, since, a.delay, a.query, a.tag)
+        collect(ch, a.pages, since, a.delay, a.query, a.tag, a.before_id)
