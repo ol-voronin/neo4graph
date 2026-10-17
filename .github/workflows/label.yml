@@ -4,8 +4,9 @@ name: label
 # Manual run with dry_run=true prints labels for a random sample WITHOUT writing (use it for the QA pass).
 
 on:
-  schedule:
-    - cron: "15 * * * *"
+  # schedule is disabled until the QA pass is approved; re-enable:
+  # schedule:
+  #   - cron: "15 * * * *"
   workflow_dispatch:
     inputs:
       limit:
