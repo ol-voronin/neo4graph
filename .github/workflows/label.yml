@@ -12,6 +12,9 @@ on:
       limit:
         description: "Max messages to label"
         default: "150"
+      provider:
+        description: "anthropic (paid) or gemini (free tier, needs secret GEMINI_API_KEY)"
+        default: "gemini"
       dry_run:
         description: "Dry run: random sample of 20, print only, no writes"
         type: boolean
@@ -35,10 +38,14 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ] || [ -z "$DATABASE_URL" ]; then echo "secrets missing"; exit 1; fi
+          if [ -z "$DATABASE_URL" ]; then echo "DATABASE_URL missing"; exit 1; fi
+          if [ "$PROVIDER" = "gemini" ] && [ -z "$GEMINI_API_KEY" ]; then echo "GEMINI_API_KEY missing"; exit 1; fi
+          if [ "$PROVIDER" = "anthropic" ] && [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            python src/label_messages.py --sample 20 --dry-run
+            python src/label_messages.py --provider "$PROVIDER" --sample 20 --dry-run
           else
-            python src/label_messages.py --limit "${{ github.event.inputs.limit || '150' }}"
+            python src/label_messages.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '150' }}"
           fi

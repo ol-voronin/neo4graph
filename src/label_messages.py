@@ -4,13 +4,20 @@ Picks unlabeled messages (labeled_at IS NULL), skips operational Kharkiv feeds a
 docs/labeling_modes.md Mode B), asks the model for strict JSON and writes the fields into `messages` + raw JSON
 into `message_labels`. The model extracts features only; it never predicts strikes or judges truth.
 
-Usage: python src/label_messages.py [--limit 200] [--model claude-haiku-5-5] [--dry-run] [--sample 20]
+Providers: --provider anthropic (ANTHROPIC_API_KEY, paid) or --provider gemini (GEMINI_API_KEY, free tier of Google AI
+Studio; free-tier content may be used by Google to improve products, fine for public posts). The prompt, schema and
+validation are identical, so labels from both can be compared on the same sample (prompt_version carries the provider).
+
+Usage: python src/label_messages.py [--provider gemini] [--limit 200] [--model ...] [--dry-run] [--sample 20]
 """
 import argparse
 import json
 import os
 import re
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +40,25 @@ def parse_json(s: str):
     return json.loads(s)
 
 
+def gemini_call(model: str, system: str, user: str, key: str) -> str:
+    """Plain REST call (no SDK). Retries on 429/5xx with backoff; the free tier is rate limited."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    body = json.dumps({"systemInstruction": {"parts": [{"text": system}]},
+                       "contents": [{"role": "user", "parts": [{"text": user}]}],
+                       "generationConfig": {"temperature": 0, "responseMimeType": "application/json", "maxOutputTokens": 800}}).encode()
+    for attempt in range(5):
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": key})
+        try:
+            data = json.loads(urllib.request.urlopen(req, timeout=60).read())
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 503) and attempt < 4:
+                time.sleep(15 * (attempt + 1))
+                continue
+            raise RuntimeError(f"gemini HTTP {e.code}: {e.read()[:300]!r}") from e
+    raise RuntimeError("gemini: retries exhausted")
+
+
 def clean(o: dict):
     """Validate/clamp so a bad model answer cannot violate table constraints."""
     kind = o.get("event_kind")
@@ -53,16 +79,24 @@ def clean(o: dict):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=200)
-    ap.add_argument("--model", default="claude-haiku-5-5")
+    ap.add_argument("--provider", choices=["anthropic", "gemini"], default="anthropic")
+    ap.add_argument("--model", default=None, help="default: claude-haiku-5-5 / gemini-2.5-flash-lite")
+    ap.add_argument("--delay", type=float, default=None, help="seconds between calls (gemini default 6 = 10 req/min)")
     ap.add_argument("--dry-run", action="store_true", help="print results, do not write")
     ap.add_argument("--sample", type=int, default=0, help="random sample instead of oldest-first (for QA)")
     a = ap.parse_args()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("ANTHROPIC_API_KEY is not set")
-    import anthropic
+    a.model = a.model or ("claude-haiku-5-5" if a.provider == "anthropic" else "gemini-2.5-flash-lite")
+    delay = a.delay if a.delay is not None else (6.0 if a.provider == "gemini" else 0.0)
+    keyname = "ANTHROPIC_API_KEY" if a.provider == "anthropic" else "GEMINI_API_KEY"
+    if not os.environ.get(keyname):
+        sys.exit(f"{keyname} is not set")
     sys.path.insert(0, str(ROOT / "src"))
     from load_to_db import connect
-    client = anthropic.Anthropic()
+    client = None
+    if a.provider == "anthropic":
+        import anthropic
+        client = anthropic.Anthropic()
+    pv = f"{PROMPT_VERSION}-{a.provider}"
     sysmsg = system_prompt()
     order = "random()" if a.sample else "m.ts_published DESC"
     with connect() as conn, conn.cursor() as cur:
@@ -78,9 +112,14 @@ def main():
             user = json.dumps({"source": {"name": sid, "country": country, "type": stype, "lang": lang},
                                "ts_published": ts.isoformat(), "text": text[:3000], "recent_narratives": recent}, ensure_ascii=False)
             try:
-                resp = client.messages.create(model=a.model, max_tokens=800, system=sysmsg,
-                                              messages=[{"role": "user", "content": user}])
-                raw = parse_json(resp.content[0].text)
+                if a.provider == "anthropic":
+                    resp = client.messages.create(model=a.model, max_tokens=800, system=sysmsg,
+                                                  messages=[{"role": "user", "content": user}])
+                    txt = resp.content[0].text
+                else:
+                    txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"])
+                    time.sleep(delay)
+                raw = parse_json(txt)
                 f = clean(raw)
             except Exception as e:  # noqa: BLE001
                 bad += 1
@@ -106,10 +145,10 @@ def main():
                 "target_mentioned=%(target_mentioned)s, timeframe_mentioned=%(timeframe_mentioned)s, "
                 "is_scheduled_context=%(is_scheduled_context)s, tone_amplification=%(tone_amplification)s, "
                 "llm_confidence=%(llm_confidence)s, narrative_id=%(nid)s, prompt_version=%(pv)s, labeled_at=now() WHERE id=%(id)s",
-                {**f, "nid": nid, "pv": PROMPT_VERSION, "id": mid})
+                {**f, "nid": nid, "pv": pv, "id": mid})
             cur.execute("INSERT INTO message_labels(message_id, prompt_version, model, raw) VALUES (%s,%s,%s,%s) "
                         "ON CONFLICT (message_id) DO UPDATE SET raw=EXCLUDED.raw, model=EXCLUDED.model, prompt_version=EXCLUDED.prompt_version, labeled_at=now()",
-                        (mid, PROMPT_VERSION, a.model, json.dumps(raw, ensure_ascii=False)))
+                        (mid, pv, a.model, json.dumps(raw, ensure_ascii=False)))
             conn.commit()
     print(f"labeled {ok}, failed {bad}")
     if bad and not ok:
