@@ -80,12 +80,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--provider", choices=["anthropic", "gemini"], default="anthropic")
-    ap.add_argument("--model", default=None, help="default: claude-haiku-5-5 / gemini-2.5-flash-lite")
+    ap.add_argument("--model", default=None, help="default: claude-haiku-5-5 / gemini-3.5-flash-lite")
     ap.add_argument("--delay", type=float, default=None, help="seconds between calls (gemini default 6 = 10 req/min)")
     ap.add_argument("--dry-run", action="store_true", help="print results, do not write")
     ap.add_argument("--sample", type=int, default=0, help="random sample instead of oldest-first (for QA)")
     a = ap.parse_args()
-    a.model = a.model or ("claude-haiku-5-5" if a.provider == "anthropic" else "gemini-2.5-flash-lite")
+    a.model = a.model or ("claude-haiku-5-5" if a.provider == "anthropic" else "gemini-3.5-flash-lite")
     delay = a.delay if a.delay is not None else (6.0 if a.provider == "gemini" else 0.0)
     keyname = "ANTHROPIC_API_KEY" if a.provider == "anthropic" else "GEMINI_API_KEY"
     if not os.environ.get(keyname):
