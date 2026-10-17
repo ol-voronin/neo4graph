@@ -17,7 +17,10 @@ Per single city: **7-10 missiles OR 20+ drones**. Main analysis uses 7 missiles 
 - `db/schema.sql` - Postgres schema (Neon, PG17, pgvector)
 - `db/schema.cypher` - optional Neo4j graph schema (phase 5, only if signal is found)
 - `docs/labeling_prompt.md` - LLM labeling prompt, output schema, QA procedure
-- `src/` - collectors and analysis (to be added)
+- `src/collect_telegram.py` - keyless collector for public Telegram channels (t.me/s)
+- `src/load_to_db.py` - loads alerts and messages into Postgres
+- `src/check_channels.py` - checks which candidate channels are public and active
+- `channels.json` - verified channel list
 - `data/` - local raw data (git-ignored)
 
 ## Phases

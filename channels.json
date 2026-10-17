@@ -1,0 +1,42 @@
+{
+  "_note": "Verified 2026-10-17 via t.me/s/<name>: public preview works and channel is active. Reliability is NOT assumed; it is computed from history later.",
+  "active": [
+    {"name": "kpszsu", "country": "UA", "type": "official", "title": "Air Force of Ukraine", "role": "ground truth + operational"},
+    {"name": "GeneralStaffZSU", "country": "UA", "type": "official", "title": "General Staff of Ukraine"},
+    {"name": "V_Zelenskiy_official", "country": "UA", "type": "official", "title": "Zelenskiy / Official"},
+    {"name": "synegubov", "country": "UA", "type": "official", "title": "Kharkiv oblast governor", "role": "Kharkiv layer"},
+    {"name": "kharkivoda", "country": "UA", "type": "official", "title": "Kharkiv OVA", "role": "Kharkiv layer"},
+    {"name": "monitorwarr", "country": "UA", "type": "osint", "title": "monitoring", "role": "operational signal (noisy)"},
+    {"name": "mod_russia", "country": "RU", "type": "official", "title": "Russian MoD"},
+    {"name": "MID_Russia", "country": "RU", "type": "official", "title": "Russian MFA"},
+    {"name": "news_kremlin", "country": "RU", "type": "official", "title": "Kremlin news"},
+    {"name": "tass_agency", "country": "RU", "type": "state_media", "title": "TASS"},
+    {"name": "rian_ru", "country": "RU", "type": "state_media", "title": "RIA Novosti"},
+    {"name": "SolovievLive", "country": "RU", "type": "state_media", "title": "Soloviev"},
+    {"name": "medvedev_telegram", "country": "RU", "type": "official", "title": "Medvedev", "role": "high-noise control source"},
+    {"name": "voenkorKotenok", "country": "RU", "type": "milblogger", "title": "Voenkor Kotenok"},
+    {"name": "RVvoenkor", "country": "RU", "type": "milblogger", "title": "Operation Z: Russian Spring"},
+    {"name": "wargonzo", "country": "RU", "type": "milblogger", "title": "WarGonzo"},
+    {"name": "rybar", "country": "RU", "type": "milblogger", "title": "Rybar"},
+    {"name": "dva_majors", "country": "RU", "type": "milblogger", "title": "Two Majors"},
+    {"name": "boris_rozhin", "country": "RU", "type": "milblogger", "title": "Colonelcassad"},
+    {"name": "sashakots", "country": "RU", "type": "milblogger", "title": "Kotsnews"},
+    {"name": "meduzalive", "country": "RU", "type": "independent", "title": "Meduza LIVE"},
+    {"name": "ukrpravda_news", "country": "UA", "type": "independent", "title": "Ukrainska Pravda"}
+  ],
+  "inactive_or_unavailable": [
+    {"name": "war_monitor_ua", "reason": "last post ~6 months ago"},
+    {"name": "kharkiv_monitor", "reason": "stale (~6 months), 1 post on page"},
+    {"name": "napramok", "reason": "stale (~7 months)"},
+    {"name": "nabu_ua", "reason": "stale (~2 years): real NABU channel still to be identified"},
+    {"name": "rt_russian", "reason": "no public preview"},
+    {"name": "ukrainian_alarm_map", "reason": "not found"},
+    {"name": "radar_aerobaza", "reason": "not found"}
+  ],
+  "todo_find": [
+    "official NABU/SAP/HACC channels (anti-corruption layer)",
+    "a live Kharkiv-specific air monitoring channel",
+    "ISW (use site RSS instead of Telegram)",
+    "Chinese/Turkish/Indian MFA feeds (third-country layer)"
+  ]
+}
