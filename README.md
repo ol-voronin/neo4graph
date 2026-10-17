@@ -20,8 +20,9 @@ Per single city: **7-10 missiles OR 20+ drones**. Main analysis uses 7 missiles 
 - `src/collect_telegram.py` - keyless collector for public Telegram channels (t.me/s)
 - `src/load_to_db.py` - loads alerts and messages into Postgres
 - `src/check_channels.py` - checks which candidate channels are public and active
+- `src/discover_channels.py` - probes handle patterns to find active regional channels
 - `src/parse_kpszsu.py` - parses Air Force summaries into `waves`
-- `channels.json` - verified channel list (25 active)
+- `channels.json` - verified channels (52 active incl. regional, plus low-tier candidates and a manual-review list)
 - `docs/ground_truth.md` - what ground truth we have and the per-city gap
 - `docs/factcheck.md` - claim extraction and fact-checking layer
 - `docs/labeling_modes.md` - extra prompt modes (operational feeds, claim extraction)

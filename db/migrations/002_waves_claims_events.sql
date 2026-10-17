@@ -54,3 +54,7 @@ CROSS JOIN (VALUES (1,1,'both','New Year'),(2,23,'RU','Defender of the Fatherlan
  (6,28,'UA','Constitution Day (Ukraine)'),(8,24,'UA','Independence Day (Ukraine)'),(10,1,'UA','Defenders Day (Ukraine)'),
  (10,7,'RU','Putin birthday'),(11,4,'RU','Unity Day (Russia)'),(12,6,'UA','Armed Forces Day (Ukraine)'),
  (12,31,'both','New Year eve')) AS t(m,d,scope,descr);
+
+-- 2026-10-17: regional channel discovery
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS region text, ADD COLUMN IF NOT EXISTS tier text;
+-- 28 regional/national monitoring channels inserted (see channels.json, tier A/B); Kharkiv sources tagged region='Kharkivska'.

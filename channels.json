@@ -151,6 +151,286 @@
       "country": "UA",
       "type": "independent",
       "title": "Ukrainska Pravda"
+    },
+    {
+      "name": "vinnytsiaoda",
+      "country": "UA",
+      "type": "official",
+      "title": "Вінницька ОДА/ОВА",
+      "region": "Vinnytska",
+      "tier": "B",
+      "subscribers": "4.44K",
+      "role": "regional"
+    },
+    {
+      "name": "volyn_news",
+      "country": "UA",
+      "type": "independent",
+      "title": "Волинські Новини",
+      "region": "Volynska",
+      "tier": "A",
+      "subscribers": "68.2K",
+      "role": "regional"
+    },
+    {
+      "name": "volynua",
+      "country": "UA",
+      "type": "independent",
+      "title": "✙ VolynUA ✙ 🇺🇦",
+      "region": "Volynska",
+      "tier": "B",
+      "subscribers": "1.17K",
+      "role": "regional"
+    },
+    {
+      "name": "volynradar",
+      "country": "UA",
+      "type": "osint",
+      "title": "ВОЛИНСЬКИЙ РАДАР",
+      "region": "Volynska",
+      "tier": "B",
+      "subscribers": "1.29K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "lutsk_monitor",
+      "country": "UA",
+      "type": "osint",
+      "title": "ЛУЦЬК СИГНАЛ — LUTSK SIGNAL",
+      "region": "Volynska",
+      "tier": "A",
+      "subscribers": "29.1K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "dnipromonitor",
+      "country": "UA",
+      "type": "osint",
+      "title": "Дніпро Головний 🇺🇦",
+      "region": "Dnipropetrovska",
+      "tier": "A",
+      "subscribers": "47.5K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "dnipro_alerts",
+      "country": "UA",
+      "type": "osint",
+      "title": "Дніпро Alerts 🚀 🚨",
+      "region": "Dnipropetrovska",
+      "tier": "A",
+      "subscribers": "811K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "dnipro_news",
+      "country": "UA",
+      "type": "independent",
+      "title": "Новости Днепра | Новини Дніпра",
+      "region": "Dnipropetrovska",
+      "tier": "B",
+      "subscribers": "1.46K",
+      "role": "regional"
+    },
+    {
+      "name": "zp_ua",
+      "country": "UA",
+      "type": "independent",
+      "title": "🔴 Новости Запорожье - Наш город&#33;",
+      "region": "Zaporizka",
+      "tier": "B",
+      "subscribers": "1.33K",
+      "role": "regional"
+    },
+    {
+      "name": "kyivoda",
+      "country": "UA",
+      "type": "official",
+      "title": "🇺🇦 Київська обласна військова адміністрація",
+      "region": "Kyivska",
+      "tier": "A",
+      "subscribers": "84.9K",
+      "role": "regional"
+    },
+    {
+      "name": "monitor_kiev",
+      "country": "UA",
+      "type": "osint",
+      "title": "monitor | Київ🇺🇦",
+      "region": "Kyivska",
+      "tier": "A",
+      "subscribers": "35.1K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "kiev_alarm",
+      "country": "UA",
+      "type": "osint",
+      "title": "Повітряні тривоги м. Київ",
+      "region": "Kyivska",
+      "tier": "B",
+      "subscribers": "2.51K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "mykolaiv_ova",
+      "country": "UA",
+      "type": "official",
+      "title": "Георгій Решетілов | Миколаївська ОВА",
+      "region": "Mykolaivska",
+      "tier": "A",
+      "subscribers": "34.8K",
+      "role": "regional"
+    },
+    {
+      "name": "odessa_online",
+      "country": "UA",
+      "type": "independent",
+      "title": "Odesa.online – новини Одеси",
+      "region": "Odeska",
+      "tier": "A",
+      "subscribers": "16.8K",
+      "role": "regional"
+    },
+    {
+      "name": "poltava_monitor",
+      "country": "UA",
+      "type": "osint",
+      "title": "Полтава І Моніторинг",
+      "region": "Poltavska",
+      "tier": "B",
+      "subscribers": "3.76K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "poltavaradar",
+      "country": "UA",
+      "type": "osint",
+      "title": "Полтава радар | Radar Poltava",
+      "region": "Poltavska",
+      "tier": "A",
+      "subscribers": "45.5K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "rivne_ua",
+      "country": "UA",
+      "type": "independent",
+      "title": "Реальне Рівне | Новини області",
+      "region": "Rivnenska",
+      "tier": "A",
+      "subscribers": "23K",
+      "role": "regional"
+    },
+    {
+      "name": "rivne_radar",
+      "country": "UA",
+      "type": "osint",
+      "title": "🚨 Rivne AirDefense | Рівне Тривога",
+      "region": "Rivnenska",
+      "tier": "A",
+      "subscribers": "19.1K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "sumy_radar",
+      "country": "UA",
+      "type": "osint",
+      "title": "🇺🇦Сумщина | Радар🚀",
+      "region": "Sumska",
+      "tier": "B",
+      "subscribers": "1.25K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "kherson_monitoring",
+      "country": "UA",
+      "type": "osint",
+      "title": "Херсонщина Моніторинг🇺🇦",
+      "region": "Khersonska",
+      "tier": "A",
+      "subscribers": "67.5K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "cherkasy_alerts",
+      "country": "UA",
+      "type": "osint",
+      "title": "Cherkasy Alerts",
+      "region": "Cherkaska",
+      "tier": "B",
+      "subscribers": "1.64K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "cherkasyua",
+      "country": "UA",
+      "type": "independent",
+      "title": "Черкаси UA",
+      "region": "Cherkaska",
+      "tier": "A",
+      "subscribers": "10K",
+      "role": "regional"
+    },
+    {
+      "name": "chernihiv_online",
+      "country": "UA",
+      "type": "independent",
+      "title": "Чернигов | Черниговская область | Война",
+      "region": "Chernihivska",
+      "tier": "B",
+      "subscribers": "3.01K",
+      "role": "regional"
+    },
+    {
+      "name": "deraketaua",
+      "country": "UA",
+      "type": "osint",
+      "title": "Де Ракета ?🚀 | Моніторинг",
+      "region": "national",
+      "tier": "A",
+      "subscribers": "157K",
+      "role": "national monitoring"
+    },
+    {
+      "name": "eRadarrua",
+      "country": "UA",
+      "type": "osint",
+      "title": "🔊⚠️єРадар | Повітряна тривога | Ракетна небезпека",
+      "region": "national",
+      "tier": "A",
+      "subscribers": "410K",
+      "role": "national monitoring"
+    },
+    {
+      "name": "povitryanatrivogaaa",
+      "country": "UA",
+      "type": "osint",
+      "title": "Карта повітряних тривог ‼️ Вибухи ‼️ Ракети ‼️",
+      "region": "national",
+      "tier": "A",
+      "subscribers": "733K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "war_monitor",
+      "country": "UA",
+      "type": "osint",
+      "title": "monitor",
+      "region": "national",
+      "tier": "A",
+      "subscribers": "967K",
+      "role": "regional/national monitoring"
+    },
+    {
+      "name": "radar_raketaa",
+      "country": "UA",
+      "type": "osint",
+      "title": "Куди летить? | Тривога",
+      "region": "national",
+      "tier": "A",
+      "subscribers": "501K",
+      "role": "regional/national monitoring"
     }
   ],
   "inactive_or_unavailable": [
@@ -187,5 +467,319 @@
     "official NABU/SAP/HACC channels (anti-corruption layer)",
     "ISW (use site RSS instead of Telegram)",
     "Chinese/Turkish/Indian MFA feeds (third-country layer)"
+  ],
+  "candidates_low_subscribers": [
+    {
+      "name": "vinnytsia_alarm",
+      "region": "Vinnytska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Вінниця Тривога",
+      "subscribers": "16",
+      "country": "UA"
+    },
+    {
+      "name": "volynmonitor",
+      "region": "Volynska",
+      "type": "osint",
+      "tier": "C",
+      "title": "VOLYN/Волинь Монітор | Повітряна тривога",
+      "subscribers": "120",
+      "country": "UA"
+    },
+    {
+      "name": "lutsknews",
+      "region": "Volynska",
+      "type": "independent",
+      "tier": "C",
+      "title": "Новини Луцька та області",
+      "subscribers": "9",
+      "country": "UA"
+    },
+    {
+      "name": "lutsk_radar",
+      "region": "Volynska",
+      "type": "osint",
+      "tier": "C",
+      "title": "MNR | монітор Луцьк",
+      "subscribers": "234",
+      "country": "UA"
+    },
+    {
+      "name": "dnepr_alerts",
+      "region": "Dnipropetrovska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Дніпро Alerts: тривога, шахеди, балістика 🚀 🚨 | Днепр Алертс: шахеды, ",
+      "subscribers": "587",
+      "country": "UA"
+    },
+    {
+      "name": "zhytomyr_alerts",
+      "region": "Zhytomyrska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Житомир. Тревоги.",
+      "subscribers": "12",
+      "country": "UA"
+    },
+    {
+      "name": "zhitomirtrivoga",
+      "region": "Zhytomyrska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Тривога | Житомир",
+      "subscribers": "777",
+      "country": "UA"
+    },
+    {
+      "name": "zaporizhzhiaua",
+      "region": "Zaporizka",
+      "type": "independent",
+      "tier": "C",
+      "title": "ЗапоріжжяUA🇺🇦",
+      "subscribers": "25",
+      "country": "UA"
+    },
+    {
+      "name": "zp_monitor",
+      "region": "Zaporizka",
+      "type": "osint",
+      "tier": "C",
+      "title": "Оперативно Єціль | Запоріжжя UA",
+      "subscribers": "217",
+      "country": "UA"
+    },
+    {
+      "name": "if_oda",
+      "region": "Ivano-Frankivska",
+      "type": "official",
+      "tier": "C",
+      "title": "Івано-Франківська ОВА",
+      "subscribers": "839",
+      "country": "UA"
+    },
+    {
+      "name": "if_monitoring",
+      "region": "Ivano-Frankivska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Франківськ Моніторить",
+      "subscribers": "102",
+      "country": "UA"
+    },
+    {
+      "name": "kyiv_alarm",
+      "region": "Kyivska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Повітряна тривога Київ",
+      "subscribers": "45",
+      "country": "UA"
+    },
+    {
+      "name": "mykolaivoblast",
+      "region": "Mykolaivska",
+      "type": "osint",
+      "tier": "C",
+      "title": "МИКОЛАЇВСЬКА ОБЛАСТЬ НОВИНИ |ГРАФІКИ ВІДКЛЮЧЕНЬ СВІТЛА МИКОЛАЇВ ОЧАКІВ",
+      "subscribers": "80",
+      "country": "UA"
+    },
+    {
+      "name": "mykolaiv_monitoring",
+      "region": "Mykolaivska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Моніторинг Миколаївщини та України",
+      "subscribers": "113",
+      "country": "UA"
+    },
+    {
+      "name": "odesaoda",
+      "region": "Odeska",
+      "type": "official",
+      "tier": "C",
+      "title": "🇺🇦Одеська ОВА",
+      "subscribers": "838",
+      "country": "UA"
+    },
+    {
+      "name": "odesaoblast",
+      "region": "Odeska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Одеська область: графіки відключень світла на сьогоді / завтра. Одещин",
+      "subscribers": "133",
+      "country": "UA"
+    },
+    {
+      "name": "odesa_alerts",
+      "region": "Odeska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Odesa Alerts 🚨⚓️",
+      "subscribers": "89",
+      "country": "UA"
+    },
+    {
+      "name": "odesa_trivoga",
+      "region": "Odeska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Сповіщення. Одеський район",
+      "subscribers": "13",
+      "country": "UA"
+    },
+    {
+      "name": "poltava_alarm",
+      "region": "Poltavska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Летить на Полтаву",
+      "subscribers": "4",
+      "country": "UA"
+    },
+    {
+      "name": "poltava_online",
+      "region": "Poltavska",
+      "type": "independent",
+      "tier": "C",
+      "title": "Полтава Онлайн",
+      "subscribers": "48",
+      "country": "UA"
+    },
+    {
+      "name": "sumy_monitor",
+      "region": "Sumska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Суми | Моніторинг 24/7",
+      "subscribers": "11",
+      "country": "UA"
+    },
+    {
+      "name": "sumymonitor",
+      "region": "Sumska",
+      "type": "osint",
+      "tier": "C",
+      "title": "SUMY MONITOR",
+      "subscribers": "31",
+      "country": "UA"
+    },
+    {
+      "name": "ternopiltrivoga",
+      "region": "Ternopilska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Ми — Тернопіль&#33; | тривога🚨 | Новини🎲 | ст. Авіація ✈️",
+      "subscribers": "180",
+      "country": "UA"
+    },
+    {
+      "name": "ternopil_radar",
+      "region": "Ternopilska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Тернопіль | Повітряна тривога",
+      "subscribers": "4",
+      "country": "UA"
+    },
+    {
+      "name": "kh_alerts",
+      "region": "Kharkivska",
+      "type": "osint",
+      "tier": "C",
+      "title": "ХАРКІВЩИНА ОПОВІЩЕННЯ ПОВІТРЯНА ТРИВОГА",
+      "subscribers": "899",
+      "country": "UA"
+    },
+    {
+      "name": "kherson_alarm",
+      "region": "Khersonska",
+      "type": "osint",
+      "tier": "C",
+      "title": "Херсон КАБ",
+      "subscribers": "46",
+      "country": "UA"
+    },
+    {
+      "name": "cherkasy_monitor",
+      "region": "Cherkaska",
+      "type": "osint",
+      "tier": "C",
+      "title": "CHERKASY MONITOR •",
+      "subscribers": "158",
+      "country": "UA"
+    }
+  ],
+  "needs_manual_review": [
+    {
+      "name": "dneprnews",
+      "region": "Dnipropetrovska",
+      "title": "NEWS_DNEPR",
+      "subscribers": "4.79K",
+      "reason": "title does not clearly match the region"
+    },
+    {
+      "name": "donetskaoda",
+      "title": "Донецька ОДА",
+      "subscribers": "2.12K",
+      "reason": "ambiguous side/affiliation, verify manually"
+    },
+    {
+      "name": "donbas_online",
+      "title": "Мы с Донбасса ⚒️",
+      "subscribers": "21.2K",
+      "reason": "occupation-side outlet, track separately"
+    },
+    {
+      "name": "if_radar",
+      "region": "Ivano-Frankivska",
+      "title": "ІФ Радар",
+      "subscribers": "4",
+      "reason": "title does not clearly match the region"
+    },
+    {
+      "name": "kyivradar",
+      "region": "Kyivska",
+      "title": "Повітряна загроза⚡️",
+      "subscribers": "2.62K",
+      "reason": "title does not clearly match the region"
+    },
+    {
+      "name": "lugansk_online",
+      "title": "ЛУГАНСК онлайн Новости и события, блог Луганска, ЛНР, реклама",
+      "subscribers": "10.5K",
+      "reason": "occupation-side outlet, track separately"
+    },
+    {
+      "name": "monitor_odessa",
+      "region": "Odeska",
+      "title": "МОНІТОР | РОЗСЛІДУВАННЯ| АНАЛІТИКА",
+      "subscribers": "6.07K",
+      "reason": "title does not clearly match the region"
+    },
+    {
+      "name": "khoda",
+      "title": "[ خدا ]",
+      "subscribers": "82.4K",
+      "reason": "title is not Kharkiv-related"
+    },
+    {
+      "name": "cherkasy_radar",
+      "region": "Cherkaska",
+      "title": "Черкащина🚀 ППО Радар📡",
+      "subscribers": "971",
+      "reason": "title does not clearly match the region"
+    }
+  ],
+  "_note2": "Regional channels discovered 2026-10-17 by handle probing (src/discover_channels.py). Tier A >=5K subs, B 1-5K, C <1K (not collected: may be clones/impostors; verify manually).",
+  "regional_gaps": [
+    "Lvivska",
+    "Khmelnytska",
+    "Chernivetska",
+    "Zakarpatska",
+    "Kirovohradska"
   ]
 }
