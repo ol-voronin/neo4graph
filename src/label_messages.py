@@ -86,6 +86,7 @@ def main():
     ap.add_argument("--model", default=None, help="default: claude-haiku-5-5 / gemini-3.5-flash-lite")
     ap.add_argument("--delay", type=float, default=None, help="seconds between calls (gemini default 6 = 10 req/min)")
     ap.add_argument("--dry-run", action="store_true", help="print results, do not write")
+    ap.add_argument("--gold", action="store_true", help="only unlabeled posts that are in gold_sample (for LLM-vs-gold comparison)")
     ap.add_argument("--sample", type=int, default=0, help="random sample instead of oldest-first (for QA)")
     a = ap.parse_args()
     a.model = a.model or ("claude-haiku-5-5" if a.provider == "anthropic" else "gemini-3.5-flash-lite")
@@ -105,7 +106,7 @@ def main():
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
-            "WHERE m.labeled_at IS NULL AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
+            "WHERE m.labeled_at IS NULL " + ("AND m.id IN (SELECT message_id FROM gold_sample) " if a.gold else "") + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
             "AND NOT (length(m.text) < 300 AND m.text ~* '(повітряна тривога|відбій повітряної|воздушная тревога|отбой воздушной)') ORDER BY " + order + " LIMIT %s",
             (list(SKIP_SOURCES), list(SKIP_TYPES), a.sample or a.limit))
         rows = cur.fetchall()

@@ -16,6 +16,10 @@ on:
       provider:
         description: "anthropic (paid) or gemini (free tier, needs secret GEMINI_API_KEY)"
         default: "gemini"
+      gold:
+        description: "Label only posts from gold_sample (for comparison with manual labels)"
+        type: boolean
+        default: false
       dry_run:
         description: "Dry run: random sample of 20, print only, no writes"
         type: boolean
@@ -45,7 +49,9 @@ jobs:
           if [ -z "$DATABASE_URL" ]; then echo "DATABASE_URL missing"; exit 1; fi
           if [ "$PROVIDER" = "gemini" ] && [ -z "$GEMINI_API_KEY" ]; then echo "GEMINI_API_KEY missing"; exit 1; fi
           if [ "$PROVIDER" = "anthropic" ] && [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          if [ "${{ github.event.inputs.gold }}" = "true" ]; then
+            python src/label_messages.py --provider "$PROVIDER" --gold --limit 200
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             python src/label_messages.py --provider "$PROVIDER" --sample 20 --dry-run
           else
             python src/label_messages.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '150' }}"
