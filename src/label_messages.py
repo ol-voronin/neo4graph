@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 SKIP_SOURCES = ("tg:tlknewsua", "tg:monitor1654", "tg:kpszsu")  # source ids carry the "tg:" prefix
 SKIP_TYPES = ("osint",)  # alert/monitoring feeds: operational data, handled by rules / Mode B, not by the rhetoric prompt
 KINDS = {"rhetoric", "operational", "anticorruption", "decision", "other"}
@@ -105,13 +105,17 @@ def main():
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
-            "WHERE m.labeled_at IS NULL AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) ORDER BY " + order + " LIMIT %s",
+            "WHERE m.labeled_at IS NULL AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
+            "AND NOT (length(m.text) < 300 AND m.text ~* '(повітряна тривога|відбій повітряної|воздушная тревога|отбой воздушной)') ORDER BY " + order + " LIMIT %s",
             (list(SKIP_SOURCES), list(SKIP_TYPES), a.sample or a.limit))
         rows = cur.fetchall()
         cur.execute("SELECT label FROM narratives ORDER BY last_seen_ts DESC NULLS LAST LIMIT 20")
         recent = [r[0] for r in cur.fetchall()]
         ok = bad = 0
-        for mid, text, ts, sid, country, stype, lang in rows:
+        for i, (mid, text, ts, sid, country, stype, lang) in enumerate(rows):
+            if i and i % 10 == 0:  # refresh so novelty/narrative reuse sees labels from this very run
+                cur.execute("SELECT label FROM narratives ORDER BY last_seen_ts DESC NULLS LAST LIMIT 20")
+                recent = [r[0] for r in cur.fetchall()]
             user = json.dumps({"source": {"name": sid, "country": country, "type": stype, "lang": lang},
                                "ts_published": ts.isoformat(), "text": text[:3000], "recent_narratives": recent}, ensure_ascii=False)
             try:
