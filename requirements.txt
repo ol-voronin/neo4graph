@@ -1,0 +1,10 @@
+psycopg[binary]>=3.2
+pgvector>=0.3
+telethon>=1.36
+requests>=2.32
+pandas>=2.2
+numpy>=2.0
+scikit-learn>=1.5
+python-dotenv>=1.0
+anthropic>=0.40
+feedparser>=6.0
