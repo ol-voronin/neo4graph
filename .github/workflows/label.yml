@@ -1,0 +1,43 @@
+name: label
+
+# LLM labeling of rhetoric features (docs/labeling_prompt.md). Needs secrets DATABASE_URL and ANTHROPIC_API_KEY.
+# Manual run with dry_run=true prints labels for a random sample WITHOUT writing (use it for the QA pass).
+
+on:
+  schedule:
+    - cron: "15 * * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max messages to label"
+        default: "150"
+      dry_run:
+        description: "Dry run: random sample of 20, print only, no writes"
+        type: boolean
+        default: true
+
+concurrency:
+  group: label
+  cancel-in-progress: false
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv anthropic
+      - name: Label
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ] || [ -z "$DATABASE_URL" ]; then echo "secrets missing"; exit 1; fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python src/label_messages.py --sample 20 --dry-run
+          else
+            python src/label_messages.py --limit "${{ github.event.inputs.limit || '150' }}"
+          fi
