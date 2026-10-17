@@ -4,9 +4,10 @@ name: label
 # Manual run with dry_run=true prints labels for a random sample WITHOUT writing (use it for the QA pass).
 
 on:
-  # schedule is disabled until the QA pass is approved; re-enable:
-  # schedule:
-  #   - cron: "15 * * * *"
+  # hourly: newest unlabeled posts first, Gemini free tier (10 req/min, ~150 posts per run).
+  # To pause labeling, comment these two lines out.
+  schedule:
+    - cron: "20 * * * *"
   workflow_dispatch:
     inputs:
       limit:
