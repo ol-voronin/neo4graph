@@ -78,7 +78,7 @@ def main():
             user = json.dumps({"source": {"name": sid, "country": country, "type": stype, "lang": lang},
                                "ts_published": ts.isoformat(), "text": text[:3000], "recent_narratives": recent}, ensure_ascii=False)
             try:
-                resp = client.messages.create(model=a.model, max_tokens=800, temperature=0, system=sysmsg,
+                resp = client.messages.create(model=a.model, max_tokens=800, system=sysmsg,
                                               messages=[{"role": "user", "content": user}])
                 raw = parse_json(resp.content[0].text)
                 f = clean(raw)
@@ -112,6 +112,8 @@ def main():
                         (mid, PROMPT_VERSION, a.model, json.dumps(raw, ensure_ascii=False)))
             conn.commit()
     print(f"labeled {ok}, failed {bad}")
+    if bad and not ok:
+        sys.exit(1)  # make a total failure visible (red run) instead of a silent green one
 
 
 if __name__ == "__main__":
