@@ -46,3 +46,17 @@ is optimistic/pessimistic in unknown direction; 11 positives is too few for tigh
 were found in the table that were not written in this session (same annotator tag `claude`); kept, but provenance unverified.
 Ground truth history: t.me/s paging resets the connection after ~400 posts of busy channels (kpszsu ~200 posts/day), so deep history
 is not reachable from here; ground truth grows through the 30-min cron instead.
+
+## Gemini v2 vs gold vs rules (156 labeled gold posts, 11 gold positives = threat>=1; 2026-10-18)
+| Metric (threat>=1) | Gemini v2 | Rules (level>=1) |
+|---|---|---|
+| Recall | 8/11 = 73% [43-90%] | 9/11 = 82% [52-95%] |
+| Precision | 8/15 = 53% [30-75%] | 9/100 = 9% [5-16%] |
+| Specificity | 138/145 = 95% [90-98%] | 54/145 = 37% [30-45%] |
+Gemini: Cohen's kappa 0.58 (binary), exact agreement on 0-3 scale 140/156 = 90% [84-94%].
+Errors: Gemini inflates levels for rhetoric about third theaters/pressure (Houthi warning -> 3, Iran strike talk -> 2, US arms-cutoff threat -> 2,
+Medvedev/Zelensky warnings 3 vs gold 2) and misses mild items (MID reply on NATO nuclear drills, Rybar speculation); several of these are borderline
+in the single-annotator gold, so true disagreement is likely smaller. Rules are not usable as a labeler (91 false positives) but have decent recall.
+Decision: keep Gemini as the labeler; use a coarse binary (threat>=1) and ordinal sum, not the exact 0-3 level, in the lead-lag analysis.
+Scheduled `label` failures on 2026-10-18 were (a) Gemini free-tier 429 quota and (b) Neon dropping an idle SSL connection during retries;
+fixed: stop cleanly on repeated 429, reconnect, cron every 3h, limit 100.
