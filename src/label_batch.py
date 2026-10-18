@@ -53,7 +53,7 @@ def submit(a):
         for mid, text, ts, sid, country, stype, lang in chunk:
             user = json.dumps({"source": {"name": sid, "country": country, "type": stype, "lang": lang},
                                "ts_published": ts.isoformat(), "text": text[:3000], "recent_narratives": recent}, ensure_ascii=False)
-            reqs.append({"custom_id": mid[:64], "params": {"model": MODEL, "max_tokens": 800, "system": sysmsg,
+            reqs.append({"custom_id": mid[:64], "params": {"model": MODEL, "max_tokens": 4000, "output_config": {"effort": "low"}, "system": sysmsg,
                                                           "messages": [{"role": "user", "content": user}]}})
             pending[mid[:64]] = {"id": mid, "ts": ts.isoformat()}
         b = client.messages.batches.create(requests=reqs)

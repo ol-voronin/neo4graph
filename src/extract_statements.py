@@ -136,7 +136,7 @@ def main():
                            "text": text[:4000]}, ensure_ascii=False)
         try:
             if client:
-                resp = client.messages.create(model=a.model, max_tokens=3000, system=sysmsg, messages=[{"role": "user", "content": user}])
+                resp = client.messages.create(model=a.model, max_tokens=6000, output_config={"effort": "low"}, system=sysmsg, messages=[{"role": "user", "content": user}])
                 txt = anthropic_text(resp)
             else:
                 txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"], max_tokens=3000)

@@ -147,7 +147,7 @@ def main():
                                "ts_published": ts.isoformat(), "text": text[:3000], "recent_narratives": recent}, ensure_ascii=False)
             try:
                 if a.provider == "anthropic":
-                    resp = client.messages.create(model=a.model, max_tokens=800, system=sysmsg,
+                    resp = client.messages.create(model=a.model, max_tokens=4000, output_config={"effort": "low"}, system=sysmsg,
                                                   messages=[{"role": "user", "content": user}])
                     txt = anthropic_text(resp)
                 else:

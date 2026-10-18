@@ -73,7 +73,7 @@ def main():
                            "evidence": [{"id": i, "source": s, "ts": t.isoformat(), "text": x} for i, s, t, x in ev]}, ensure_ascii=False)
         try:
             if client:
-                txt = anthropic_text(client.messages.create(model=a.model, max_tokens=600, system=SYSTEM, messages=[{"role": "user", "content": user}]))
+                txt = anthropic_text(client.messages.create(model=a.model, max_tokens=3000, output_config={"effort": "low"}, system=SYSTEM, messages=[{"role": "user", "content": user}]))
             else:
                 txt = gemini_call(a.model, SYSTEM, user, os.environ["GEMINI_API_KEY"], max_tokens=600)
                 time.sleep(6)
