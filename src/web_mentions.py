@@ -1,0 +1,66 @@
+"""Web mentions of a query anywhere public: Google Programmable Search when GOOGLE_CSE_KEY + GOOGLE_CSE_ID are set
+(100 free queries/day), otherwise DuckDuckGo's HTML endpoint (best effort, may be rate limited). Results go to
+web_mentions and are shown in the graph as 'web' nodes.   python src/web_mentions.py "Кацуба Александр"
+"""
+import html
+import json
+import os
+import re
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+UA = {"User-Agent": "Mozilla/5.0 (research; rhetoric-strikes)"}
+
+
+def google(q, key, cx, n=10):
+    url = "https://www.googleapis.com/customsearch/v1?" + urllib.parse.urlencode({"key": key, "cx": cx, "q": q, "num": n, "hl": "uk"})
+    data = json.loads(urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read())
+    return [{"title": i.get("title"), "url": i.get("link"), "snippet": i.get("snippet"), "engine": "google"} for i in data.get("items", [])]
+
+
+def ddg(q, n=10):
+    url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q, "kl": "ua-uk"})
+    page = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8", "replace")
+    out = []
+    for m in re.finditer(r'<a rel="nofollow" class="result__a" href="([^"]+)">(.*?)</a>.*?<a class="result__snippet"[^>]*>(.*?)</a>', page, re.S):
+        href = html.unescape(m.group(1))
+        if "uddg=" in href:
+            href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
+        out.append({"title": html.unescape(re.sub(r"<[^>]+>", "", m.group(2))), "url": href,
+                    "snippet": html.unescape(re.sub(r"<[^>]+>", "", m.group(3))), "engine": "ddg"})
+        if len(out) >= n:
+            break
+    return out
+
+
+def main():
+    q = " ".join(sys.argv[1:]).strip()
+    if len(q) < 3:
+        sys.exit("query too short")
+    key, cx = os.environ.get("GOOGLE_CSE_KEY"), os.environ.get("GOOGLE_CSE_ID")
+    try:
+        hits = google(q, key, cx) if key and cx else ddg(q)
+    except Exception as e:  # noqa: BLE001
+        print("search failed:", str(e)[:200])
+        hits = []
+    print(f"{q!r}: {len(hits)} hits via {'google' if key and cx else 'ddg (best effort)'}")
+    for h in hits[:10]:
+        print(" -", (h["title"] or "")[:70], "|", h["url"][:90])
+    from load_to_db import connect
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS web_mentions (query text, url text, title text, snippet text, engine text, domain text, "
+                "fetched_at timestamptz DEFAULT now(), PRIMARY KEY (query, url))")
+    for h in hits:
+        dom = urllib.parse.urlparse(h["url"]).netloc
+        cur.execute("INSERT INTO web_mentions(query, url, title, snippet, engine, domain) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (query, url) DO UPDATE SET "
+                    "title=EXCLUDED.title, snippet=EXCLUDED.snippet, fetched_at=now()", (q, h["url"], h["title"], h["snippet"], h["engine"], dom))
+    conn.commit()
+
+
+if __name__ == "__main__":
+    main()

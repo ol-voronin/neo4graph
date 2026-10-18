@@ -59,7 +59,7 @@ def read_dict(z, name, key):
     return out
 
 
-def stream(zip_path: Path, causes: set, court_codes: set, judges: tuple = ()):
+def stream(zip_path: Path, causes: set, court_codes: set, judges: tuple = (), category_re=None, form_re=None):
     with zipfile.ZipFile(zip_path) as z:
         names = {n.lower(): n for n in z.namelist()}
         courts = read_dict(z, names.get("courts.csv", "courts.csv"), "court_code")
@@ -75,7 +75,10 @@ def stream(zip_path: Path, causes: set, court_codes: set, judges: tuple = ()):
                 n += 1
                 cause = (row.get("cause_num") or "").strip()
                 jl = (row.get("judge") or "").lower() if judges else ""
-                if cause in causes or row.get("court_code") in court_codes or (judges and any(j in jl for j in judges)):
+                cat_ok = bool(category_re) and bool(category_re.search(cats.get(row.get("category_code")) or ""))
+                if cat_ok and form_re and not form_re.search(forms.get(row.get("judgment_code")) or ""):
+                    cat_ok = False
+                if cause in causes or row.get("court_code") in court_codes or (judges and any(j in jl for j in judges)) or cat_ok:
                     yield {"doc_id": row["doc_id"], "cause_num": cause, "court_code": row.get("court_code"),
                            "court": courts.get(row.get("court_code")), "judgment_form": forms.get(row.get("judgment_code")),
                            "justice_kind": kinds.get(row.get("justice_kind")), "category": cats.get(row.get("category_code")),
@@ -85,11 +88,60 @@ def stream(zip_path: Path, causes: set, court_codes: set, judges: tuple = ()):
             print(f"scanned {n} rows")
 
 
+def rtf_to_text(data: bytes) -> str:
+    """Minimal RTF -> text: handles \\'hh (cp1251) and \\uNNNN escapes, drops control words and groups."""
+    s = data.decode("latin-1", "replace")
+    out, i, n, skip_depth, depth = [], 0, len(s), None, 0
+    while i < n:
+        c = s[i]
+        if c == "{":
+            depth += 1; i += 1
+            if s.startswith("\\*", i) or s.startswith("\\fonttbl", i) or s.startswith("\\colortbl", i) or s.startswith("\\stylesheet", i) or s.startswith("\\info", i):
+                if skip_depth is None:
+                    skip_depth = depth
+            continue
+        if c == "}":
+            if skip_depth is not None and depth == skip_depth:
+                skip_depth = None
+            depth -= 1; i += 1; continue
+        if c == "\\":
+            m = re.match(r"\\'([0-9a-fA-F]{2})", s[i:i + 4])
+            if m:
+                if skip_depth is None:
+                    out.append(bytes([int(m.group(1), 16)]).decode("cp1251", "replace"))
+                i += 4; continue
+            m = re.match(r"\\u(-?\d+)\s?", s[i:i + 10])
+            if m:
+                if skip_depth is None:
+                    out.append(chr(int(m.group(1)) % 65536))
+                i += m.end()
+                if i < n and s[i] not in "\\{}":
+                    i += 1  # skip the fallback char
+                continue
+            m = re.match(r"\\([a-zA-Z]+)(-?\d+)? ?", s[i:i + 30])
+            if m:
+                w = m.group(1)
+                if skip_depth is None and w in ("par", "line", "pard"):
+                    out.append("\n")
+                elif skip_depth is None and w == "tab":
+                    out.append(" ")
+                i += m.end(); continue
+            i += 2; continue
+        if skip_depth is None and c not in "\r\n":
+            out.append(c)
+        i += 1
+    txt = "".join(out)
+    return re.sub(r"[ \t]+", " ", re.sub(r"\s*\n\s*", "\n", txt)).strip()
+
+
 def fetch_text(url):
     try:
-        html = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60).read().decode("utf-8", "replace")
+        data = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60).read()
     except Exception as e:  # noqa: BLE001
         return None, str(e)[:120]
+    if data[:5] == b"{\\rtf" or url.lower().endswith(".rtf"):
+        return rtf_to_text(data)[:200000], None
+    html = data.decode("utf-8", "replace")
     txt = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
     txt = re.sub(r"<br\s*/?>|</p>|</div>|</tr>", "\n", txt, flags=re.I)
     txt = re.sub(r"<[^>]+>", " ", txt)
@@ -106,9 +158,13 @@ def main():
     ap.add_argument("--courts", default="", help="extra court codes, comma-separated")
     ap.add_argument("--texts", type=int, default=0, help="fetch full text for up to N matched decisions without text")
     ap.add_argument("--judge", default="", help="judge name fragment(s), comma-separated")
+    ap.add_argument("--category", default="", help="regex on the case category name (e.g. 'земел'), indexes every matching decision of the year")
+    ap.add_argument("--form", default="", help="regex on judgment form, combined with --category (e.g. 'Вирок|Рішення')")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     judges = tuple(" ".join(x.lower().split()[:2]) for x in a.judge.split(",") if x.strip())
+    category_re = re.compile(a.category, re.I) if a.category else None
+    form_re = re.compile(a.form, re.I) if a.form else None
     years = []
     for part in a.years.split(","):
         if "-" in part:
@@ -133,12 +189,12 @@ def main():
             causes |= set(CAUSE_RE.findall(t or ""))
         print(f"case numbers from db: {len(causes)}")
     print(f"years {years}, causes {len(causes)}, courts {court_codes}, judges {judges}")
-    if not causes and not court_codes and not judges:
+    if not causes and not court_codes and not judges and not category_re:
         print("nothing to match"); return
     total = 0
     for y in years:
         zp = download(y, ROOT / "data" / "edrsr" / f"edrsr_data_{y}.zip")
-        for rec in stream(zp, causes, court_codes, judges):
+        for rec in stream(zp, causes, court_codes, judges, category_re, form_re):
             total += 1
             if a.dry_run:
                 if total <= 20:
@@ -159,7 +215,8 @@ def main():
     print(f"matched {total} decisions")
     if a.texts and cur:
         cur.execute("SELECT doc_id, doc_url FROM court_decisions WHERE text IS NULL AND doc_url IS NOT NULL AND status='1' "
-                    "ORDER BY adjudication_date DESC NULLS LAST LIMIT %s", (a.texts,))
+                    + ("AND cause_num = ANY(%s) " if causes else "") + "ORDER BY adjudication_date DESC NULLS LAST LIMIT %s",
+                    ((list(causes), a.texts) if causes else (a.texts,)))
         rows = cur.fetchall()
         ok = 0
         for doc_id, url in rows:

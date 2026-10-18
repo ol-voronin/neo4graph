@@ -62,7 +62,18 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .link.reg{stroke-dasharray:3 3}
 .node circle{stroke:var(--panel);stroke-width:1.5px;cursor:pointer}
 .node.center circle{stroke:var(--accent);stroke-width:3px}
-@media (max-width:760px){.main{grid-template-columns:1fr;grid-template-rows:minmax(300px,55vh) auto}.panel{max-height:45vh}}
+.chat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.chat .log{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow:auto}
+.msg{padding:8px 10px;border-radius:10px;max-width:92%;font-size:13px;line-height:1.45;white-space:pre-wrap}
+.msg.me{align-self:flex-end;background:var(--accent-soft)}
+.msg.ai{align-self:flex-start;border:1px solid var(--line)}
+.msg .meta{display:block;margin-top:4px}
+.chat form{display:flex;gap:6px}
+.chat textarea{flex:1;min-width:0;resize:vertical;min-height:40px;max-height:120px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:14px}
+.chat button.send{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:0 14px;font:inherit;cursor:pointer}
+.chat button.send:disabled{opacity:.6;cursor:default}
+.chat .ex{display:flex;flex-wrap:wrap;gap:4px}
+@media (max-width:760px){.main{grid-template-columns:1fr;grid-template-rows:minmax(300px,50vh) auto}.panel{max-height:45vh}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -84,6 +95,12 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
   <aside class="panel" id="panel"><p class="empty">Введіть об'єкт у пошук або натисніть вузол.</p></aside>
 </div>
 <div class="legend" id="legend"></div>
+<section class="chat" id="chat" hidden>
+  <div class="meta">Запит словами: модель перекладає його у пошук по базі та реєстрах і відповідає з конкретикою.</div>
+  <div class="log" id="chatlog"></div>
+  <div class="ex" id="chatex"></div>
+  <form id="chatform"><textarea id="chatq" placeholder="Напр.: знайди справи за 2025 рік щодо земельних питань" aria-label="Запит до бази"></textarea><button class="send" id="chatsend" type="submit">Запитати</button></form>
+</section>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script>window.__API__=true</script>
 <script>
@@ -210,6 +227,16 @@ function panel(nodes,edges){
 }
 function select(id){state.center=id;render();}
 window.addEventListener('resize',()=>{if(state.center)render()});
+// chat (API version only)
+if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const log=document.getElementById('chatlog'),form=document.getElementById('chatform'),ta=document.getElementById('chatq'),btn=document.getElementById('chatsend');const hist=[];
+  const EX=['знайди справи за 2025 рік щодо земельних питань','які категорії справ є в індексі за 2021','що відомо про Кацубу і його компанії','заяви Кремля з погрозами за останній місяць і чи збулися'];
+  const ex=document.getElementById('chatex');EX.forEach(x=>{const b=document.createElement('button');b.className='chip';b.type='button';b.textContent=x;b.onclick=()=>{ta.value=x;form.requestSubmit()};ex.appendChild(b)});
+  function add(role,text,trace){const d=document.createElement('div');d.className='msg '+(role==='me'?'me':'ai');d.textContent=text;if(trace&&trace.length){const m=document.createElement('span');m.className='meta';m.textContent='кроки: '+trace.map(t=>t.tool+(t.input&&Object.keys(t.input).length?'('+Object.entries(t.input).map(([k,v])=>k+'='+v).join(', ')+')':'')).join(' → ');d.appendChild(m)}log.appendChild(d);log.scrollTop=log.scrollHeight;return d}
+  function linkify(d){d.innerHTML=d.innerHTML.replace(/\b(\d{1,4}\/\d{1,6}\/\d{2})\b/g,(m)=>`<a href="#" data-case="${m}" style="color:var(--accent)">${m}</a>`);d.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid){select(cid);q.value='Справа '+c;window.scrollTo({top:0,behavior:'smooth'})}})}
+  form.onsubmit=async e=>{e.preventDefault();const t=ta.value.trim();if(!t)return;ta.value='';add('me',t);hist.push({role:'user',content:t});btn.disabled=true;const wait=add('ai','Шукаю…');
+    try{const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:hist})})).json();wait.remove();if(r.error){add('ai','Помилка: '+r.error)}else{const d=add('ai',r.answer||'(порожня відповідь)',r.trace);linkify(d);hist.push({role:'assistant',content:r.answer||''})}}
+    catch(err){wait.remove();add('ai','Не вдалося звʼязатися з сервером.')}btn.disabled=false;};
+  ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}};}
 // initial object: the most connected person
 const start=G.nodes.filter(n=>n.type==='person').sort((a,b)=>(adj.get(b.id)||[]).length-(adj.get(a.id)||[]).length)[0];
 if(start){q.value=start.label;select(start.id)}

@@ -72,13 +72,16 @@ def main():
         names = q if kind == "org" else ""
         run([py, "src/edr_match.py", "--download", "--from-db", "--names", names] + (["--edrpou", q] if kind == "edrpou" else []), log, "ЄДР: company record, founders, signers")
         run([py, "src/edrsr_index.py", "--years", a.years, "--from-db", "--texts", str(a.texts)], log, "ЄДРСР: cases referencing it")
+        run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
     elif kind == "person":
         run([py, "src/corpus_mentions.py", q], log, "corpus: posts and statements mentioning the name")
+        run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
         run([py, "src/nazk_corrupt.py", "--name", q], log, "НАЗК: register of corruption offenders")
         run([py, "src/edr_match.py", "--download", "--person", q], log, "ЄДР: companies where the person is founder/signer")
         run([py, "src/edrsr_index.py", "--years", a.years, "--judge", q, "--texts", str(a.texts)], log, "ЄДРСР: decisions by/with the name")
     else:
         run([py, "src/corpus_mentions.py", q], log, "corpus: full-text search")
+        run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
     cur.execute("INSERT INTO query_log(query, kind, steps) VALUES (%s,%s,%s)", (q, kind, json.dumps(log, ensure_ascii=False)))
     conn.commit()
     print("\nsummary:", json.dumps([{k: s[k] for k in ("step", "rc", "secs")} for s in log], ensure_ascii=False, indent=1))

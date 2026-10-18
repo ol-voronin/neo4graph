@@ -25,7 +25,13 @@ def main():
         cur.execute("UPDATE query_queue SET status='running', started_at=now() WHERE id=%s", (qid,))
         conn.commit()
         yr = "20" + query.split("/")[2][:2] if kind == "case" and query.count("/") == 2 else "2021"
-        cmd = [sys.executable, "src/resolve_query.py", query, "--years", f"{yr}-2026"] + (["--kind", kind] if kind else [])
+        if kind == "category_index":  # "2025|земел" or "2025|земел|Вирок"
+            parts = query.split("|")
+            cmd = [sys.executable, "src/edrsr_index.py", "--years", parts[0], "--category", parts[1]] + (["--form", parts[2]] if len(parts) > 2 and parts[2] else []) + ["--texts", "0"]
+        elif kind == "web":
+            cmd = [sys.executable, "src/web_mentions.py", query]
+        else:
+            cmd = [sys.executable, "src/resolve_query.py", query, "--years", f"{yr}-2026"] + (["--kind", kind] if kind else [])
         print("run:", " ".join(cmd))
         r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
         tail = (r.stdout + r.stderr)[-1500:]
