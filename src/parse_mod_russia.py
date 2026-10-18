@@ -21,17 +21,49 @@ ROOT = Path(__file__).resolve().parent.parent
 HEAD = re.compile(r"(?:перехвачен|уничтожен|сбит)\w*", re.I)
 DRONES = re.compile(r"(?:перехвачен\w*\s+и\s+)?(?:уничтожен\w*|сбит\w*|перехвачен\w*)\s+(\d{1,5})\s+украинск\w+\s+беспилотн", re.I)
 DRONES2 = re.compile(r"(\d{1,5})\s+украинск\w+\s+беспилотн", re.I)
-MISSILES = re.compile(r"(\d{1,4})\s+(?:\w+\s+){0,2}ракет\w*", re.I)
+NUMWORDS = {"одна": 1, "одну": 1, "один": 1, "одного": 1, "одной": 1, "две": 2, "два": 2, "двух": 2, "три": 3, "трех": 3, "трёх": 3, "четыре": 4, "четырех": 4,
+            "пять": 5, "пяти": 5, "шесть": 6, "шести": 6, "семь": 7, "семи": 7, "восемь": 8, "восьми": 8, "девять": 9, "девяти": 9, "десять": 10, "десяти": 10,
+            "одиннадцать": 11, "двенадцать": 12, "тринадцать": 13, "четырнадцать": 14, "пятнадцать": 15, "шестнадцать": 16, "семнадцать": 17,
+            "восемнадцать": 18, "девятнадцать": 19, "двадцать": 20, "двадцати": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50}
+NUM = r"(\d{1,4}|" + "|".join(sorted(NUMWORDS, key=len, reverse=True)) + r")"
+MISSILE_UNIT = (r"(?:(?:крылат|управляем|оперативно-тактическ|противокорабельн|противорадиолокационн|зенитн|баллистическ|авиационн|реактивн|дальнобойн|американск|французск|британск|украинск|большой\s+дальности)\w*\s+){0,4}"
+                r"(?:ракет\w*|снаряд\w*(?:\s+(?:РСЗО|системы\s+залпового\s+огня))?(?:\s+(?:«|\")?(?:HIMARS|Хаймарс|Химарс|Ольха|Вампир|Vampire))?|авиационн\w*\s+бомб\w*|авиабомб\w*)")
+MISSILES = re.compile(NUM + r"\s+" + MISSILE_UNIT, re.I)
+MISSILE_SINGULAR = re.compile(r"(?<![\d\w])(?:реактивный снаряд|крылатая ракета|управляемая авиационная бомба|баллистическая ракета|ракета)\b", re.I)
+DRONES_W = re.compile(NUM + r"\s+(?:украинск\w+\s+)?(?:беспилотн|БПЛА|БпЛА)", re.I)
+INTERCEPT = re.compile(r"(?:средствами (?:противовоздушной обороны|ПВО)|перехвачен\w*|сбит\w*|уничтожен\w*)[^\n]{0,500}", re.I)
+
+
+def to_int(tok: str) -> int:
+    tok = tok.lower()
+    return int(tok) if tok.isdigit() else NUMWORDS.get(tok, 0)
 
 
 def parse(text: str):
-    if not HEAD.search(text) or "украинск" not in text[:600].lower():
+    if not HEAD.search(text) or "украинск" not in text[:1500].lower():
         return None
+    if re.search(r"(?:со|с) \d{1,2}(?: \w+)? по \d{1,2} \w+ \d{4}|на прошедшей неделе|за неделю", text[:400].lower()):
+        return None  # weekly digests ("Сводка ... со 2 по 8 мая"); daily multi-part summaries ("Часть 2") stay
     m = DRONES.search(text[:700]) or DRONES2.search(text[:700])
-    mis = sum(int(x) for x in MISSILES.findall(text[:700]))
+    head = text[:900]
+    mis = 0
+    for sent in INTERCEPT.findall(text[:4000]):
+        low = sent.lower()
+        if "украинск" not in low and "бпла" not in low and "беспилот" not in low and "всу" not in low:
+            continue
+        if "с начала" in low or low.startswith("всего"):  # cumulative since-2022 totals, not the day's claim
+            continue
+        if re.search(r"за (?:прошедшую |текущую |минувшую )?неделю|за период|с \d{1,2} по \d{1,2}", low) or re.search(r"за (?:прошедшую |текущую |минувшую )?неделю|за период|с \d{1,2} по \d{1,2}", text[:300].lower()):
+            continue  # weekly digests
+        found = MISSILES.findall(sent)
+        mis += sum(to_int(x) for x in found)
+        if not found and MISSILE_SINGULAR.search(sent):
+            mis += 1
+    if not m:
+        m = DRONES_W.search(head)
     if not m and not mis:
         return None
-    return {"drones": int(m.group(1)) if m else 0, "missiles": mis}
+    return {"drones": to_int(m.group(1)) if m else 0, "missiles": mis}
 
 
 def main(sql=False):

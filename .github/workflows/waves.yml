@@ -1,0 +1,40 @@
+name: waves-backfill
+
+# Nationwide ground truth: Air Force daily summaries (ЗБИТО/ПОДАВЛЕНО) back to a date, collected with a content
+# filter so the chatty kpszsu channel costs almost nothing, then parsed into `waves` and loaded.
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Go back until (UTC, YYYY-MM-DD)"
+        default: "2026-03-31"
+
+jobs:
+  waves:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv
+      - name: Collect summaries (filtered, resumable)
+        run: |
+          mkdir -p data/telegram
+          bash scripts/deepfill_match.sh kpszsu _summaries 'ЗБИТО/ПОДАВЛЕНО|У ніч на|Протягом дня' "${{ github.event.inputs.since }}"
+          wc -l data/telegram/kpszsu_summaries.jsonl
+      - name: Parse and load
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python src/parse_kpszsu.py
+          python src/load_to_db.py messages
+          python src/load_to_db.py waves
+      - uses: actions/upload-artifact@v4
+        with:
+          name: waves-${{ github.run_id }}
+          path: |
+            data/telegram/kpszsu_summaries.jsonl
+            data/waves_kpszsu.jsonl
