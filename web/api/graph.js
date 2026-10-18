@@ -62,6 +62,34 @@ export default async function handler(req, res) {
       } };
       people(e.founders, "founder"); people(e.benef, "beneficiary"); people(e.signers, "signer");
     }
+    // query-driven findings: corpus hits and web mentions attach to the object that was searched
+    const [hits, web] = await Promise.all([
+      sql`SELECT h.query, h.message_id m, h.where_found w, mm.source_id s, mm.ts_published::date t, mm.url u, left(regexp_replace(mm.text,'\s+',' ','g'),260) x
+          FROM query_hits h JOIN messages mm ON mm.id = h.message_id ORDER BY mm.ts_published DESC LIMIT 2000`.catch(() => []),
+      sql`SELECT query, url, title, snippet, domain, engine FROM web_mentions ORDER BY fetched_at DESC LIMIT 1000`.catch(() => []),
+    ]);
+    const objFor = (qq) => {
+      const k = qq.toLowerCase().replace(/\s+/g, " ").trim();
+      const cand = ["person:" + k, "org:" + k];
+      for (const c of cand) if (nodes.has(c)) return c;
+      const m = [...nodes.keys()].find((id) => (id.startsWith("person:") || id.startsWith("org:")) && id.slice(id.indexOf(":") + 1).startsWith(k.split(" ")[0]));
+      return m || node("person:" + k, /^(тов|пат|прат|ат|дп|кп)\b/i.test(k) ? "org" : "person", qq.replace(/\b\w/gu, (c) => c.toUpperCase()));
+    };
+    for (const h of hits) {
+      if (!msgMap.has(h.m)) msgMap.set(h.m, { m: h.m, s: h.s, t: h.t, u: h.u, x: h.x });
+      edge(objFor(h.query), post(h.m), "mentioned_in", h.m, { date: h.t, src: h.s });
+    }
+    for (const w of web) {
+      if (/site:/.test(w.query)) continue;
+      const wid = node("web:" + w.url, "web", (w.title || w.domain || w.url).slice(0, 80), { url: w.url, text: w.snippet, src: w.domain, engine: w.engine });
+      edge(objFor(w.query), wid, "web_mention", null, { src: w.domain });
+    }
+    for (const w of web) {
+      if (!/site:reyestr/.test(w.query)) continue;
+      const base = w.query.replace(/\s*site:\S+/, "").replace(/"/g, "");
+      const wid = node("web:" + w.url, "web", (w.title || w.url).slice(0, 80), { url: w.url, text: w.snippet, src: "reyestr.court.gov.ua", engine: w.engine });
+      edge(objFor(base), wid, "court_register_mention", null, { src: "reyestr.court.gov.ua" });
+    }
     const srcSet = [...new Set(msgs.map((x) => x.s))].sort();
     return json(res, 200, { nodes: [...nodes.values()], edges: [...edges.values()], sources: srcSet, generated: new Date().toISOString().slice(0, 10) });
   } catch (e) {
