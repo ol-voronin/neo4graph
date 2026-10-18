@@ -18,6 +18,6 @@ export function classify(q) {
   if (CAUSE_RE.test(q)) return "case";
   if (EDRPOU_RE.test(q)) return "edrpou";
   if (/^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо)\b|[«»"]/i.test(q)) return "org";
-  if (/^[А-ЯІЇЄҐA-Z][\w'’-]+(\s+[А-ЯІЇЄҐA-Z][\w'’-]+){1,2}$/u.test(q)) return "person";
+  if (/^\p{Lu}[\p{L}'’-]+(\s+\p{Lu}[\p{L}'’.-]+){1,2}$/u.test(q)) return "person";
   return "text";
 }
