@@ -14,6 +14,7 @@ export const EDRPOU_RE = /^\d{8}$/;
 
 export function classify(q) {
   q = q.trim();
+  if (/^https?:\/\//i.test(q)) return "url";
   if (CAUSE_RE.test(q)) return "case";
   if (EDRPOU_RE.test(q)) return "edrpou";
   if (/^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо)\b|[«»"]/i.test(q)) return "org";

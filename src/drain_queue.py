@@ -30,6 +30,9 @@ def main():
             cmd = [sys.executable, "src/edrsr_index.py", "--years", parts[0], "--category", parts[1]] + (["--form", parts[2]] if len(parts) > 2 and parts[2] else []) + ["--texts", "0"]
         elif kind == "web":
             cmd = [sys.executable, "src/web_mentions.py", query]
+        elif kind == "url":  # "https://... | 932/2641/25" optional case after a pipe
+            parts = [x.strip() for x in query.split("|")]
+            cmd = [sys.executable, "src/ingest_url.py", parts[0]] + (["--cause", parts[1]] if len(parts) > 1 and parts[1] else [])
         else:
             cmd = [sys.executable, "src/resolve_query.py", query, "--years", f"{yr}-2026"] + (["--kind", kind] if kind else [])
         print("run:", " ".join(cmd))

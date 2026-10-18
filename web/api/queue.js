@@ -11,7 +11,7 @@ export default async function handler(req, res) {
       for await (const chunk of req) body += chunk;
       const { query, kind } = JSON.parse(body || "{}");
       const q = (query || "").trim();
-      if (q.length < 3 || q.length > 200) return json(res, 400, { error: "query length" });
+      if (q.length < 3 || q.length > 600) return json(res, 400, { error: "query length" });
       const open = await sql`SELECT id, status, created_at FROM query_queue WHERE query = ${q} AND status IN ('queued','running') LIMIT 1`;
       if (open.length) return json(res, 200, { queued: true, existing: true, ...open[0] });
       const k = kind || classify(q);
