@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Граф зв'язків</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working screen — top bar (search + filters), graph canvas left, evidence panel right; stacks on phones. */
+:root{
+  --bg:#f5f6f4; --panel:#ffffff; --fg:#1b2024; --muted:#5e6a72; --line:#d9ded9; --accent:#0f6b6e; --accent-soft:#d9ecec;
+  --c-person:#2f6fde; --c-org:#c2731a; --c-case:#8a3ab9; --c-asset:#2a9d5c; --c-post:#8b949a; --c-registry:#b8322f; --c-decision:#0f7a8c; --c-court:#6b5b95;
+  --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#15191c;--panel:#1d2327;--fg:#e8ecee;--muted:#9aa6ad;--line:#333c42;--accent:#5fc3c5;--accent-soft:#1f3b3c;--c-person:#7aa4ff;--c-org:#e9a35c;--c-case:#c48af0;--c-asset:#5fd48f;--c-post:#7d888f;--c-registry:#f0776f;--c-decision:#5ccbe0;--c-court:#b3a4e8;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15191c;--panel:#1d2327;--fg:#e8ecee;--muted:#9aa6ad;--line:#333c42;--accent:#5fc3c5;--accent-soft:#1f3b3c;--c-person:#7aa4ff;--c-org:#e9a35c;--c-case:#c48af0;--c-asset:#5fd48f;--c-post:#7d888f;--c-registry:#f0776f;--c-decision:#5ccbe0;--c-court:#b3a4e8;color-scheme:dark}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:14px;line-height:1.45;display:flex;flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px;box-sizing:border-box;gap:10px}
+h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
+.top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.search{position:relative;flex:1 1 260px;min-width:0}
+.search input{width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
+.search input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:8px;max-height:300px;overflow:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.sugg button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;padding:8px 10px;border:0;background:none;color:var(--fg);font:inherit;cursor:pointer}
+.sugg button:hover,.sugg button:focus{background:var(--accent-soft);outline:none}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.meta{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.02em}
+.filters{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.group{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.group .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-right:2px}
+.chip{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:999px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.chip:focus-visible{outline:2px solid var(--accent)}
+select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg)}
+.main{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,360px);gap:10px}
+.canvas{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:360px;overflow:hidden}
+.canvas svg{width:100%;height:100%;display:block;touch-action:none}
+.canvas .hint{position:absolute;left:10px;bottom:8px;font-size:11px;color:var(--muted);pointer-events:none}
+.canvas .count{position:absolute;right:10px;top:8px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow:auto;min-width:0}
+.panel h2{font-size:16px;margin:0 0 2px;font-weight:600;text-wrap:balance}
+.panel h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;font-size:13px}
+.kv .k{color:var(--muted)}
+.rel{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.rel li{display:grid;grid-template-columns:1fr;gap:2px;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
+.rel li button{all:unset;cursor:pointer;color:var(--fg);font-weight:500;display:flex;gap:6px;align-items:center}
+.rel li button:hover{color:var(--accent)}
+.rel .r{font-size:12px;color:var(--muted)}
+.ev{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.ev li{font-size:12px;color:var(--muted);border-left:2px solid var(--line);padding-left:8px}
+.ev a{color:var(--accent);text-decoration:none}
+.ev a:hover{text-decoration:underline}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;gap:5px;align-items:center}
+.tip{position:absolute;pointer-events:none;background:var(--fg);color:var(--bg);padding:4px 8px;border-radius:6px;font-size:12px;max-width:260px;transform:translate(-50%,-130%);white-space:normal}
+.empty{color:var(--muted);font-size:13px}
+.node text{font-family:var(--font);font-size:11px;fill:var(--fg);pointer-events:none;paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round}
+.link{stroke:var(--line);stroke-opacity:.9}
+.link.reg{stroke-dasharray:3 3}
+.node circle{stroke:var(--panel);stroke-width:1.5px;cursor:pointer}
+.node.center circle{stroke:var(--accent);stroke-width:3px}
+@media (max-width:760px){.main{grid-template-columns:1fr;grid-template-rows:minmax(300px,55vh) auto}.panel{max-height:45vh}}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Граф зв'язків · антикорупційний шар</h1>
+  <div class="search"><input id="q" type="search" placeholder="Особа, компанія, номер справи (991/1234/21), ЄДРПОУ…" autocomplete="off" aria-label="Пошук об'єкта"><div class="sugg" id="sugg" hidden></div></div>
+  <span class="meta" id="stats"></span>
+</div>
+<div class="filters">
+  <div class="group" id="types"><span class="lbl">Вузли</span></div>
+  <div class="group" id="srcs"><span class="lbl">Джерела</span></div>
+  <div class="group"><span class="lbl">Роль</span><select id="role"><option value="">усі</option></select></div>
+  <div class="group"><span class="lbl">Дати</span><input type="date" id="d0"><span class="meta">–</span><input type="date" id="d1"></div>
+  <div class="group"><span class="lbl">Глибина</span><select id="depth"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></div>
+</div>
+<div class="main">
+  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><span class="meta count" id="count"></span><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div></div>
+  <aside class="panel" id="panel"><p class="empty">Введіть об'єкт у пошук або натисніть вузол.</p></aside>
+</div>
+<div class="legend" id="legend"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>window.__API__=true</script>
+<script>
+(async function(){
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+const G=window.__API__?await (await fetch('/api/graph')).json():JSON.parse(document.getElementById('data').textContent);if(G.error){document.getElementById('panel').innerHTML='<p class="empty">База недоступна: '+esc(G.error)+'</p>';return}
+const TYPES={person:'Особи',org:'Організації',case:'Справи',asset:'Активи',post:'Пости',registry:'ЄДР',decision:'Рішення судів',court:'Суди'};
+const COLORS={person:'var(--c-person)',org:'var(--c-org)',case:'var(--c-case)',asset:'var(--c-asset)',post:'var(--c-post)',registry:'var(--c-registry)',decision:'var(--c-decision)',court:'var(--c-court)'};
+const REL={affiliated:'пов\'язаний з',reports:'повідомляє про',suspect:'підозрюваний',defendant:'обвинувачений',convicted:'засуджений',acquitted:'виправданий',official_commenting:'коментує як посадовець',investigator:'слідчий',prosecutor:'прокурор',judge:'суддя',lawyer:'адвокат',journalist:'журналіст',politician_mentioned:'згаданий політик',owner:'власник',other:'інше',involved:'фігурує',seized_or_named:'актив у справі',owns_or_linked:'актив пов\'язано з особою',registry_record:'запис у ЄДР',decision_of:'рішення у справі',judge_of:'суддя',heard_in:'розглядалось у',founder:'засновник',beneficiary:'бенефіціар',signer:'підписант / керівник',investigation:'розслідує',prosecution:'обвинувачення',court:'суд',victim:'потерпілий'};
+const SRC={'tg:sap_gov_ua':'САП','tg:NAZK_gov_ua':'НАЗК','tg:PressCourt':'Суди','tg:fuckcorruption':'ЦПК','tg:fightcorruptor':'TI Ukraine','tg:BihusInfo':'Bihus.Info','tg:slidstvo_info':'Слідство.Інфо','tg:ukrpravda_news':'УП'};
+const byId=new Map(G.nodes.map(n=>[n.id,n]));
+const CAUSE_RE=/^\d{1,4}\/\d{1,6}\/\d{2}(?:-[\w\/]+)?$/;const CAN_QUEUE=!!window.__API__;let DEC={cases:{},courts:{},scope:''};
+async function loadDecisions(){if(window.__API__||DEC.loaded)return DEC;try{const r=await fetch('decisions.json');const d=await r.json();DEC.cases=d.cases||{};DEC.courts=d.courts||{};DEC.scope=d.scope||'';}catch(e){}DEC.loaded=true;document.getElementById('stats').textContent+=` · рішень у індексі: ${Object.values(DEC.cases).reduce((a,b)=>a+b.length,0)} у ${Object.keys(DEC.cases).length} справах`;return DEC;}
+async function fetchCase(num){if(!window.__API__){await loadDecisions();return {decisions:DEC.cases[num]||[],queue:null}}const r=await (await fetch('/api/case?num='+encodeURIComponent(num))).json();if(r.decisions&&r.decisions.length){DEC.cases[num]=r.decisions.map(d=>({id:d.doc_id,cc:d.court_code,f:d.judgment_form,k:d.justice_kind,cat:d.category,d:(d.adjudication_date||'').slice(0,10),r:(d.receipt_date||'').slice(0,10),p:(d.date_publ||'').slice(0,10),j:d.judge,u:d.doc_url,s:d.status,y:d.year,t:d.has_text}));for(const d of r.decisions)DEC.courts[d.court_code]=d.court;}return r;}
+async function casePrefix(t){if(!window.__API__){await loadDecisions();return Object.keys(DEC.cases).filter(k=>k.startsWith(t)).slice(0,12).map(k=>({cause_num:k,n:DEC.cases[k].length,d0:DEC.cases[k][0].d,d1:DEC.cases[k].at(-1).d}))}const r=await (await fetch('/api/case?prefix='+encodeURIComponent(t))).json();return r.cases||[]}
+async function enqueue(q,kind){const r=await fetch('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,kind})});return r.json();}
+function fmtQueue(qs){if(!qs)return '';const st={queued:'у черзі',running:'виконується',done:'виконано',failed:'помилка'}[qs.status]||qs.status;return `Ланцюжок по реєстрах: ${st} (${new Date(qs.created_at).toLocaleString('uk-UA')}).`}
+function addNode(n){if(!byId.has(n.id)){byId.set(n.id,n);G.nodes.push(n)}return byId.get(n.id)}
+function addEdge(e){const k=e.source+'|'+e.target+'|'+e.rel;if(adj.get(e.source)?.some(x=>x.source===e.source&&x.target===e.target&&x.rel===e.rel))return;e.i=G.edges.length;G.edges.push(e);(adj.get(e.source)||adj.set(e.source,[]).get(e.source)).push(e);(adj.get(e.target)||adj.set(e.target,[]).get(e.target)).push(e);}
+function mergeCase(cause){const list=(DEC&&DEC.cases[cause])||[];if(!list.length)return null;const cid='case:'+cause.toLowerCase();addNode({id:cid,type:'case',label:'Справа '+cause,ref:cause,agency:'HACC'});
+  for(const d of list){const did='decision:'+d.id;addNode({id:did,type:'decision',label:`${d.f||'Рішення'} ${d.d||''}`,doc_id:d.id,form:d.f,kind:d.k,category:d.cat,date:d.d,receipt:d.r,publ:d.p,judge:d.j,url:d.u,status:d.s,court:DEC.courts[d.cc]||d.cc,year:d.y});
+    addEdge({source:did,target:cid,rel:'decision_of',msgs:[],date:d.d});const ctid='court:'+d.cc;addNode({id:ctid,type:'court',label:DEC.courts[d.cc]||('Суд '+d.cc)});addEdge({source:did,target:ctid,rel:'heard_in',msgs:[],date:d.d});
+    if(d.j){const pid='person:'+d.j.toLowerCase().replace(/\s+/g,' ');addNode({id:pid,type:'person',label:d.j,position:'суддя, '+(DEC.courts[d.cc]||'')});addEdge({source:pid,target:did,rel:'judge_of',msgs:[],date:d.d});}}
+  return cid;}
+const adj=new Map(); G.edges.forEach((e,i)=>{e.i=i;(adj.get(e.source)||adj.set(e.source,[]).get(e.source)).push(e);(adj.get(e.target)||adj.set(e.target,[]).get(e.target)).push(e);});
+const msgIndex=new Map(G.nodes.filter(n=>n.type==='post').map(n=>[n.id.slice(5),n]));
+const state={types:new Set(Object.keys(TYPES)),srcs:new Set(G.sources),role:'',d0:'',d1:'',depth:2,center:null};
+try{const s=JSON.parse(localStorage.getItem('graph-ui')||'{}');if(s.depth)state.depth=s.depth;}catch(_){}
+function save(){try{localStorage.setItem('graph-ui',JSON.stringify({depth:state.depth}))}catch(_){}}
+// chips
+const typesEl=document.getElementById('types'),srcsEl=document.getElementById('srcs');
+function chip(parent,label,color,on,toggle){const b=document.createElement('button');b.className='chip';b.type='button';b.setAttribute('aria-pressed',on);b.innerHTML=(color?`<span class="dot" style="background:${color}"></span>`:'')+label;b.onclick=()=>{const v=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',v);toggle(v);render();};parent.appendChild(b);}
+Object.entries(TYPES).forEach(([t,l])=>chip(typesEl,l,COLORS[t],true,v=>v?state.types.add(t):state.types.delete(t)));
+G.sources.forEach(s=>chip(srcsEl,SRC[s]||s,null,true,v=>v?state.srcs.add(s):state.srcs.delete(s)));
+const roleSel=document.getElementById('role');[...new Set(G.edges.map(e=>e.rel))].sort().forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=REL[r]||r;roleSel.appendChild(o)});
+roleSel.onchange=()=>{state.role=roleSel.value;render()};
+const d0=document.getElementById('d0'),d1=document.getElementById('d1');d0.onchange=()=>{state.d0=d0.value;render()};d1.onchange=()=>{state.d1=d1.value;render()};
+const depthSel=document.getElementById('depth');depthSel.value=state.depth;depthSel.onchange=()=>{state.depth=+depthSel.value;save();render()};
+document.getElementById('legend').innerHTML=Object.entries(TYPES).map(([t,l])=>`<span><span class="dot" style="background:${COLORS[t]}"></span>${l}</span>`).join('');
+document.getElementById('stats').textContent=`${G.nodes.length} вузлів · ${G.edges.length} зв'язків · дані на ${G.generated}`;
+// filters on edges
+function edgeOk(e){
+  if(state.role&&e.rel!==state.role)return false;
+  if(e.src&&!state.srcs.has(e.src))return false;
+  if(e.date){if(state.d0&&e.date<state.d0)return false;if(state.d1&&e.date>state.d1)return false;}
+  const a=byId.get(e.source),b=byId.get(e.target);
+  return state.types.has(a.type)&&state.types.has(b.type);
+}
+function ego(center,depth){
+  const seen=new Map([[center,0]]);const q=[center];const edges=new Set();
+  while(q.length){const u=q.shift();const d=seen.get(u);if(d>=depth)continue;
+    for(const e of adj.get(u)||[]){if(!edgeOk(e))continue;const v=e.source===u?e.target:e.source;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);q.push(v)}}}
+  return {nodes:[...seen.keys()].map(id=>byId.get(id)),edges:[...edges]};
+}
+// search
+const q=document.getElementById('q'),sugg=document.getElementById('sugg');
+function hay(n){return [n.label,n.edrpou,n.position,n.full,n.summary,n.text,n.agency,n.ref,n.judge,n.doc_id].filter(Boolean).join(' ').toLowerCase()}
+function search(t){t=t.trim().toLowerCase();if(t.length<2)return[];const hits=[];for(const n of G.nodes){const h=hay(n);const i=h.indexOf(t);if(i>=0)hits.push([n.type==='post'?2:(i===0?0:1),-(adj.get(n.id)||[]).length,n])}
+  return hits.sort((a,b)=>a[0]-b[0]||a[1]-b[1]).slice(0,12).map(h=>h[2]);}
+function notFound(t){sugg.innerHTML=`<div style="padding:10px 12px"><div>Нічого не знайдено за запитом «${esc(t)}».</div><div class="meta" style="margin-top:4px">Пошук іде по іменах, назвах компаній і справ, ЄДРПОУ, посадах, описах справ, суддях і текстах постів. Номер справи вводьте повністю (наприклад 991/1234/21).</div></div>`;sugg.hidden=false;}
+async function tryCase(t){if(!CAUSE_RE.test(t))return false;sugg.innerHTML=`<div style="padding:10px 12px" class="meta">Шукаю справу ${esc(t)}…</div>`;sugg.hidden=false;const r=await fetchCase(t);const cid=mergeCase(t);if(cid){select(cid);sugg.hidden=true;q.value='Справа '+t;return true}
+  const yr='20'+(t.split('/')[2]||'').slice(0,2);let msg=`<div>Справи «${esc(t)}» ще немає в базі (суд ${esc(t.split('/')[0])}, ${yr} рік).</div>`;
+  if(r.queue&&['queued','running'].includes(r.queue.status)){msg+=`<div class="meta" style="margin-top:4px">${fmtQueue(r.queue)} Зазвичай 5–15 хв; сторінка перевірить сама.</div>`;pollCase(t);}
+  else if(CAN_QUEUE){msg+=`<div class="meta" style="margin-top:4px">Можна запустити пошук у реєстрі судових рішень за ${yr}–2026 (ЄДРСР) і далі по ланцюжку: тексти → учасники → ЄДР.</div><button class="chip" id="runchain" type="button" style="margin-top:8px">Запустити пошук у реєстрах</button>`;}
+  else{msg+=`<div class="meta" style="margin-top:4px">Ця копія сторінки статична: пошук у реєстрах запускається з повної версії або через чат.</div>`;}
+  sugg.innerHTML=`<div style="padding:10px 12px">${msg}</div>`;sugg.hidden=false;const b=document.getElementById('runchain');if(b)b.onclick=async()=>{b.disabled=true;b.textContent='Ставлю в чергу…';const qr=await enqueue(t,'case');b.textContent=qr.queued?'У черзі. Перевірятиму щохвилини.':('Не вдалося: '+(qr.error||''));if(qr.queued)pollCase(t);};return true;}
+let pollTimer=null;function pollCase(t){clearInterval(pollTimer);pollTimer=setInterval(async()=>{const r=await fetchCase(t);if(r.decisions&&r.decisions.length){clearInterval(pollTimer);const cid=mergeCase(t);select(cid);sugg.hidden=true;q.value='Справа '+t;}else if(r.queue&&['done','failed'].includes(r.queue.status)){clearInterval(pollTimer);sugg.innerHTML=`<div style="padding:10px 12px">${r.queue.status==='done'?'Пошук виконано: у реєстрі рішень за цим номером не знайдено.':'Пошук завершився з помилкою; спробуйте пізніше.'}</div>`;sugg.hidden=false;}},60000);}
+q.oninput=async()=>{const t=q.value.trim();if(t.length<2){sugg.hidden=true;return}
+  if(/^\d{1,4}\/\d{0,6}/.test(t)){if(CAUSE_RE.test(t)){await tryCase(t);return}const keys=await casePrefix(t);sugg.innerHTML='';if(!keys.length){sugg.innerHTML=`<div style="padding:10px 12px" class="meta">Немає справ, що починаються на «${esc(t)}». Введіть повний номер (наприклад 991/1234/21).</div>`;sugg.hidden=false;return}
+    keys.forEach(k=>{const b=document.createElement('button');b.type='button';b.innerHTML=`<span class="dot" style="background:${COLORS.case}"></span><span>Справа ${esc(k.cause_num)}</span><span class="meta">${k.n} рішень · ${esc((k.d0||'').slice(0,10))}…${esc((k.d1||'').slice(0,10))}</span>`;b.onclick=async()=>{await fetchCase(k.cause_num);mergeCase(k.cause_num);select('case:'+k.cause_num.toLowerCase());sugg.hidden=true;q.value='Справа '+k.cause_num};sugg.appendChild(b)});sugg.hidden=false;return}
+  const r=search(t);sugg.innerHTML='';if(!r.length){notFound(t);return}
+  r.forEach(n=>{const b=document.createElement('button');b.type='button';b.innerHTML=`<span class="dot" style="background:${COLORS[n.type]}"></span><span>${esc(n.label)}</span><span class="meta">${TYPES[n.type]}${n.position?' · '+esc(n.position):''}${n.type==='post'?' · '+esc(SRC[n.src]||n.src||''):''} · ${(adj.get(n.id)||[]).length}</span>`;b.onclick=()=>{select(n.id);sugg.hidden=true;q.value=n.label};sugg.appendChild(b)});sugg.hidden=false;};
+q.onkeydown=async e=>{if(e.key==='Enter'){const t=q.value.trim();if(await tryCase(t))return;const r=search(t);if(r[0]){select(r[0].id);sugg.hidden=true;q.value=r[0].label}else if(t.length>=2){notFound(t);document.getElementById('panel').innerHTML=`<p class="empty">За запитом «${esc(t)}» нічого не знайдено.</p>`}}if(e.key==='Escape')sugg.hidden=true};
+document.addEventListener('click',e=>{if(!e.target.closest('.search'))sugg.hidden=true});
+
+// render
+const svg=d3.select('#svg'),tip=document.getElementById('tip');let sim=null;
+function render(){
+  if(!state.center)return;
+  const {nodes,edges}=ego(state.center,state.depth);
+  document.getElementById('count').textContent=`${nodes.length} вузлів · ${edges.length} зв'язків`;
+  const W=svg.node().clientWidth||600,H=svg.node().clientHeight||400;
+  svg.selectAll('*').remove();
+  const g=svg.append('g');
+  svg.call(d3.zoom().scaleExtent([.3,4]).on('zoom',ev=>g.attr('transform',ev.transform)));
+  const ns=nodes.map(n=>({...n})),idx=new Map(ns.map(n=>[n.id,n]));
+  const ls=edges.map(e=>({...e,source:idx.get(e.source),target:idx.get(e.target)}));
+  const link=g.append('g').selectAll('line').data(ls).join('line').attr('class',d=>'link'+(d.rel==='registry_record'||d.rel==='founder'||d.rel==='beneficiary'||d.rel==='signer'?' reg':'')).attr('stroke-width',d=>Math.min(4,1+(d.msgs||[]).length*.6));
+  const node=g.append('g').selectAll('g').data(ns).join('g').attr('class',d=>'node'+(d.id===state.center?' center':''))
+    .call(d3.drag().on('start',(ev,d)=>{if(!ev.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y}).on('drag',(ev,d)=>{d.fx=ev.x;d.fy=ev.y}).on('end',(ev,d)=>{if(!ev.active)sim.alphaTarget(0);d.fx=null;d.fy=null}));
+  node.append('circle').attr('r',d=>d.id===state.center?11:d.type==='post'?4:6+Math.min(6,((adj.get(d.id)||[]).length)*.4)).attr('fill',d=>COLORS[d.type])
+    .on('click',(ev,d)=>{ev.stopPropagation();select(d.id)})
+    .on('mousemove',(ev,d)=>{tip.hidden=false;tip.textContent=d.label+(d.position?' · '+d.position:'');const r=svg.node().getBoundingClientRect();tip.style.left=(ev.clientX-r.left)+'px';tip.style.top=(ev.clientY-r.top)+'px'})
+    .on('mouseleave',()=>tip.hidden=true);
+  node.filter(d=>d.type!=='post'||d.id===state.center).append('text').attr('dx',9).attr('dy',4).text(d=>d.label.length>34?d.label.slice(0,33)+'…':d.label);
+  if(sim)sim.stop();
+  sim=d3.forceSimulation(ns).force('link',d3.forceLink(ls).id(d=>d.id).distance(d=>d.source.type==='post'||d.target.type==='post'?40:70)).force('charge',d3.forceManyBody().strength(-180)).force('center',d3.forceCenter(W/2,H/2)).force('collide',d3.forceCollide(16))
+    .on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${d.x},${d.y})`)});
+  panel(nodes,edges);
+}
+function panel(nodes,edges){
+  const n=byId.get(state.center);const p=document.getElementById('panel');
+  const kv=[];if(n.position)kv.push(['Посада',n.position]);if(n.type==='decision'){kv.push(['№ в ЄДРСР',n.doc_id],['Форма',n.form],['Судочинство',n.kind],['Категорія',n.category],['Суд',n.court],['Суддя',n.judge],['Ухвалено',n.date],['Надійшло до реєстру',n.receipt],['Опубліковано / остання дія',n.publ],['Статус',n.status==='1'?'активне':'вилучене']);}if(n.ref)kv.push(['Номер справи',n.ref]);if(n.edrpou)kv.push(['ЄДРПОУ',n.edrpou]);if(n.agency)kv.push(['Орган',n.agency]);if(n.stage)kv.push(['Стадія',n.stage]);if(n.stan)kv.push(['Стан',n.stan]);if(n.kind)kv.push(['Тип',n.kind]);if(n.summary)kv.push(['Суть',n.summary]);if(n.full)kv.push(['Повна назва',n.full]);if(n.src)kv.push(['Джерело',SRC[n.src]||n.src]);if(n.date)kv.push(['Дата',n.date]);
+  let html=`<div class="meta">${TYPES[n.type]}</div><h2>${esc(n.label)}</h2>`+(kv.length?`<div class="kv">${kv.map(([k,v])=>`<span class="k">${k}</span><span>${esc(v)}</span>`).join('')}</div>`:'');
+  if(n.type==='post'&&n.url)html+=`<p><a class="ev" href="${esc(n.url)}" target="_blank" rel="noopener">Відкрити пост ↗</a></p>`;
+  if(n.type==='decision'&&n.url)html+=`<p class="ev"><a href="${esc(n.url)}" target="_blank" rel="noopener">Текст рішення у реєстрі (RTF) ↗</a></p><p class="meta">Сторони, адвокати і прокурори є лише в тексті рішення; вони з'являться у графі після кроку «текст → сутності» ланцюжка запиту.</p>`;
+  const mine=edges.filter(e=>e.source===n.id||e.target===n.id);
+  const groups=new Map();mine.forEach(e=>{const other=e.source===n.id?e.target:e.source;const key=e.rel;(groups.get(key)||groups.set(key,[]).get(key)).push([other,e])});
+  html+=`<h3>Зв'язки (${mine.length})</h3>`;
+  if(!mine.length)html+=`<p class="empty">За поточними фільтрами зв'язків немає.</p>`;
+  for(const [rel,items] of [...groups].sort((a,b)=>b[1].length-a[1].length)){
+    html+=`<div class="meta" style="margin:8px 0 4px">${esc(REL[rel]||rel)} · ${items.length}</div><ul class="rel">`;
+    for(const [oid,e] of items){const o=byId.get(oid);const ev=(e.msgs||[]).map(m=>msgIndex.get(m)).filter(Boolean).slice(0,3);
+      html+=`<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}${ev.length?`<ul class="ev">${ev.map(m=>`<li>${m.date||''} · ${esc(SRC[m.src]||m.src||'')} · ${esc(m.text||'')}${m.url?` <a href="${esc(m.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:(e.rel==='registry_record'||e.detail?'':'')}</li>`}
+    html+='</ul>';
+  }
+  p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));p.scrollTop=0;
+}
+function select(id){state.center=id;render();}
+window.addEventListener('resize',()=>{if(state.center)render()});
+// initial object: the most connected person
+const start=G.nodes.filter(n=>n.type==='person').sort((a,b)=>(adj.get(b.id)||[]).length-(adj.get(a.id)||[]).length)[0];
+if(start){q.value=start.label;select(start.id)}
+})();
+</script>
+
+</body>
+</html>

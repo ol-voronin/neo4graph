@@ -1,0 +1,36 @@
+name: queue
+
+# Drains query_queue (filled by the web page's "run registry search" button): runs resolve_query for each queued item.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: query-queue
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv anthropic
+      - uses: actions/cache@v4
+        with:
+          path: |
+            data/edr/uo.zip
+            data/nazk/corrupt.json
+          key: dumps-${{ github.run_id }}
+          restore-keys: dumps-
+      - name: Drain queue
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
+        run: python src/drain_queue.py --max 3
