@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import PANEL_SQL, PROMPT_VERSION, SKIP_SOURCES, SKIP_TYPES, clean, parse_json, system_prompt  # noqa: E402
+from label_messages import PANEL_SQL, PROMPT_VERSION, SKIP_SOURCES, SKIP_TYPES, anthropic_text, clean, parse_json, system_prompt  # noqa: E402
 
 BATCH_DIR = ROOT / "data" / "batches"
 MODEL = "claude-haiku-5-5"
@@ -112,7 +112,7 @@ def fetch(a):
                 bad += 1
                 continue
             try:
-                raw = parse_json(res.result.message.content[0].text)
+                raw = parse_json(anthropic_text(res.result.message))
                 write_result(cur, raw, info["id"], datetime.fromisoformat(info["ts"]), meta["model"])
                 ok += 1
             except Exception as e:  # noqa: BLE001

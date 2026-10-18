@@ -44,6 +44,11 @@ def parse_json(s: str):
     return json.loads(s)
 
 
+def anthropic_text(resp) -> str:
+    """Concatenate text blocks only (responses may carry thinking blocks first)."""
+    return "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
+
+
 class QuotaExceeded(RuntimeError):
     """Gemini free-tier quota hit (per minute or per day). Retrying within one run only burns time: stop cleanly."""
 
@@ -144,7 +149,7 @@ def main():
                 if a.provider == "anthropic":
                     resp = client.messages.create(model=a.model, max_tokens=800, system=sysmsg,
                                                   messages=[{"role": "user", "content": user}])
-                    txt = resp.content[0].text
+                    txt = anthropic_text(resp)
                 else:
                     txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"])
                     time.sleep(delay)

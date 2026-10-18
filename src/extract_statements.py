@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import QuotaExceeded, gemini_call, parse_json  # noqa: E402
+from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json  # noqa: E402
 
 PROMPT_VERSION = "st-v1"
 SOURCES = ["tg:MID_Russia", "tg:news_kremlin", "tg:medvedev_telegram", "tg:mod_russia",            # RU official
@@ -137,7 +137,7 @@ def main():
         try:
             if client:
                 resp = client.messages.create(model=a.model, max_tokens=3000, system=sysmsg, messages=[{"role": "user", "content": user}])
-                txt = resp.content[0].text
+                txt = anthropic_text(resp)
             else:
                 txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"], max_tokens=3000)
                 time.sleep(delay)
