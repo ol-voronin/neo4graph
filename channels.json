@@ -431,6 +431,69 @@
       "tier": "A",
       "subscribers": "501K",
       "role": "regional/national monitoring"
+    },
+    {
+      "name": "suspilnenews",
+      "country": "UA",
+      "type": "independent",
+      "title": "Suspilne News",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "BBCUkrainian",
+      "country": "GB",
+      "type": "independent",
+      "title": "BBC News Ukrainian",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "bbcrussian",
+      "country": "GB",
+      "type": "independent",
+      "title": "BBC Russian Service",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "radiosvoboda",
+      "country": "US",
+      "type": "independent",
+      "title": "Radio Svoboda (ru)",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "kyivindependent_official",
+      "country": "UA",
+      "type": "independent",
+      "title": "The Kyiv Independent",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "hromadske_ua",
+      "country": "UA",
+      "type": "independent",
+      "title": "hromadske",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "censor_net",
+      "country": "UA",
+      "type": "independent",
+      "title": "Censor.NET",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "kommersant",
+      "country": "RU",
+      "type": "independent",
+      "title": "Kommersant",
+      "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "rbc_news",
+      "country": "RU",
+      "type": "independent",
+      "title": "RBC News",
+      "role": "news agency / media (added 2026-10-18)"
     }
   ],
   "inactive_or_unavailable": [
