@@ -1,0 +1,41 @@
+name: deepfill
+
+# One-off deep history backfill of selected Telegram channels into Neon (resumable chunks, then load).
+# Run manually. Public repo => unlimited Actions minutes. Keep the channel list modest: Neon free tier is 0.5 GB
+# (~3 KB per message incl. indexes). Skip the very chatty agencies (tass_agency, SolovievLive).
+
+on:
+  workflow_dispatch:
+    inputs:
+      channels:
+        description: "Space-separated channel names"
+        default: "V_Zelenskiy_official GeneralStaffZSU MID_Russia rybar wargonzo sashakots meduzalive ukrpravda_news RVvoenkor voenkorKotenok dva_majors boris_rozhin"
+      since:
+        description: "Go back until this date (UTC, YYYY-MM-DD)"
+        default: "2026-04-01"
+
+jobs:
+  deepfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv
+      - name: Backfill (resumable chunks)
+        run: |
+          mkdir -p data/telegram
+          bash scripts/deepfill.sh "${{ github.event.inputs.channels }}" "${{ github.event.inputs.since }}"
+      - name: Load into Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "DATABASE_URL missing"; exit 1; fi
+          python src/load_to_db.py messages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deepfill-counts
+          path: data/telegram/*.jsonl
+          retention-days: 3
