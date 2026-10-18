@@ -19,6 +19,11 @@ from label_messages import QuotaExceeded, gemini_call, parse_json  # noqa: E402
 PROMPT_VERSION = "ee-v1"
 ANTICORR_SOURCES = ["tg:sap_gov_ua", "tg:NAZK_gov_ua", "tg:PressCourt", "tg:fuckcorruption", "tg:fightcorruptor",
                     "tg:BihusInfo", "tg:slidstvo_info"]
+# General news sources: only posts matching the anti-corruption keyword filter are candidates (saves LLM quota).
+GENERAL_SOURCES = ["tg:ukrpravda_news"]
+ANTICORR_RE = (r"(НАБУ|САП\b|ВАКС|Вищ\w+ антикорупційн|НАЗК|ДБР|антикорупц|корупці|хабар|неправомірн\w+ вигод|"
+               r"обвинувальн\w+ акт|е-деклар|декларуван|незаконн\w+ збагачен|розкрадан|заволодін|зловживан|"
+               r"відмиван|схем\w* на|Міндіч|Енергоатом|Укренерго)")
 ROLES = {"suspect", "defendant", "convicted", "acquitted", "official_commenting", "investigator", "prosecutor", "judge",
          "lawyer", "journalist", "politician_mentioned", "owner", "other", "private_skipped"}
 
@@ -102,8 +107,10 @@ def main():
     cur = conn.cursor()
     cur.execute("SELECT m.id, m.text, m.ts_published, m.source_id FROM messages m "
                 "LEFT JOIN entity_extractions e ON e.message_id = m.id "
-                "WHERE e.message_id IS NULL AND m.source_id = ANY(%s) AND length(m.text) >= %s "
-                "ORDER BY " + ("random()" if a.random else "m.ts_published DESC") + " LIMIT %s", (srcs, a.min_len, a.limit))
+                "WHERE e.message_id IS NULL AND length(m.text) >= %s "
+                "AND (m.source_id = ANY(%s) OR (m.source_id = ANY(%s) AND m.text ~* %s)) "
+                "ORDER BY " + ("random()" if a.random else "m.ts_published DESC") + " LIMIT %s",
+                (a.min_len, srcs, GENERAL_SOURCES, ANTICORR_RE, a.limit))
     rows = cur.fetchall()
     print(f"candidates: {len(rows)}")
     ok = bad = quota_hits = 0
