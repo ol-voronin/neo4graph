@@ -33,6 +33,8 @@ jobs:
         run: pip install "psycopg[binary]" python-dotenv
       - name: Collect channels
         run: python src/collect_telegram.py --all --pages "${{ github.event.inputs.pages || '3' }}" --delay 1.0
+      - name: Collect RSS sources (US official)
+        run: python src/collect_rss.py --all
       - name: Collect Air Force summaries (waves)
         run: |
           python src/collect_telegram.py --channels kpszsu --query "ЗБИТО/ПОДАВЛЕНО" --tag _summaries --pages 3 --delay 1.0

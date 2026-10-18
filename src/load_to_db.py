@@ -62,9 +62,11 @@ def cmd_alerts(a):
 
 def cmd_messages(a):
     rows = []
-    for p in sorted((ROOT / "data" / "telegram").glob("*.jsonl")):
+    for p in sorted((ROOT / "data" / "telegram").glob("*.jsonl")) + sorted((ROOT / "data" / "rss").glob("*.jsonl")):
         for line in p.open(encoding="utf-8"):
             m = json.loads(line)
+            if not m.get("ts_published"):
+                continue
             rows.append((m["id"], m["source_id"], m["ts_published"], "", m["text"], m["url"], m["hash"]))
     print(f"parsed {len(rows)} messages")
     if a.dry_run:

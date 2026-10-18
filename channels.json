@@ -543,6 +543,13 @@
       "type": "independent",
       "title": "Слідство.Інфо",
       "role": "anticorruption investigative media"
+    },
+    {
+      "name": "golosameriki",
+      "country": "US",
+      "type": "state_media",
+      "title": "Голос Америки (ru)",
+      "role": "US statements/actions in Russian; US domestic politics coverage"
     }
   ],
   "inactive_or_unavailable": [

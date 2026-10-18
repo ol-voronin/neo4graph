@@ -1,0 +1,54 @@
+name: statements
+
+# Statements / actions / regional strike events layer (docs/statements_layer.md): extract from official, regional,
+# US and media sources, then resolve statements whose horizon has passed. Shares the Gemini quota with label/extract.
+
+on:
+  schedule:
+    - cron: "50 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max messages to extract"
+        default: "60"
+      resolve_limit:
+        description: "Max statements to resolve"
+        default: "30"
+      provider:
+        description: "gemini or anthropic"
+        default: "gemini"
+      dry_run:
+        description: "Print only, no writes"
+        type: boolean
+        default: false
+
+concurrency:
+  group: label
+  cancel-in-progress: false
+
+jobs:
+  statements:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv anthropic
+      - name: Extract statements and events
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
+        run: |
+          python src/extract_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '60' }}" --random ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+      - name: Resolve due statements
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
+        run: |
+          python src/resolve_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.resolve_limit || '30' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
