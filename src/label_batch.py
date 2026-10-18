@@ -9,6 +9,7 @@ System prompt is sent with cache_control so the ~2k-token instructions are bille
 """
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -53,9 +54,10 @@ def submit(a):
         for mid, text, ts, sid, country, stype, lang in chunk:
             user = json.dumps({"source": {"name": sid, "country": country, "type": stype, "lang": lang},
                                "ts_published": ts.isoformat(), "text": text[:3000], "recent_narratives": recent}, ensure_ascii=False)
-            reqs.append({"custom_id": mid[:64], "params": {"model": MODEL, "max_tokens": 4000, "output_config": {"effort": "low"}, "system": sysmsg,
-                                                          "messages": [{"role": "user", "content": user}]}})
-            pending[mid[:64]] = {"id": mid, "ts": ts.isoformat()}
+            cid = re.sub(r"[^a-zA-Z0-9_-]", "_", mid)[:64]  # custom_id must match ^[a-zA-Z0-9_-]{1,64}$
+            reqs.append({"custom_id": cid, "params": {"model": MODEL, "max_tokens": 4000, "output_config": {"effort": "low"}, "system": sysmsg,
+                                                     "messages": [{"role": "user", "content": user}]}})
+            pending[cid] = {"id": mid, "ts": ts.isoformat()}
         b = client.messages.batches.create(requests=reqs)
         meta = {"batch_id": b.id, "n": len(reqs), "model": MODEL, "submitted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "written": False, "ids": {k: pending[k] for k in (r["custom_id"] for r in reqs)}}
