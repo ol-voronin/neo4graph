@@ -97,6 +97,33 @@ export default async function handler(req, res) {
       const pid = node("person:" + norm(ml.name_norm).toLowerCase(), "person", norm(ml.name_norm), { position: ml.position });
       edge(pid, cid, "named_by_media", null, { detail: `за даними ЗМІ (${Math.round((ml.confidence || 0) * 100)}%): ${ml.role} — «${(ml.quote || "").slice(0, 160)}» ${ml.url}` });
     }
+    // registry hits from the local worker (Ukrainian IP): court register full-text search, NAZK declarations, ЄДР ФОП
+    const [rhits, alinks] = await Promise.all([
+      sql`SELECT query, qkind, source, ref, title, snippet, url, payload FROM registry_hits ORDER BY created_at DESC LIMIT 3000`.catch(() => []),
+      sql`SELECT src_kind, src_name, dst_kind, dst_name, relation, note, created_at::date d FROM analyst_links`.catch(() => []),
+    ]);
+    for (const h of rhits) {
+      const p = h.payload || {};
+      const who = objFor(h.query);
+      if (h.source === "reyestr") {
+        const did = node("decision:" + h.ref, "decision", `${p.judgment_form || "Рішення"} ${p.adjudication_date || ""}`, { doc_id: h.ref, form: p.judgment_form, kind: p.justice_kind,
+          court: p.court, judge: p.judge, date: p.adjudication_date, receipt: p.receipt_date, url: h.url, status: "1", text: h.snippet, src: "reyestr.court.gov.ua" });
+        if (p.cause_num) edge(did, node("case:" + p.cause_num.toLowerCase(), "case", "Справа " + p.cause_num, { ref: p.cause_num }), "decision_of", null);
+        edge(who, did, "court_register_mention", null, { detail: h.snippet, src: "reyestr.court.gov.ua" });
+      } else if (h.source === "nazk_decl") {
+        const did = node("decl:" + h.ref, "declaration", h.title, { url: h.url, text: h.snippet, position: p.work_post, org: p.work_place, year: p.year, region: p.region, src: "НАЗК" });
+        edge(who, did, "declaration", null, { detail: h.snippet, src: "public.nazk.gov.ua" });
+      } else if (h.source === "edr_fop") {
+        const fid = node("fop:" + h.ref, "registry", h.title, { stan: p.stan, text: h.snippet, src: "ЄДР (ФОП)" });
+        edge(who, fid, "fop_record", null, { detail: h.snippet, src: "ЄДР" });
+      }
+    }
+    // analyst-supplied links (the researcher's own knowledge): kept apart from registry facts and labelled as such
+    for (const l of alinks) {
+      const a = node(l.src_kind + ":" + norm(l.src_name).toLowerCase(), l.src_kind, norm(l.src_name));
+      const b = node(l.dst_kind + ":" + norm(l.dst_name).toLowerCase(), l.dst_kind, norm(l.dst_name));
+      edge(a, b, l.relation, null, { detail: `вказано аналітиком ${l.d || ""}${l.note ? ": " + l.note : ""}`, src: "analyst" });
+    }
     const srcSet = [...new Set(msgs.map((x) => x.s))].sort();
     return json(res, 200, { nodes: [...nodes.values()], edges: [...edges.values()], sources: srcSet, generated: new Date().toISOString().slice(0, 10) });
   } catch (e) {
