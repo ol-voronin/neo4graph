@@ -42,7 +42,10 @@ def norm(s: str) -> str:
 def download():
     DUMP.parent.mkdir(parents=True, exist_ok=True)
     print("downloading", DUMP_URL)
-    urllib.request.urlretrieve(DUMP_URL, DUMP)
+    req = urllib.request.Request(DUMP_URL, headers={"User-Agent": "Mozilla/5.0 (research; rhetoric-strikes)"})  # bare urllib UA gets 403
+    with urllib.request.urlopen(req, timeout=120) as r, open(DUMP, "wb") as f:
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
     print("done", DUMP.stat().st_size)
 
 
