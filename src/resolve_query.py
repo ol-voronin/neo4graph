@@ -47,12 +47,43 @@ def run(cmd, log, step):
     return r.returncode == 0
 
 
+def expand(cur, conn, q, kind, log, py):
+    """Second hop: companies of a person (ЄДР) and people/orgs named in a case's texts -> mentions everywhere."""
+    targets = []
+    if kind == "person":
+        cur.execute("SELECT short_name, edrpou FROM edr_orgs WHERE EXISTS (SELECT 1 FROM unnest(matched_queries) m WHERE m ILIKE %s)", ("person:%" + q.split()[0].lower() + "%",))
+        targets += [("org", r[0]) for r in cur.fetchall() if r[0]]
+    elif kind in ("org", "edrpou"):
+        cur.execute("SELECT founders, beneficiaries, signers FROM edr_orgs WHERE short_name ILIKE %s OR name ILIKE %s OR edrpou = %s", ("%" + q + "%", "%" + q + "%", q))
+        for row in cur.fetchall():
+            for lst in row:
+                for f in (lst or []):
+                    nm = str(f).split(";")[0].strip()
+                    if nm and not re.search(r"\d{8}", str(f).split(";")[1] if ";" in str(f) else ""):
+                        targets.append(("person", " ".join(nm.title().split()[:2])))
+    elif kind == "case":
+        cur.execute("SELECT DISTINCT name_norm FROM ee_persons p JOIN messages m ON m.id = p.message_id WHERE m.source_id = 'edrsr:court' AND m.text LIKE %s", ("Справа " + q + "%",))
+        targets += [("person", r[0]) for r in cur.fetchall()]
+        cur.execute("SELECT DISTINCT name FROM ee_orgs o JOIN messages m ON m.id = o.message_id WHERE m.source_id = 'edrsr:court' AND m.text LIKE %s AND o.kind = 'company'", ("Справа " + q + "%",))
+        targets += [("org", r[0]) for r in cur.fetchall()]
+    seen, targets = set(), [t for t in targets if not (t in seen or seen.add(t))][:8]
+    print(f"\n== hop 2: {len(targets)} linked objects: {targets}")
+    for k, t in targets:
+        run([py, "src/corpus_mentions.py", t], log, f"hop2 corpus: {t}")
+        run([py, "src/web_mentions.py", t], log, f"hop2 web: {t}")
+        run([py, "src/web_mentions.py", f'"{t}" site:reyestr.court.gov.ua'], log, f"hop2 court register (web): {t}")
+        if k == "org":
+            run([py, "src/edr_match.py", "--download", "--names", t], log, f"hop2 ЄДР: {t}")
+    conn.commit()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("query")
     ap.add_argument("--years", default="2021-2026")
     ap.add_argument("--texts", type=int, default=30)
     ap.add_argument("--kind", default=None, help="override classification: case|edrpou|org|person|text")
+    ap.add_argument("--hops", type=int, default=1, help="expand found companies/persons one more hop (corpus + web + registry mentions)")
     a = ap.parse_args()
     q = a.query.strip()
     kind = a.kind or classify(q)
@@ -82,6 +113,8 @@ def main():
     else:
         run([py, "src/corpus_mentions.py", q], log, "corpus: full-text search")
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
+    if a.hops >= 1:
+        expand(cur, conn, q, kind, log, py)
     cur.execute("INSERT INTO query_log(query, kind, steps) VALUES (%s,%s,%s)", (q, kind, json.dumps(log, ensure_ascii=False)))
     conn.commit()
     print("\nsummary:", json.dumps([{k: s[k] for k in ("step", "rc", "secs")} for s in log], ensure_ascii=False, indent=1))

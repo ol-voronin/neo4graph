@@ -130,7 +130,8 @@ def rtf_to_text(data: bytes) -> str:
         if skip_depth is None and c not in "\r\n":
             out.append(c)
         i += 1
-    txt = "".join(out)
+    txt = "".join(out).replace("\x00", "")
+    txt = re.sub(r"[\x01-\x08\x0b\x0c\x0e-\x1f]", "", txt)
     return re.sub(r"[ \t]+", " ", re.sub(r"\s*\n\s*", "\n", txt)).strip()
 
 
@@ -221,6 +222,8 @@ def main():
         ok = 0
         for doc_id, url in rows:
             txt, err = fetch_text(url)
+            if txt:
+                txt = txt.replace("\x00", "")
             if txt and len(txt) > 200:
                 cur.execute("UPDATE court_decisions SET text=%s, text_fetched_at=now() WHERE doc_id=%s", (txt, doc_id))
                 ok += 1
