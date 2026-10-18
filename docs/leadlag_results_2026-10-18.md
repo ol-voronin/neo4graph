@@ -47,3 +47,25 @@ yesterday already tells you. The pre-registered success criterion (AUC gain with
 4. Narrative-level features (novelty, specific narratives) rather than coarse shares.
 5. Operational early-warning posts (monitoring channels) as a separate, non-rhetorical baseline; if that is the
    only thing that predicts, the rhetoric hypothesis is answered.
+
+## Test 1 (weekly / 3-day aggregation) — run 2026-10-18 evening
+
+Weekly (n=29): no consistent lead for any signal (p_fw 0.13–1.0; one isolated thr_ua lag-1 vs missiles+KAB r=+0.51
+p=0.04 among 20 tests, treated as chance). 3-day blocks (n=67): same, scattered signs. Too few points to say more.
+
+## Test 2 (target without drones: missiles + guided bombs; and binary "missile day")
+
+`idx_mk = log1p(10*missiles + kab)`, and `missile_day = missiles > 0` (90/201 days).
+
+- Cross-correlation lag 1: tgt_ru +0.27 (p_fw 0.02), l2_ru +0.24 (0.13) for idx_mk; for missile_day tgt_ru +0.29
+  (0.01), l2_ru +0.32 (0.02), thr_ru +0.27 (0.07). The reverse direction is now weaker than forward
+  (idx_mk -> tgt_ru +0.25, p 0.08), unlike the drone-inclusive index.
+- Out-of-sample missile_day (expanding logistic, n_test 171, 84 positives; baseline = own lags/means):
+  baseline AUC 0.683, Brier 0.234 (naive 0.250). Adding yesterday's rhetoric share:
+  thr_ru +0.031 [-0.003, +0.076], l2_ru +0.026 [-0.004, +0.062], tgt_ru +0.012, l2_ua +0.018. Brier improves
+  0.234 -> 0.224. Halves (l2_ru): base 0.58/0.59, full 0.59/0.65 — the gain sits in the second half.
+
+Reading: on missile days (not drones) Russian threat rhetoric the day before carries a small, consistent,
+borderline signal: +0.03 AUC, CI touching zero. Not yet the pre-registered success, but the first result that
+points the right way in direction, consistency across related signals, and out-of-sample behaviour. Target for
+the next round: missile days, not the drone-inclusive index.
