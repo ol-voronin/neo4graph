@@ -19,8 +19,8 @@ or already named as suspects/defendants in the official source; bystanders, vict
 persons are not extracted (`role: private_skipped` with no name).
 
 Contacts: official phone/e-mail of an organisation or an official's service contact, when an official source quotes it,
-is kept as a salted hash tied to that object and used only to confirm that two mentions are the same object. Plaintext is
-discarded in code; private persons' contacts are dropped entirely. Roles live on the person–case edge, so the same person
+is kept with a salted hash tied to that object; the hash confirms that two mentions are the same object, the value is
+shown in the UI only behind a "show" control, for manual verification. Private persons' contacts are dropped entirely. Roles live on the person–case edge, so the same person
 can be a suspect in one case and a witness in another; witness/victim roles are extracted only for public figures.
 
 Vehicles: a vehicle appearing in two cases is a legitimate graph link, but make/model/year is a weak identifier, so

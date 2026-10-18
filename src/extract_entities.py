@@ -71,7 +71,8 @@ def clean(o: dict) -> dict:
             continue
         v = re.sub(r"[\s()\-]", "", str(c["value"]).lower())
         keys.append({"owner": str(c["owner"])[:160], "owner_kind": c["owner_kind"], "kind": c.get("kind") if c.get("kind") in ("phone", "email") else "other",
-                     "hash": hashlib.sha256((CONTACT_SALT + v).encode()).hexdigest()[:24]})
+                     "hash": hashlib.sha256((CONTACT_SALT + v).encode()).hexdigest()[:24],
+                     "value": str(c["value"])[:80]})  # org / official service contact: kept, shown in the UI only on request
     out["contact_keys"] = keys
     for k in ("cases", "persons", "orgs", "assets", "amounts", "claims"):
         v = o.get(k) or []
