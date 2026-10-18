@@ -494,6 +494,55 @@
       "type": "independent",
       "title": "RBC News",
       "role": "news agency / media (added 2026-10-18)"
+    },
+    {
+      "name": "sap_gov_ua",
+      "country": "UA",
+      "type": "official",
+      "title": "САП",
+      "role": "anticorruption"
+    },
+    {
+      "name": "NAZK_gov_ua",
+      "country": "UA",
+      "type": "official",
+      "title": "НАЗК",
+      "role": "anticorruption"
+    },
+    {
+      "name": "PressCourt",
+      "country": "UA",
+      "type": "official",
+      "title": "Прес-центр судової влади України",
+      "role": "anticorruption (courts incl. HACC)"
+    },
+    {
+      "name": "fuckcorruption",
+      "country": "UA",
+      "type": "analyst",
+      "title": "Центр протидії корупції (AntAC)",
+      "role": "anticorruption NGO, tracks NABU/SAP top cases"
+    },
+    {
+      "name": "fightcorruptor",
+      "country": "UA",
+      "type": "analyst",
+      "title": "Transparency International Ukraine",
+      "role": "anticorruption NGO"
+    },
+    {
+      "name": "BihusInfo",
+      "country": "UA",
+      "type": "independent",
+      "title": "Bihus.Info",
+      "role": "anticorruption investigative media"
+    },
+    {
+      "name": "slidstvo_info",
+      "country": "UA",
+      "type": "independent",
+      "title": "Слідство.Інфо",
+      "role": "anticorruption investigative media"
     }
   ],
   "inactive_or_unavailable": [
@@ -527,9 +576,9 @@
     }
   ],
   "todo_find": [
-    "official NABU/SAP/HACC channels (anti-corruption layer)",
     "ISW (use site RSS instead of Telegram)",
-    "Chinese/Turkish/Indian MFA feeds (third-country layer)"
+    "Chinese/Turkish/Indian MFA feeds (third-country layer)",
+    "NABU has no official Telegram (official: nabu.gov.ua, X @nab_ukr, YouTube NABUofficial); HACC (hcac.court.gov.ua) likewise — covered via PressCourt + AntAC/TI + media. Consider nabu.gov.ua news RSS later."
   ],
   "candidates_low_subscribers": [
     {

@@ -1,0 +1,51 @@
+name: extract-entities
+
+# Anti-corruption layer: collect the anti-corruption channels (shallow), load them, then run LLM entity extraction
+# (docs/entity_extraction.md) into entity_extractions. Manual only while the schema is being validated.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max messages to extract"
+        default: "40"
+      pages:
+        description: "t.me pages to collect per channel before extracting (0 = skip collection)"
+        default: "12"
+      dry_run:
+        description: "Print extractions, do not write"
+        type: boolean
+        default: false
+
+concurrency:
+  group: label   # shares the Gemini daily quota with the label workflow; never run both at once
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv
+      - name: Collect anti-corruption channels
+        if: ${{ github.event.inputs.pages != '0' }}
+        run: |
+          for ch in sap_gov_ua NAZK_gov_ua PressCourt fuckcorruption fightcorruptor BihusInfo slidstvo_info; do
+            python src/collect_telegram.py --channel "$ch" --pages "${{ github.event.inputs.pages }}" --delay 0.7 || true
+          done
+      - name: Load into Neon
+        if: ${{ github.event.inputs.pages != '0' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/load_to_db.py messages
+      - name: Extract
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then echo "GEMINI_API_KEY missing"; exit 1; fi
+          python src/extract_entities.py --limit "${{ github.event.inputs.limit }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
