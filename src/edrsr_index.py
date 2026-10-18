@@ -1,0 +1,173 @@
+"""Court decisions from the ЄДРСР open-data dumps (data.gov.ua, one zip per year; the current year refreshes daily).
+Streams documents.csv (tab-separated) and keeps rows that match (a) case numbers of interest, (b) selected courts
+(HACC and its appeals chamber by default), writing them into court_decisions (migration 010). Full texts live at
+doc_url on the register's open-data web server; fetched on demand for matched rows (--texts N).
+
+  python src/edrsr_index.py --years 2026 --hacc                       # all HACC decisions this year
+  python src/edrsr_index.py --years 2021-2026 --cause 642/8729/21,...  # specific case numbers across years
+  python src/edrsr_index.py --years 2026 --from-db                    # case numbers referenced in ee_cases / statements
+"""
+import argparse
+import csv
+import io
+import json
+import re
+import sys
+import time
+import urllib.request
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DATASETS = {2021: "bcffb3ae-8e4f-4443-8058-d525257ab69e", 2022: "42c195b3-b915-4000-934a-7741825d1812",
+            2023: "e0f2c66a-f773-442e-afcd-569be6a36c82", 2024: "1a6b5c08-0879-4387-8878-ac0027494274",
+            2025: "2a95ae17-ed46-42ae-ad66-dd9b7a727bb7", 2026: "16ab7f06-7414-405f-8354-0a492475272d"}
+UA = {"User-Agent": "Mozilla/5.0 (research; rhetoric-strikes)"}
+CAUSE_RE = re.compile(r"\b\d{1,4}/\d{1,6}/\d{2}(?:-[\w/]+)?\b")
+HACC_RE = re.compile(r"антикорупційн", re.I)
+
+
+def api(url):
+    return json.loads(urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60).read())
+
+
+def dump_url(year):
+    p = api(f"https://data.gov.ua/api/3/action/package_show?id={DATASETS[year]}")["result"]
+    for r in p["resources"]:
+        if (r.get("format") or "").upper() == "ZIP":
+            return r["url"]
+    raise RuntimeError(f"no zip for {year}")
+
+
+def download(year, dest: Path):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and dest.stat().st_size > 1e6:
+        return dest
+    url = dump_url(year)
+    print("downloading", url)
+    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=180) as r, open(dest, "wb") as f:
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+    return dest
+
+
+def read_dict(z, name, key):
+    out = {}
+    with z.open(name) as f:
+        for row in csv.DictReader(io.TextIOWrapper(f, encoding="utf-8-sig"), delimiter="\t"):
+            out[row[key]] = row.get("name")
+    return out
+
+
+def stream(zip_path: Path, causes: set, court_codes: set):
+    with zipfile.ZipFile(zip_path) as z:
+        names = {n.lower(): n for n in z.namelist()}
+        courts = read_dict(z, names.get("courts.csv", "courts.csv"), "court_code")
+        forms = read_dict(z, names.get("judgment_forms.csv", "judgment_forms.csv"), "judgment_code")
+        kinds = read_dict(z, names.get("justice_kinds.csv", "justice_kinds.csv"), "justice_kind")
+        cats = read_dict(z, names.get("cause_categories.csv", "cause_categories.csv"), "category_code")
+        if "hacc" in court_codes:
+            court_codes = {c for c, n in courts.items() if n and HACC_RE.search(n)} | (court_codes - {"hacc"})
+            print("HACC court codes:", court_codes, [courts[c] for c in court_codes])
+        with z.open(names.get("documents.csv", "documents.csv")) as f:
+            n = 0
+            for row in csv.DictReader(io.TextIOWrapper(f, encoding="utf-8-sig"), delimiter="\t"):
+                n += 1
+                cause = (row.get("cause_num") or "").strip()
+                if cause in causes or row.get("court_code") in court_codes:
+                    yield {"doc_id": row["doc_id"], "cause_num": cause, "court_code": row.get("court_code"),
+                           "court": courts.get(row.get("court_code")), "judgment_form": forms.get(row.get("judgment_code")),
+                           "justice_kind": kinds.get(row.get("justice_kind")), "category": cats.get(row.get("category_code")),
+                           "adjudication_date": row.get("adjudication_date") or None, "receipt_date": row.get("receipt_date") or None,
+                           "judge": (row.get("judge") or "").strip() or None, "doc_url": row.get("doc_url"),
+                           "status": row.get("status"), "date_publ": row.get("date_publ") or None}
+            print(f"scanned {n} rows")
+
+
+def fetch_text(url):
+    try:
+        html = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60).read().decode("utf-8", "replace")
+    except Exception as e:  # noqa: BLE001
+        return None, str(e)[:120]
+    txt = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    txt = re.sub(r"<br\s*/?>|</p>|</div>|</tr>", "\n", txt, flags=re.I)
+    txt = re.sub(r"<[^>]+>", " ", txt)
+    txt = re.sub(r"[ \t]+", " ", re.sub(r"\s*\n\s*", "\n", txt)).strip()
+    return txt[:200000], None
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--years", default="2026")
+    ap.add_argument("--cause", default="")
+    ap.add_argument("--from-db", action="store_true")
+    ap.add_argument("--hacc", action="store_true")
+    ap.add_argument("--courts", default="", help="extra court codes, comma-separated")
+    ap.add_argument("--texts", type=int, default=0, help="fetch full text for up to N matched decisions without text")
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args()
+    years = []
+    for part in a.years.split(","):
+        if "-" in part:
+            lo, hi = part.split("-")
+            years += list(range(int(lo), int(hi) + 1))
+        elif part.strip():
+            years.append(int(part))
+    causes = {c.strip() for c in a.cause.split(",") if c.strip()}
+    court_codes = {c.strip() for c in a.courts.split(",") if c.strip()}
+    if a.hacc:
+        court_codes.add("hacc")
+    conn = cur = None
+    if a.from_db or not a.dry_run:
+        sys.path.insert(0, str(ROOT / "src"))
+        from load_to_db import connect
+        conn = connect()
+        cur = conn.cursor()
+    if a.from_db:
+        cur.execute("SELECT ref FROM ee_cases WHERE ref IS NOT NULL UNION SELECT quote FROM statements UNION "
+                    "SELECT payload::text FROM entity_extractions WHERE is_case_related")
+        for (t,) in cur.fetchall():
+            causes |= set(CAUSE_RE.findall(t or ""))
+        print(f"case numbers from db: {len(causes)}")
+    print(f"years {years}, causes {len(causes)}, courts {court_codes}")
+    total = 0
+    for y in years:
+        zp = download(y, ROOT / "data" / "edrsr" / f"edrsr_data_{y}.zip")
+        for rec in stream(zp, causes, court_codes):
+            total += 1
+            if a.dry_run:
+                if total <= 20:
+                    print(json.dumps(rec, ensure_ascii=False)[:300])
+                continue
+            cur.execute("INSERT INTO court_decisions(doc_id, cause_num, court_code, court, judgment_form, justice_kind, category, "
+                        "adjudication_date, receipt_date, judge, doc_url, status, date_publ, year) VALUES "
+                        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (doc_id) DO UPDATE SET status=EXCLUDED.status, "
+                        "date_publ=EXCLUDED.date_publ, judge=EXCLUDED.judge",
+                        (rec["doc_id"], rec["cause_num"], rec["court_code"], rec["court"], rec["judgment_form"], rec["justice_kind"],
+                         rec["category"], rec["adjudication_date"], rec["receipt_date"], rec["judge"], rec["doc_url"], rec["status"],
+                         rec["date_publ"], y))
+            if total % 500 == 0:
+                conn.commit()
+        if conn:
+            conn.commit()
+        zp.unlink(missing_ok=True)  # runners have limited disk; the dump is re-downloaded next time
+    print(f"matched {total} decisions")
+    if a.texts and cur:
+        cur.execute("SELECT doc_id, doc_url FROM court_decisions WHERE text IS NULL AND doc_url IS NOT NULL AND status='1' "
+                    "ORDER BY adjudication_date DESC NULLS LAST LIMIT %s", (a.texts,))
+        rows = cur.fetchall()
+        ok = 0
+        for doc_id, url in rows:
+            txt, err = fetch_text(url)
+            if txt and len(txt) > 200:
+                cur.execute("UPDATE court_decisions SET text=%s, text_fetched_at=now() WHERE doc_id=%s", (txt, doc_id))
+                ok += 1
+            else:
+                cur.execute("UPDATE court_decisions SET text_error=%s, text_fetched_at=now() WHERE doc_id=%s", (err or "empty", doc_id))
+            conn.commit()
+            time.sleep(1.0)
+        print(f"texts fetched {ok}/{len(rows)}")
+
+
+if __name__ == "__main__":
+    main()

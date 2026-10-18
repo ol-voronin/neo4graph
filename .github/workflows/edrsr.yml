@@ -1,0 +1,41 @@
+name: edrsr
+
+# Court decisions index from the ЄДРСР open-data dumps (src/edrsr_index.py). Daily: current-year HACC decisions
+# plus case numbers referenced in our data; manual: specific case numbers across years.
+
+on:
+  schedule:
+    - cron: "15 4 * * *"
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "e.g. 2026 or 2021-2026"
+        default: "2026"
+      cause:
+        description: "case numbers, comma-separated (optional)"
+        default: ""
+      hacc:
+        description: "include all HACC decisions"
+        type: boolean
+        default: true
+      texts:
+        description: "fetch full text for up to N matched decisions"
+        default: "50"
+
+jobs:
+  edrsr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv
+      - name: Index
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python src/edrsr_index.py --years "${{ github.event.inputs.years || '2026' }}" --from-db \
+            ${{ (github.event.inputs.hacc == 'true' || github.event_name == 'schedule') && '--hacc' || '' }} \
+            --cause "${{ github.event.inputs.cause }}" --texts "${{ github.event.inputs.texts || '50' }}"
