@@ -16,7 +16,7 @@ on:
         default: "30"
       provider:
         description: "gemini or anthropic"
-        default: "gemini"
+        default: "anthropic"
       dry_run:
         description: "Print only, no writes"
         type: boolean
@@ -41,7 +41,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
+          PROVIDER: ${{ github.event.inputs.provider || 'anthropic' }}
         run: |
           python src/extract_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '60' }}" --random ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
       - name: Resolve due statements
@@ -49,6 +49,14 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
+          PROVIDER: ${{ github.event.inputs.provider || 'anthropic' }}
         run: |
           python src/resolve_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.resolve_limit || '30' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+      - name: Fact-check claims
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROVIDER: ${{ github.event.inputs.provider || 'anthropic' }}
+        run: |
+          python src/resolve_statements.py --facts --provider "$PROVIDER" --limit "${{ github.event.inputs.resolve_limit || '30' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}

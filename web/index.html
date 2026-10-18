@@ -62,6 +62,21 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .link.reg{stroke-dasharray:3 3}
 .node circle{stroke:var(--panel);stroke-width:1.5px;cursor:pointer}
 .node.center circle{stroke:var(--accent);stroke-width:3px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent);font-weight:600}
+.fc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.fc .bars{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.bar{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.bar .meter{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line);margin-top:6px}
+.bar .meter span{display:block;height:100%}
+.v-true{background:#2a9d5c}.v-false{background:#b8322f}.v-partial{background:#c2731a}.v-unresolvable{background:#8b949a}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;color:#fff}
+.fcl{display:flex;flex-direction:column;gap:8px}
+.fci{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
+.fci .q{font-weight:500}
+.fci .ev{margin-top:4px}
+.fc .ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .chat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .chat .log{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow:auto}
 .msg{padding:8px 10px;border-radius:10px;max-width:92%;font-size:13px;line-height:1.45;white-space:pre-wrap}
@@ -78,7 +93,8 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 </style>
 </head>
 <body>
-<div class="top">
+<div class="tabs" id="tabs" hidden><button type="button" aria-selected="true" data-tab="graph">Граф</button><button type="button" aria-selected="false" data-tab="factcheck">Фактчек</button></div>
+<div class="top" id="graphtop">
   <h1>Граф зв'язків · антикорупційний шар</h1>
   <div class="search"><input id="q" type="search" placeholder="Особа, компанія, номер справи (991/1234/21), ЄДРПОУ…" autocomplete="off" aria-label="Пошук об'єкта"><div class="sugg" id="sugg" hidden></div></div>
   <span class="meta" id="stats"></span>
@@ -95,6 +111,13 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
   <aside class="panel" id="panel"><p class="empty">Введіть об'єкт у пошук або натисніть вузол.</p></aside>
 </div>
 <div class="legend" id="legend"></div>
+<section class="fc" id="factcheck" hidden>
+  <div class="ctl"><span class="meta">Вердикти: підтверджено / спростовано / частково / не перевірено. Оцінюється відповідність доказам, не намір.</span>
+    <select id="fcside"><option value="">усі сторони</option></select><select id="fcstatus"><option value="">усі вердикти</option><option value="true">підтверджено</option><option value="false">спростовано</option><option value="partial">частково</option><option value="unresolvable">не перевірено</option><option value="pending">ще не перевірялось</option></select>
+    <input id="fcq" type="search" placeholder="пошук у цитатах" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;font-size:12px"></div>
+  <div class="bars" id="fcbars"></div>
+  <div class="fcl" id="fclist"><p class="empty">Завантаження…</p></div>
+</section>
 <section class="chat" id="chat" hidden>
   <div class="meta">Запит словами: модель перекладає його у пошук по базі та реєстрах і відповідає з конкретикою.</div>
   <div class="log" id="chatlog"></div>
@@ -229,6 +252,17 @@ function panel(nodes,edges){
 }
 function select(id){state.center=id;render();}
 window.addEventListener('resize',()=>{if(state.center)render()});
+// tabs + fact-check (API version only)
+if(CAN_QUEUE){document.getElementById('tabs').hidden=false;const V={true:'підтверджено',false:'спростовано',partial:'частково',unresolvable:'не перевірено',pending:'не перевірялось'};const SIDE={RU_official:'РФ офіційні',RU_milblogger:'РФ воєнкори',RU_media:'РФ медіа',UA_official:'Україна офіційні',UA_media:'Україна медіа',US_admin:'США адміністрація',US_right:'США праві',US_left:'США ліві',US_congress_bipartisan:'США Конгрес',US_other:'США інші',EU:'ЄС',NATO:'НАТО',other:'інші'};
+  const fc=document.getElementById('factcheck'),gtop=document.getElementById('graphtop'),main=document.querySelector('.main'),filt=document.querySelector('.filters'),leg=document.getElementById('legend');
+  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));const g=b.dataset.tab==='graph';[gtop,main,filt,leg].forEach(el=>el.hidden=!g);fc.hidden=g;if(!g)loadFC();try{localStorage.setItem('tab',b.dataset.tab)}catch(_){}});
+  const sideSel=document.getElementById('fcside');Object.entries(SIDE).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v;sideSel.appendChild(o)});
+  let fcLoaded=false;async function loadFC(){const side=sideSel.value,st=document.getElementById('fcstatus').value,qq=document.getElementById('fcq').value.trim();const r=await (await fetch(`/api/factcheck?side=${encodeURIComponent(side)}&status=${encodeURIComponent(st)}&q=${encodeURIComponent(qq)}`)).json();if(r.error){document.getElementById('fclist').innerHTML='<p class="empty">'+esc(r.error)+'</p>';return}
+    const evm=new Map((r.evidence||[]).map(e=>[e.id,e]));
+    document.getElementById('fcbars').innerHTML=(r.by_side||[]).map(b=>{const tot=b.confirmed+b.refuted+b.partial+b.unverifiable||1;return `<div class="bar"><div><b>${esc(SIDE[b.actor_side]||b.actor_side)}</b> <span class="meta">${b.n} заяв · перевірено ${tot===1&&!b.confirmed&&!b.refuted&&!b.partial&&!b.unverifiable?0:tot}</span></div><div class="meter"><span class="v-true" style="width:${100*b.confirmed/tot}%"></span><span class="v-false" style="width:${100*b.refuted/tot}%"></span><span class="v-partial" style="width:${100*b.partial/tot}%"></span><span class="v-unresolvable" style="width:${100*b.unverifiable/tot}%"></span></div><div class="meta">підтв. ${b.confirmed} · спрост. ${b.refuted} · частк. ${b.partial} · не перев. ${b.unverifiable}</div></div>`}).join('')||'<p class="empty">Ще немає перевірених заяв.</p>';
+    document.getElementById('fclist').innerHTML=(r.items||[]).map(i=>{const ev=(i.evidence_ids||[]).map(id=>evm.get(id)).filter(Boolean);return `<div class="fci"><div><span class="badge v-${i.status}">${V[i.status]||i.status}</span> <span class="meta">${esc(SIDE[i.actor_side]||i.actor_side)}${i.actor_name?' · '+esc(i.actor_name):''} · ${esc(i.stype)} · ${(i.ts_published||'').slice(0,10)}${i.target_region?' · '+esc(i.target_region):''}</span></div><div class="q">«${esc(i.quote)}»${i.url?` <a href="${esc(i.url)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:''}</div>${i.predicted_event?`<div class="meta">Що мало статися: ${esc(i.predicted_event)}</div>`:''}${i.resolver_note?`<div class="meta">Висновок: ${esc(i.resolver_note)}</div>`:''}${ev.length?`<ul class="ev">${ev.map(e=>`<li>${(e.ts_published||'').slice(0,10)} · ${esc(e.source_id)} · ${esc(e.snippet)}${e.url?` <a href="${esc(e.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:''}</div>`}).join('')||'<p class="empty">Нічого за цими фільтрами.</p>';fcLoaded=true;}
+  sideSel.onchange=loadFC;document.getElementById('fcstatus').onchange=loadFC;document.getElementById('fcq').onkeydown=e=>{if(e.key==='Enter')loadFC()};
+  try{if(localStorage.getItem('tab')==='factcheck')document.querySelector('#tabs button[data-tab="factcheck"]').click()}catch(_){}}
 // chat (API version only)
 if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const log=document.getElementById('chatlog'),form=document.getElementById('chatform'),ta=document.getElementById('chatq'),btn=document.getElementById('chatsend');const hist=[];
   const EX=['знайди справи за 2025 рік щодо земельних питань','які категорії справ є в індексі за 2021','що відомо про Кацубу і його компанії','заяви Кремля з погрозами за останній місяць і чи збулися'];

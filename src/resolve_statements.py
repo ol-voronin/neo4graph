@@ -22,9 +22,9 @@ EVIDENCE_SOURCES = ["tg:kpszsu", "tg:GeneralStaffZSU", "tg:V_Zelenskiy_official"
                     "tg:radiosvoboda", "tg:suspilnenews", "tg:censor_net", "tg:hromadske_ua", "tg:rian_ru", "tg:tass_agency",
                     "tg:meduzalive", "tg:synegubov", "tg:kharkivoda", "tg:kyivoda"]
 STOP = set("the and for with that this from will was were are has have been not они они что это как для при или его её их про над под без від для або та що як при буде було були має мають не на в у з до по за із і й а но та же ще вже".split())
-SYSTEM = """Ти — перевіряльник фактів. Тобі дають заяву, очікувану подію (що мало статися) і добірку повідомлень із цього періоду як докази.
-Визнач лише за цими доказами: подія сталася (true), не сталася у вказаний строк (false), сталася частково (partial), чи доказів недостатньо (unresolvable).
-Нічого не додавай зі своїх знань. Поверни ТІЛЬКИ JSON: {"verdict":"true|false|partial|unresolvable","evidence_ids":["..."],"note":"<=200 символів, українською"}"""
+SYSTEM = """Ти — перевіряльник фактів. Тобі дають заяву (прогноз, обіцянку, погрозу або твердження про факт), очікувану подію (що мало статися або що стверджується) і добірку повідомлень і даних із цього періоду як докази.
+Визнач лише за цими доказами: підтверджується (true), спростовується (false), частково (partial), чи доказів недостатньо (unresolvable). Заява однієї сторони не є підтвердженням її ж твердження; шукай незалежні джерела або структуровані дані.
+Нічого не додавай зі своїх знань. Не оцінюй намір (брехня чи помилка) — лише відповідність доказам. Поверни ТІЛЬКИ JSON: {"verdict":"true|false|partial|unresolvable","evidence_ids":["..."],"note":"<=200 символів, українською: що саме підтверджує або спростовує"}"""
 
 
 def keywords(s: str):
@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--model", default=None)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--redo", action="store_true", help="also re-check already resolved statements (oldest first)")
+    ap.add_argument("--facts", action="store_true", help="fact-check claims of fact / denials right away (window -3..+5 days), instead of due forecasts")
     a = ap.parse_args()
     a.model = a.model or ("claude-haiku-5-5" if a.provider == "anthropic" else "gemini-3.5-flash-lite")
     key = "ANTHROPIC_API_KEY" if a.provider == "anthropic" else "GEMINI_API_KEY"
@@ -52,21 +53,40 @@ def main():
     conn = connect()
     cur = conn.cursor()
     cond = "status <> 'pending'" if a.redo else "status = 'pending'"
-    cur.execute(f"SELECT id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, horizon_days FROM statements "
-                f"WHERE resolvable AND {cond} AND ts_published + (horizon_days || ' days')::interval < now() - interval '2 days' "
-                f"ORDER BY resolved_at NULLS FIRST, ts_published LIMIT %s", (a.limit,))
+    if a.facts:
+        cur.execute(f"SELECT id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, horizon_days FROM statements "
+                    f"WHERE stype IN ('claim_fact','denial') AND {cond} AND ts_published < now() - interval '3 days' "
+                    f"ORDER BY resolved_at NULLS FIRST, ts_published DESC LIMIT %s", (a.limit,))
+    else:
+        cur.execute(f"SELECT id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, horizon_days FROM statements "
+                    f"WHERE resolvable AND {cond} AND ts_published + (horizon_days || ' days')::interval < now() - interval '2 days' "
+                    f"ORDER BY resolved_at NULLS FIRST, ts_published LIMIT %s", (a.limit,))
     rows = cur.fetchall()
     print(f"due: {len(rows)}")
     ok = bad = quota_hits = 0
     for sid, ts, side, name, stype, quote, pred, region, horizon in rows:
-        kws = keywords(pred + " " + quote)
+        kws = keywords((pred or "") + " " + quote)
         if region and region not in ("ukraine", "russia"):
             kws.append(region.split("-")[0][:6])
         pattern = "|".join(re.escape(k[:7]) for k in kws) or "zzzz"
+        t0, t1 = (ts - timedelta(days=3), ts + timedelta(days=5)) if a.facts else (ts, ts + timedelta(days=horizon + 3))
         cur.execute("SELECT id, source_id, ts_published, left(text, 700) FROM messages WHERE source_id = ANY(%s) AND ts_published BETWEEN %s AND %s "
-                    "AND text ~* %s ORDER BY ts_published LIMIT 12",
-                    (EVIDENCE_SOURCES, ts, ts + timedelta(days=horizon + 3), pattern))
+                    "AND text ~* %s ORDER BY ts_published LIMIT 12", (EVIDENCE_SOURCES, t0, t1, pattern))
         ev = cur.fetchall()
+        # structured ground truth around the statement date (strikes, intercept claims) as extra evidence rows
+        try:
+            cur.execute("SELECT date, missiles, drones, guided_bombs, city_attacked FROM kharkiv_daily WHERE date BETWEEN %s AND %s ORDER BY date", (t0.date(), t1.date()))
+            for d, mi, dr, kab, city in cur.fetchall():
+                ev.append((f"gt:kharkiv:{d}", "ground_truth:kharkiv_daily", ts.__class__.fromisoformat(f"{d}T12:00:00+03:00"),
+                           f"Зведення по Харківщині за {d}: ракети {mi}, дрони {dr}, КАБ {kab}, місто атаковано: {city}"))
+            cur.execute("SELECT date, drones FROM ru_attacks_daily WHERE date BETWEEN %s AND %s ORDER BY date", (t0.date(), t1.date()))
+            for d, dr in cur.fetchall():
+                ev.append((f"gt:ru:{d}", "ground_truth:ru_mod_claims", ts.__class__.fromisoformat(f"{d}T12:00:00+03:00"), f"МО РФ заявило про {dr} перехоплених українських дронів за {d} (заява сторони, не підтвердження)"))
+            cur.execute("SELECT date, launched_missiles, launched_drones FROM waves WHERE date BETWEEN %s AND %s ORDER BY date", (t0.date(), t1.date()))
+            for d, lm, ld in cur.fetchall():
+                ev.append((f"gt:waves:{d}", "ground_truth:air_force_summary", ts.__class__.fromisoformat(f"{d}T12:00:00+03:00"), f"Повітряні сили за {d}: запущено ракет {lm}, дронів {ld}"))
+        except Exception as e:  # noqa: BLE001
+            conn.rollback()
         user = json.dumps({"statement": {"actor": f"{side} / {name}", "type": stype, "quote": quote, "said_at": ts.isoformat(),
                                          "predicted_event": pred, "deadline": (ts + timedelta(days=horizon)).date().isoformat(),
                                          "region": region},
