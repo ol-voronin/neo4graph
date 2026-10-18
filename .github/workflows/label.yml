@@ -4,10 +4,10 @@ name: label
 # Manual run with dry_run=true prints labels for a random sample WITHOUT writing (use it for the QA pass).
 
 on:
-  # hourly: newest unlabeled posts first, Gemini free tier (10 req/min, ~150 posts per run).
+  # every 3 hours: newest unlabeled posts first. Gemini free tier has a small daily quota; the script stops cleanly on 429 and the next run continues.
   # To pause labeling, comment these two lines out.
   schedule:
-    - cron: "20 * * * *"
+    - cron: "20 */3 * * *"
   workflow_dispatch:
     inputs:
       limit:
@@ -32,7 +32,7 @@ concurrency:
 jobs:
   label:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,5 +54,5 @@ jobs:
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             python src/label_messages.py --provider "$PROVIDER" --sample 20 --dry-run
           else
-            python src/label_messages.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '150' }}"
+            python src/label_messages.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '100' }}"
           fi

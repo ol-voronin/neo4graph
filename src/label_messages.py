@@ -41,6 +41,10 @@ def parse_json(s: str):
     return json.loads(s)
 
 
+class QuotaExceeded(RuntimeError):
+    """Gemini free-tier quota hit (per minute or per day). Retrying within one run only burns time: stop cleanly."""
+
+
 def gemini_call(model: str, system: str, user: str, key: str) -> str:
     """Plain REST call (no SDK). Retries on 429/5xx with backoff; the free tier is rate limited."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -53,10 +57,13 @@ def gemini_call(model: str, system: str, user: str, key: str) -> str:
             data = json.loads(urllib.request.urlopen(req, timeout=60).read())
             return data["candidates"][0]["content"]["parts"][0]["text"]
         except urllib.error.HTTPError as e:
-            if e.code in (429, 500, 503) and attempt < 4:
+            if e.code in (500, 503) and attempt < 4:
                 time.sleep(15 * (attempt + 1))
                 continue
-            raise RuntimeError(f"gemini HTTP {e.code}: {e.read()[:300]!r}") from e
+            body = e.read()[:1200].decode("utf-8", "replace")
+            if e.code == 429:
+                raise QuotaExceeded(f"gemini HTTP 429: {body}") from e
+            raise RuntimeError(f"gemini HTTP {e.code}: {body}") from e
     raise RuntimeError("gemini: retries exhausted")
 
 
@@ -103,7 +110,9 @@ def main():
     pv = f"{PROMPT_VERSION}-{a.provider}"
     sysmsg = system_prompt()
     order = "random()" if a.sample else "m.ts_published DESC"
-    with connect() as conn, conn.cursor() as cur:
+    conn = connect()
+    cur = conn.cursor()
+    if True:
         cur.execute(
             "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
             "WHERE m.labeled_at IS NULL " + ("AND m.id IN (SELECT message_id FROM gold_sample) " if a.gold else "") + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
@@ -112,8 +121,14 @@ def main():
         rows = cur.fetchall()
         cur.execute("SELECT label FROM narratives ORDER BY last_seen_ts DESC NULLS LAST LIMIT 20")
         recent = [r[0] for r in cur.fetchall()]
-        ok = bad = 0
+        ok = bad = quota_hits = 0
+        quota_stop = False
         for i, (mid, text, ts, sid, country, stype, lang) in enumerate(rows):
+            try:
+                cur.execute("SELECT 1")
+            except Exception:  # noqa: BLE001  (Neon drops idle SSL connections; reconnect and carry on)
+                conn = connect()
+                cur = conn.cursor()
             if i and i % 10 == 0:  # refresh so novelty/narrative reuse sees labels from this very run
                 cur.execute("SELECT label FROM narratives ORDER BY last_seen_ts DESC NULLS LAST LIMIT 20")
                 recent = [r[0] for r in cur.fetchall()]
@@ -129,10 +144,20 @@ def main():
                     time.sleep(delay)
                 raw = parse_json(txt)
                 f = clean(raw)
+            except QuotaExceeded as e:
+                quota_hits += 1
+                print(f"quota: {str(e)[:700]}")
+                if quota_hits >= 2:
+                    print("Gemini quota exhausted (free tier); stopping this run cleanly, the next scheduled run continues.")
+                    quota_stop = True
+                    break
+                time.sleep(65)  # first hit may be the per-minute limit
+                continue
             except Exception as e:  # noqa: BLE001
                 bad += 1
                 print(f"skip {mid}: {e}")
                 continue
+            quota_hits = 0
             ok += 1
             if a.dry_run:
                 print(mid, f["event_kind"], f["threat_level"], (raw.get("narrative_label") or ""), "|", text[:90].replace("\n", " "))
@@ -158,7 +183,7 @@ def main():
                         "ON CONFLICT (message_id) DO UPDATE SET raw=EXCLUDED.raw, model=EXCLUDED.model, prompt_version=EXCLUDED.prompt_version, labeled_at=now()",
                         (mid, pv, a.model, json.dumps(raw, ensure_ascii=False)))
             conn.commit()
-    print(f"labeled {ok}, failed {bad}")
+    print(f"labeled {ok}, failed {bad}" + (", stopped on quota" if quota_stop else ""))
     if bad and not ok:
         sys.exit(1)  # make a total failure visible (red run) instead of a silent green one
 
