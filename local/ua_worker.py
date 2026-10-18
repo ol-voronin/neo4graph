@@ -147,12 +147,32 @@ def nazk_declarations(name, max_pages=5):
 
 # ---------------------------------------------------------------- ЄДР ФОП dump (optional)
 def fop_search(name, limit=60, deadline=None):
-    """Scan the ЄДР ФОП dump (470 MB XML in a zip). Takes minutes; stops at the deadline and reports partial=True."""
+    """ЄДР ФОП dump: one <SUBJECT> per line, windows-1251, ~5.3 GB unpacked. `unzip -p | grep` scans it in ~25 s;
+    the Python fallback (iterparse) is used only when those tools are missing and honours the deadline (partial=True)."""
     if not FOP.exists():
         return None, []
-    partial = False
-    key = re.sub(r"\s+", " ", name.lower().strip())
+    key = re.sub(r"\s+", " ", name.strip()).upper()
     out, total = [], 0
+
+    def rec(line):
+        g = lambda tag: html.unescape((re.search(f"<{tag}>(.*?)</{tag}>", line) or [None, ""])[1])  # noqa: E731
+        return {"record": g("RECORD"), "name": g("NAME").title(), "stan": g("STAN"), "registration": g("REGISTRATION"), "terminated": g("TERMINATED_INFO")}
+
+    import shutil
+    import subprocess
+    if shutil.which("unzip") and shutil.which("grep"):
+        pat = ("<NAME>" + key).encode("cp1251", "ignore")
+        p1 = subprocess.Popen(["unzip", "-p", str(FOP)], stdout=subprocess.PIPE)
+        p2 = subprocess.Popen(["grep", "-a", "-F", pat], stdin=p1.stdout, stdout=subprocess.PIPE, env={"LC_ALL": "C"})
+        p1.stdout.close()
+        for raw in p2.stdout:
+            line = raw.decode("cp1251", "ignore")
+            total += 1
+            if len(out) < limit:
+                out.append(rec(line))
+        p2.wait()
+        return total, out
+    partial = False
     with zipfile.ZipFile(FOP) as z:
         for n in z.namelist():
             if not n.lower().endswith(".xml"):
@@ -166,7 +186,7 @@ def fop_search(name, limit=60, deadline=None):
                         el.clear()
                         break
                     nm = (el.findtext("NAME") or "")
-                    if nm.lower().startswith(key):
+                    if nm.upper().startswith(key):
                         total += 1
                         if len(out) < limit:
                             out.append({"record": el.findtext("RECORD"), "name": nm.title(), "stan": el.findtext("STAN"), "registration": el.findtext("REGISTRATION"),
