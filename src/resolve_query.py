@@ -67,7 +67,7 @@ def expand(cur, conn, q, kind, log, py):
         cur.execute("SELECT DISTINCT name FROM ee_orgs o JOIN messages m ON m.id = o.message_id WHERE m.source_id = 'edrsr:court' AND m.text LIKE %s AND o.kind = 'company'", ("Справа " + q + "%",))
         targets += [("org", r[0]) for r in cur.fetchall()]
     seen = set()
-    targets = [t for t in targets if not (t in seen or seen.add(t))][:12]
+    targets = [t for t in targets if not re.match(r"^(ОСОБА|НОМЕР|АДРЕСА|ІНФОРМАЦІЯ)_\d+", t[1] or "") and not (t in seen or seen.add(t))][:12]
     print(f"\n== hop 2: {len(targets)} linked objects: {targets}")
     for k, t in targets:
         run([py, "src/corpus_mentions.py", t], log, f"hop2 corpus: {t}")
