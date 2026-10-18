@@ -1,0 +1,49 @@
+# Lead-lag test 1: rule-based rhetoric vs Kharkiv strike intensity (2026-03-31 … 2026-10-17)
+
+Data: fixed panel of 12 deep-backfilled channels (RU: MID_Russia, rybar, dva_majors, boris_rozhin, voenkorKotenok,
+sashakots, wargonzo, RVvoenkor, meduzalive; UA: V_Zelenskiy_official, GeneralStaffZSU, ukrpravda_news), 201 days,
+mean 278 RU / 49 UA posts per day. Target: Kharkiv oblast intensity index from the governor's daily summaries,
+`idx = log1p(10*missiles + drones + guided_bombs)`, std 0.686, autocorrelation lag1 0.23. Signals: daily shares of
+rule-flagged posts (`r_threat`, `rule_threat_level>=2`, `r_target`) by side, posting volume, RU-MoD-claimed
+Ukrainian drone attacks. Method: ADF -> difference if needed; circular-shift permutation cross-correlation with
+max-|r| family-wise correction over lags 1..3; Granger F-tests; expanding-window out-of-sample test (Ridge on own
+lags/means +- signal lags 1..3, RMSE, moving-block bootstrap CI) and logistic AUC on the top-quartile day.
+
+## Result
+
+| signal | lag1 r (p_fw) | lag3 r (p_fw) | OOS RMSE delta [CI] | AUC delta [CI] |
+|---|---|---|---|---|
+| tgt_ru (RU posts naming a target) | +0.30 (0.026) | +0.35 (0.003) | -0.011 [-0.018, -0.003] | -0.019 [-0.069, +0.026] |
+| l2_ru (RU threat+target/time) | +0.25 (0.067) | +0.18 (0.29) | -0.002 [-0.005, +0.001] | -0.018 [-0.061, +0.024] |
+| thr_ru | +0.20 (0.22) | +0.01 (1.0) | -0.002 | +0.002 |
+| thr_ua / l2_ua | +0.07 / +0.16 (0.68 / 0.09) | +0.09 / +0.02 | 0.000 / -0.001 | -0.026 / -0.008 |
+| posts_ru (differenced) | +0.00 | -0.21 (0.015) | +0.004 | +0.004 |
+| ru_drones (UA attacks on RU) | no lead (earlier run: -0.13/+0.15/-0.11, p_fw >= 0.2) | | | |
+
+Only `tgt_ru` survives the permutation test (also Bonferroni over 7 signals at lag 3). But:
+
+- **Reverse direction is stronger:** idx(t-1) -> tgt_ru(t) r = +0.43 (p_fw < 0.001); same-day r = +0.33. Granger is
+  significant both ways. Russian channels name targets *after* strikes (reporting), and strike campaigns on Kharkiv
+  run for several days, so the apparent lead is mostly campaign persistence plus reporting, not a warning.
+- **Out of sample it is worth almost nothing:** RMSE 0.663 -> 0.653 (-1.5%, CI excludes 0); no gain on the
+  top-quartile day. The baseline itself barely beats the unconditional std (0.663 vs 0.686): day-to-day intensity is
+  close to unpredictable from these series.
+- **Unstable:** first half corr(tgt_ru[t-1], idx[t]) = +0.21, second half +0.05.
+
+Threat rhetoric as such (thr_*, l2_*), Ukrainian official rhetoric, posting volume and Ukrainian attacks on Russia
+show no lead at the daily level.
+
+## What this does and does not say
+
+It does not say rhetoric is unrelated to strikes: there is co-movement at the campaign scale (weeks). It says the
+daily rule-based shares of these 12 channels do not forecast the next day's intensity in Kharkiv beyond what
+yesterday already tells you. The pre-registered success criterion (AUC gain with CI above 0) is not met.
+
+## Next tests (in order)
+
+1. Weekly / 3-day aggregation: does rhetoric lead at the campaign scale? (Fewer points: ~29 weeks, low power.)
+2. Target restricted to missiles + guided bombs (drones are daily background in Kharkiv) and nationwide waves.
+3. LLM `threat_level` instead of regex flags, once coverage of the panel reaches ~30% of posts (Gemini quota).
+4. Narrative-level features (novelty, specific narratives) rather than coarse shares.
+5. Operational early-warning posts (monitoring channels) as a separate, non-rhetorical baseline; if that is the
+   only thing that predicts, the rhetoric hypothesis is answered.
