@@ -25,6 +25,9 @@ PROMPT_VERSION = "v2"
 SKIP_SOURCES = ("tg:tlknewsua", "tg:monitor1654", "tg:kpszsu")  # source ids carry the "tg:" prefix
 SKIP_TYPES = ("osint",)  # alert/monitoring feeds: operational data, handled by rules / Mode B, not by the rhetoric prompt
 KINDS = {"rhetoric", "operational", "anticorruption", "decision", "other"}
+PANEL = ["tg:MID_Russia", "tg:rybar", "tg:dva_majors", "tg:boris_rozhin", "tg:voenkorKotenok", "tg:sashakots", "tg:wargonzo",
+         "tg:RVvoenkor", "tg:meduzalive", "tg:V_Zelenskiy_official", "tg:GeneralStaffZSU", "tg:ukrpravda_news"]
+PANEL_SQL = "ARRAY[" + ",".join("'%s'" % x for x in PANEL) + "]"
 
 
 def system_prompt() -> str:
@@ -95,6 +98,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="print results, do not write")
     ap.add_argument("--gold", action="store_true", help="only unlabeled posts that are in gold_sample (for LLM-vs-gold comparison)")
     ap.add_argument("--sample", type=int, default=0, help="random sample instead of oldest-first (for QA)")
+    ap.add_argument("--panel", action="store_true", help="only the 12-channel rhetoric panel, only posts with a rule threat flag (lead-lag feature set)")
     a = ap.parse_args()
     a.model = a.model or ("claude-haiku-5-5" if a.provider == "anthropic" else "gemini-3.5-flash-lite")
     delay = a.delay if a.delay is not None else (6.0 if a.provider == "gemini" else 0.0)
@@ -115,7 +119,9 @@ def main():
     if True:
         cur.execute(
             "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
-            "WHERE m.labeled_at IS NULL " + ("AND m.id IN (SELECT message_id FROM gold_sample) " if a.gold else "") + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
+            "WHERE m.labeled_at IS NULL " + ("AND m.id IN (SELECT message_id FROM gold_sample) " if a.gold else "")
+            + ("AND s.id = ANY(%s) AND m.ts_published >= '2026-03-31' AND m.id IN (SELECT message_id FROM rule_features WHERE r_threat) " % PANEL_SQL if a.panel else "")
+            + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
             "AND NOT (length(m.text) < 300 AND m.text ~* '(повітряна тривога|відбій повітряної|воздушная тревога|отбой воздушной)') ORDER BY " + order + " LIMIT %s",
             (list(SKIP_SOURCES), list(SKIP_TYPES), a.sample or a.limit))
         rows = cur.fetchall()

@@ -1,0 +1,51 @@
+name: label-batch
+
+# Bulk labeling via Anthropic Message Batches (src/label_batch.py). submit: build + send; fetch: write finished batches.
+# Batches finish within 24 h; the scheduled fetch picks them up. Needs ANTHROPIC_API_KEY and DATABASE_URL.
+
+on:
+  schedule:
+    - cron: "35 */2 * * *"   # fetch finished batches
+  workflow_dispatch:
+    inputs:
+      cmd:
+        description: "submit | fetch | status"
+        default: "status"
+      limit:
+        description: "submit: max messages"
+        default: "30000"
+
+concurrency:
+  group: label-batch
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv anthropic
+      - name: Restore batch metadata
+        uses: actions/cache@v4
+        with:
+          path: data/batches
+          key: batches-${{ github.run_id }}
+          restore-keys: batches-
+      - name: Run
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
+          CMD="${{ github.event.inputs.cmd || 'fetch' }}"
+          if [ "$CMD" = "submit" ]; then python src/label_batch.py submit --panel --limit "${{ github.event.inputs.limit || '30000' }}"; else python src/label_batch.py "$CMD"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: batches-${{ github.run_id }}
+          path: data/batches
+          if-no-files-found: ignore
