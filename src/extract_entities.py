@@ -25,7 +25,7 @@ ANTICORR_RE = (r"(НАБУ|САП\b|ВАКС|Вищ\w+ антикорупцій�
                r"обвинувальн\w+ акт|е-деклар|декларуван|незаконн\w+ збагачен|розкрадан|заволодін|зловживан|"
                r"відмиван|схем\w* на|Міндіч|Енергоатом|Укренерго)")
 ROLES = {"suspect", "defendant", "convicted", "acquitted", "witness", "victim", "official_commenting", "investigator", "prosecutor",
-         "judge", "lawyer", "journalist", "politician_mentioned", "owner", "other", "private_skipped"}
+         "judge", "lawyer", "accountant", "notary", "expert", "journalist", "politician_mentioned", "owner", "director", "other", "private_skipped"}
 CONTACT_SALT = "rhetoric-strikes-contacts-v1"
 
 # Post-filter: anything matching these is removed from string fields regardless of what the model did.

@@ -33,7 +33,7 @@ links by it are `match: probable`; a plate or VIN quoted in an official public d
   "is_case_related": true,
   "cases": [{"ref": "string|null", "nickname": "string|null", "agency": "NABU|SAP|HACC|NAZK|SBI|SBU|court|other|null",
              "stage": "investigation|suspicion|indictment|trial|verdict|appeal|closed|other|null", "summary": "<=200 chars"}],
-  "persons": [{"name": "as written", "name_norm": "Прізвище Ім'я (nominative, Ukrainian)", "role": "suspect|defendant|convicted|acquitted|witness|victim|official_commenting|investigator|prosecutor|judge|lawyer|journalist|politician_mentioned|owner|other|private_skipped",
+  "persons": [{"name": "as written", "name_norm": "Прізвище Ім'я (nominative, Ukrainian)", "role": "suspect|defendant|convicted|acquitted|witness|victim|official_commenting|investigator|prosecutor|judge|lawyer|accountant|notary|expert|journalist|politician_mentioned|owner|director|other|private_skipped",
                "position": "string|null", "org": "string|null", "public_figure": true}],
   "orgs": [{"name": "string", "edrpou": "string|null", "kind": "company|state_body|court|ngo|party|media|other", "role": "string|null"}],
   "assets": [{"type": "vehicle|real_estate|cash|securities|land|other", "description": "as written, no plates for private persons", "plate_or_vin": "string|null", "value": null, "currency": null, "linked_person": "name_norm|null"}],
@@ -51,7 +51,7 @@ links by it are `match: probable`; a plate or VIN quoted in an official public d
 
 Правила:
 1. Витягуй лише те, що прямо написано в тексті. Нічого не додавай зі своїх знань. Якщо поля немає в тексті — null або порожній список.
-2. Люди: лише публічні посадовці, кандидати, судді, прокурори, адвокати у справі, власники/керівники компаній у справі, або особи, яких джерело вже прямо називає підозрюваними/обвинуваченими. Така публічна особа може бути у цій справі свідком чи потерпілим — тоді role "witness" або "victim". Приватних осіб (потерпілі, свідки, родичі без посади) не називай: додай запис з role "private_skipped" без імені.
+2. Люди: публічні посадовці, кандидати, судді, прокурори, слідчі, адвокати, нотаріуси, експерти, бухгалтери та керівники/власники компаній у справі (професійна роль, названа в офіційному документі, — публічна), або особи, яких джерело вже прямо називає підозрюваними/обвинуваченими. Така публічна особа може бути у цій справі свідком чи потерпілим — тоді role "witness" або "victim". Приватних осіб (потерпілі, свідки, родичі без посади) не називай: додай запис з role "private_skipped" без імені.
 3. Ніколи не витягуй: РНОКПП/ІПН, номери паспортів, телефони, e-mail, домашні адреси, номери авто приватних осіб, банківські реквізити, дані про дітей. Якщо щось із цього було в тексті — пропусти і постав pii_dropped: true.
 4. role описує роль саме в цій справі за текстом. "Підозра" ≠ "обвинувачення" ≠ "вирок": не підвищуй статус.
 5. name_norm: Прізвище Ім'я у називному відмінку українською, без посади.
