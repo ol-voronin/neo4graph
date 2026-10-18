@@ -45,12 +45,12 @@ class QuotaExceeded(RuntimeError):
     """Gemini free-tier quota hit (per minute or per day). Retrying within one run only burns time: stop cleanly."""
 
 
-def gemini_call(model: str, system: str, user: str, key: str) -> str:
+def gemini_call(model: str, system: str, user: str, key: str, max_tokens: int = 800) -> str:
     """Plain REST call (no SDK). Retries on 429/5xx with backoff; the free tier is rate limited."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = json.dumps({"systemInstruction": {"parts": [{"text": system}]},
                        "contents": [{"role": "user", "parts": [{"text": user}]}],
-                       "generationConfig": {"temperature": 0, "responseMimeType": "application/json", "maxOutputTokens": 800}}).encode()
+                       "generationConfig": {"temperature": 0, "responseMimeType": "application/json", "maxOutputTokens": max_tokens}}).encode()
     for attempt in range(5):
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": key})
         try:

@@ -16,6 +16,10 @@ on:
         description: "Print extractions, do not write"
         type: boolean
         default: false
+      random:
+        description: "Random sample over all dates instead of newest-first"
+        type: boolean
+        default: true
 
 concurrency:
   group: label   # shares the Gemini daily quota with the label workflow; never run both at once
@@ -48,4 +52,4 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
         run: |
           if [ -z "$GEMINI_API_KEY" ]; then echo "GEMINI_API_KEY missing"; exit 1; fi
-          python src/extract_entities.py --limit "${{ github.event.inputs.limit }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          python src/extract_entities.py --limit "${{ github.event.inputs.limit }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} ${{ github.event.inputs.random == 'true' && '--random' || '' }}

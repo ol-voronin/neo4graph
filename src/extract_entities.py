@@ -91,6 +91,7 @@ def main():
     ap.add_argument("--delay", type=float, default=6.0)
     ap.add_argument("--min-len", type=int, default=200)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--random", action="store_true", help="random order instead of newest-first")
     a = ap.parse_args()
     if not os.environ.get("GEMINI_API_KEY"):
         sys.exit("GEMINI_API_KEY is not set")
@@ -102,7 +103,7 @@ def main():
     cur.execute("SELECT m.id, m.text, m.ts_published, m.source_id FROM messages m "
                 "LEFT JOIN entity_extractions e ON e.message_id = m.id "
                 "WHERE e.message_id IS NULL AND m.source_id = ANY(%s) AND length(m.text) >= %s "
-                "ORDER BY m.ts_published DESC LIMIT %s", (srcs, a.min_len, a.limit))
+                "ORDER BY " + ("random()" if a.random else "m.ts_published DESC") + " LIMIT %s", (srcs, a.min_len, a.limit))
     rows = cur.fetchall()
     print(f"candidates: {len(rows)}")
     ok = bad = quota_hits = 0
@@ -115,7 +116,7 @@ def main():
             cur = conn.cursor()
         user = json.dumps({"source": sid, "ts_published": ts.isoformat(), "text": text[:4000]}, ensure_ascii=False)
         try:
-            txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"])
+            txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"], max_tokens=4000)
             time.sleep(a.delay)
             payload = clean(parse_json(txt))
         except QuotaExceeded as e:
