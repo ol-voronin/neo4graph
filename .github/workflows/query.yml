@@ -1,0 +1,47 @@
+name: query
+
+# Query-driven resolution chain (src/resolve_query.py): case number / company / EDRPOU / person / text ->
+# ЄДРСР, ЄДР, НАЗК register, corpus mentions, LLM entity extraction -> Postgres -> graph. Dumps are cached daily.
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "Case number, company name, EDRPOU, person name or free text"
+        required: true
+      years:
+        description: "ЄДРСР years to scan"
+        default: "2021-2026"
+      kind:
+        description: "override: case | org | edrpou | person | text (blank = auto)"
+        default: ""
+
+concurrency:
+  group: query-${{ github.event.inputs.query }}
+  cancel-in-progress: false
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv anthropic
+      - name: Cache registry dumps (refreshed daily)
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/edr/uo.zip
+            data/nazk/corrupt.json
+          key: dumps-${{ github.run_id }}
+          restore-keys: dumps-
+      - name: Resolve
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
+        run: |
+          python src/resolve_query.py "${{ github.event.inputs.query }}" --years "${{ github.event.inputs.years }}" ${{ github.event.inputs.kind != '' && format('--kind {0}', github.event.inputs.kind) || '' }}

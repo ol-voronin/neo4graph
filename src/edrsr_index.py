@@ -59,7 +59,7 @@ def read_dict(z, name, key):
     return out
 
 
-def stream(zip_path: Path, causes: set, court_codes: set):
+def stream(zip_path: Path, causes: set, court_codes: set, judges: tuple = ()):
     with zipfile.ZipFile(zip_path) as z:
         names = {n.lower(): n for n in z.namelist()}
         courts = read_dict(z, names.get("courts.csv", "courts.csv"), "court_code")
@@ -74,7 +74,8 @@ def stream(zip_path: Path, causes: set, court_codes: set):
             for row in csv.DictReader(io.TextIOWrapper(f, encoding="utf-8-sig"), delimiter="\t"):
                 n += 1
                 cause = (row.get("cause_num") or "").strip()
-                if cause in causes or row.get("court_code") in court_codes:
+                jl = (row.get("judge") or "").lower() if judges else ""
+                if cause in causes or row.get("court_code") in court_codes or (judges and any(j in jl for j in judges)):
                     yield {"doc_id": row["doc_id"], "cause_num": cause, "court_code": row.get("court_code"),
                            "court": courts.get(row.get("court_code")), "judgment_form": forms.get(row.get("judgment_code")),
                            "justice_kind": kinds.get(row.get("justice_kind")), "category": cats.get(row.get("category_code")),
@@ -104,8 +105,10 @@ def main():
     ap.add_argument("--hacc", action="store_true")
     ap.add_argument("--courts", default="", help="extra court codes, comma-separated")
     ap.add_argument("--texts", type=int, default=0, help="fetch full text for up to N matched decisions without text")
+    ap.add_argument("--judge", default="", help="judge name fragment(s), comma-separated")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+    judges = tuple(" ".join(x.lower().split()[:2]) for x in a.judge.split(",") if x.strip())
     years = []
     for part in a.years.split(","):
         if "-" in part:
@@ -129,11 +132,13 @@ def main():
         for (t,) in cur.fetchall():
             causes |= set(CAUSE_RE.findall(t or ""))
         print(f"case numbers from db: {len(causes)}")
-    print(f"years {years}, causes {len(causes)}, courts {court_codes}")
+    print(f"years {years}, causes {len(causes)}, courts {court_codes}, judges {judges}")
+    if not causes and not court_codes and not judges:
+        print("nothing to match"); return
     total = 0
     for y in years:
         zp = download(y, ROOT / "data" / "edrsr" / f"edrsr_data_{y}.zip")
-        for rec in stream(zp, causes, court_codes):
+        for rec in stream(zp, causes, court_codes, judges):
             total += 1
             if a.dry_run:
                 if total <= 20:

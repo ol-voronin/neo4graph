@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import QuotaExceeded, gemini_call, parse_json  # noqa: E402
+from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json  # noqa: E402
 
 PROMPT_VERSION = "ee-v1"
 ANTICORR_SOURCES = ["tg:sap_gov_ua", "tg:NAZK_gov_ua", "tg:PressCourt", "tg:fuckcorruption", "tg:fightcorruptor",
@@ -92,14 +92,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=50)
     ap.add_argument("--sources", default=",".join(ANTICORR_SOURCES))
-    ap.add_argument("--model", default="gemini-3.5-flash-lite")
+    ap.add_argument("--provider", choices=["gemini", "anthropic"], default="gemini")
+    ap.add_argument("--model", default=None)
     ap.add_argument("--delay", type=float, default=6.0)
     ap.add_argument("--min-len", type=int, default=200)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--random", action="store_true", help="random order instead of newest-first")
     a = ap.parse_args()
-    if not os.environ.get("GEMINI_API_KEY"):
-        sys.exit("GEMINI_API_KEY is not set")
+    a.model = a.model or ("claude-haiku-5-5" if a.provider == "anthropic" else "gemini-3.5-flash-lite")
+    key = "ANTHROPIC_API_KEY" if a.provider == "anthropic" else "GEMINI_API_KEY"
+    if not os.environ.get(key):
+        sys.exit(f"{key} is not set")
+    client = None
+    if a.provider == "anthropic":
+        import anthropic
+        client = anthropic.Anthropic()
+        a.delay = 0.0
     from load_to_db import connect
     sysmsg = system_prompt()
     srcs = [s.strip() for s in a.sources.split(",") if s.strip()]
@@ -123,8 +131,12 @@ def main():
             cur = conn.cursor()
         user = json.dumps({"source": sid, "ts_published": ts.isoformat(), "text": text[:4000]}, ensure_ascii=False)
         try:
-            txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"], max_tokens=4000)
-            time.sleep(a.delay)
+            if client:
+                txt = anthropic_text(client.messages.create(model=a.model, max_tokens=6000, output_config={"effort": "low"}, system=sysmsg,
+                                                            messages=[{"role": "user", "content": user}]))
+            else:
+                txt = gemini_call(a.model, sysmsg, user, os.environ["GEMINI_API_KEY"], max_tokens=4000)
+                time.sleep(a.delay)
             payload = clean(parse_json(txt))
         except QuotaExceeded as e:
             quota_hits += 1
@@ -148,7 +160,7 @@ def main():
                     "is_case_related=EXCLUDED.is_case_related, pii_dropped=EXCLUDED.pii_dropped, model=EXCLUDED.model, "
                     "prompt_version=EXCLUDED.prompt_version, created_at=now()",
                     (mid, payload["is_case_related"], json.dumps(payload, ensure_ascii=False), payload["pii_dropped"],
-                     a.model, PROMPT_VERSION))
+                     a.model, PROMPT_VERSION + "-" + a.provider))
         conn.commit()
     print(f"extracted {ok}, failed {bad}" + (", stopped on quota" if quota_stop else ""))
     if bad and not ok:

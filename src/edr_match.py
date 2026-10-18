@@ -41,6 +41,10 @@ def norm(s: str) -> str:
 
 def download():
     DUMP.parent.mkdir(parents=True, exist_ok=True)
+    import time
+    if DUMP.exists() and DUMP.stat().st_size > 1e8 and time.time() - DUMP.stat().st_mtime < 2 * 86400:
+        print("dump cached", DUMP.stat().st_size)
+        return
     print("downloading", DUMP_URL)
     req = urllib.request.Request(DUMP_URL, headers={"User-Agent": "Mozilla/5.0 (research; rhetoric-strikes)"})  # bare urllib UA gets 403
     with urllib.request.urlopen(req, timeout=120) as r, open(DUMP, "wb") as f:
@@ -53,8 +57,9 @@ def texts(el, tag):
     return [x.text.strip() for x in el.iter(tag) if x.text and x.text.strip()]
 
 
-def stream(targets: dict):
-    """targets: norm_name -> original query. Yields matched records."""
+def stream(targets: dict, edrpous: set = frozenset(), persons: tuple = ()):
+    """targets: norm_name -> original query; edrpous: exact codes; persons: lowercase name fragments searched in
+    founders / beneficiaries / signers. Yields matched records."""
     with zipfile.ZipFile(DUMP) as z:
         names = [n for n in z.namelist() if n.lower().endswith(".xml")]
         for n in names:
@@ -65,6 +70,15 @@ def stream(targets: dict):
                     name = (el.findtext("NAME") or "")
                     short = (el.findtext("SHORT_NAME") or "")
                     hit = targets.get(norm(name)) or targets.get(norm(short))
+                    code = el.findtext("EDRPOU") or ""
+                    if not hit and code in edrpous:
+                        hit = code
+                    if not hit and persons:
+                        blob = " ".join(texts(el, "FOUNDER") + texts(el, "BENEFICIARY") + texts(el, "SIGNER")).lower()
+                        for pn in persons:
+                            if pn in blob:
+                                hit = "person:" + pn
+                                break
                     if hit:
                         yield {
                             "query": hit, "edrpou": el.findtext("EDRPOU"), "name": name, "short_name": short,
@@ -80,10 +94,14 @@ def main():
     ap.add_argument("--download", action="store_true")
     ap.add_argument("--names", default="")
     ap.add_argument("--from-db", action="store_true")
+    ap.add_argument("--edrpou", default="", help="exact codes, comma-separated")
+    ap.add_argument("--person", default="", help="person name(s) to find among founders/beneficiaries/signers, comma-separated")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     if a.download:
         download()
+    edrpous = {x.strip() for x in a.edrpou.split(",") if x.strip()}
+    persons = tuple(" ".join(x.lower().split()[:2]) for x in a.person.split(",") if x.strip())
     queries = [x.strip() for x in a.names.split(",") if x.strip()]
     conn = cur = None
     if a.from_db:
@@ -94,13 +112,20 @@ def main():
         cur.execute("SELECT DISTINCT name FROM ee_orgs WHERE kind IN ('company','other') AND name IS NOT NULL")
         queries += [r[0] for r in cur.fetchall()]
     targets = {norm(q): q for q in queries if len(norm(q)) >= 4}
-    print(f"targets: {len(targets)}")
-    if not targets:
+    print(f"targets: {len(targets)}, edrpou: {len(edrpous)}, persons: {persons}")
+    if not targets and not edrpous and not persons:
         return
     if not DUMP.exists():
         sys.exit(f"dump missing: {DUMP} (run with --download)")
     n = 0
-    for rec in stream(targets):
+    if a.from_db and cur is None:
+        pass
+    if cur is None and not a.dry_run:
+        sys.path.insert(0, str(ROOT / "src"))
+        from load_to_db import connect
+        conn = connect()
+        cur = conn.cursor()
+    for rec in stream(targets, edrpous, persons):
         n += 1
         print(json.dumps(rec, ensure_ascii=False)[:400])
         if cur and not a.dry_run:
