@@ -32,7 +32,7 @@ def make_stationary(x: np.ndarray):
     """ADF (H0: unit root). Returns (series, differenced?, p-value). Needs >= ~10 points to be meaningful."""
     if len(x) < 10 or np.nanstd(x) == 0:
         return x, False, float("nan")
-    p = adfuller(x, autolag="AIC")[1]
+    p = adfuller(x, autolag="AIC", result_object=False)[1]
     if p > 0.05:
         return np.diff(x), True, p
     return x, False, p
@@ -66,13 +66,14 @@ def expanding_auc(df, sig, tgt, lag=1, min_train=14, q=0.75):
         tr = slice(0, t)
         thr = np.nanquantile(df[tgt].iloc[:t], q)
         ytr = (df[tgt].iloc[:t] > thr).astype(int)
-        ok = f.iloc[:t].notna().all(axis=1) & True
+        ftr = f.iloc[:t]
+        ok = ftr.notna().all(axis=1)
         if ytr[ok].nunique() < 2 or not f.iloc[t].notna().all():
             continue
         out = []
         for cols in (base_cols, full_cols):
-            sc = StandardScaler().fit(f.loc[ok, cols])
-            m = LogisticRegression(C=0.5).fit(sc.transform(f.loc[ok, cols]), ytr[ok])
+            sc = StandardScaler().fit(ftr.loc[ok, cols])
+            m = LogisticRegression(C=0.5).fit(sc.transform(ftr.loc[ok, cols]), ytr[ok])
             out.append(m.predict_proba(sc.transform(f.iloc[[t]][cols]))[0, 1])
         y_true.append(int(df[tgt].iloc[t] > thr)); p_base.append(out[0]); p_full.append(out[1])
     y_true, p_base, p_full = map(np.array, (y_true, p_base, p_full))
@@ -115,6 +116,19 @@ def selftest():
         hit_plant += p1.min() < 0.05
         hit_noise += p0.min() < 0.05
     print(f"power (planted lag-1, n={n}): {hit_plant}/{trials};  false positives on noise: {hit_noise}/{trials} (expect <= ~{0.05*trials:.0f})")
+    # AUC path: planted signal must beat the baseline, noise must not (mean delta over trials)
+    dl, dn = [], []
+    for _ in range(10):
+        n2 = 150
+        sg = RNG.normal(size=n2)
+        base = np.cumsum(RNG.normal(size=n2)) * 0.1
+        df_p = pd.DataFrame({"sig": sg, "y": base + 1.2 * np.r_[0, sg[:-1]] + RNG.normal(size=n2) * 0.5})
+        df_n = pd.DataFrame({"sig": sg, "y": base + RNG.normal(size=n2) * 0.5})
+        for df_, acc in ((df_p, dl), (df_n, dn)):
+            r_ = expanding_auc(df_, "sig", "y")
+            if r_:
+                acc.append(r_["delta"])
+    print(f"AUC gain from signal: planted {np.mean(dl):+.3f} vs noise {np.mean(dn):+.3f}")
     # short series: shows the data bottleneck
     hits = 0
     for _ in range(trials):
