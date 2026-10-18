@@ -113,10 +113,11 @@ def reyestr_search(expr="", case_number="", page=1, per_page=50):
 
 def reyestr_text(doc_id):
     s = get(f"https://reyestr.court.gov.ua/Review/{doc_id}").decode("utf-8", "ignore")
-    m = re.search(r'id="divdocument"[^>]*>(.*?)<div id="divcasecat"', s, re.S) or re.search(r'id="divdocument"[^>]*>(.*)', s, re.S)
+    m = re.search(r'<textarea id="txtdepository">(.*?)</textarea>', s, re.S)  # the decision (RTF converted to HTML) lives in a textarea
     if not m:
         return None
-    t = re.sub(r"<(br|/p|/div|/tr)[^>]*>", "\n", m.group(1))
+    t = html.unescape(m.group(1))
+    t = re.sub(r"<(br|/p|/div|/tr)[^>]*>", "\n", t)
     t = html.unescape(re.sub(r"<[^>]+>", " ", t))
     t = re.sub(r"[ \t\xa0]+", " ", t)
     return re.sub(r"\n\s*\n+", "\n", t).strip()[:200000]
@@ -145,9 +146,11 @@ def nazk_declarations(name, max_pages=5):
 
 
 # ---------------------------------------------------------------- ЄДР ФОП dump (optional)
-def fop_search(name, limit=60):
+def fop_search(name, limit=60, deadline=None):
+    """Scan the ЄДР ФОП dump (470 MB XML in a zip). Takes minutes; stops at the deadline and reports partial=True."""
     if not FOP.exists():
         return None, []
+    partial = False
     key = re.sub(r"\s+", " ", name.lower().strip())
     out, total = [], 0
     with zipfile.ZipFile(FOP) as z:
@@ -158,6 +161,10 @@ def fop_search(name, limit=60):
                 for _, el in ET.iterparse(io.BufferedReader(raw, 1 << 20), events=("end",)):
                     if el.tag != "SUBJECT":
                         continue
+                    if deadline and time.time() > deadline:
+                        partial = True
+                        el.clear()
+                        break
                     nm = (el.findtext("NAME") or "")
                     if nm.lower().startswith(key):
                         total += 1
@@ -165,7 +172,9 @@ def fop_search(name, limit=60):
                             out.append({"record": el.findtext("RECORD"), "name": nm.title(), "stan": el.findtext("STAN"), "registration": el.findtext("REGISTRATION"),
                                         "terminated": el.findtext("TERMINATED_INFO")})
                     el.clear()
-    return total, out
+            if partial:
+                break
+    return (total if not partial else -total - 1), out
 
 
 # ---------------------------------------------------------------- ingest
@@ -174,6 +183,9 @@ def ingest(env, payload):
                                  headers={"Content-Type": "application/json", "x-ingest-token": env["INGEST_TOKEN"]})
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.loads(r.read())
+
+
+NO_FOP = False
 
 
 def process(env, q, kind, pages=2, texts=10, deadline=None):
@@ -229,9 +241,9 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
             for d in decl[:60]:
                 hits.append({"query": q, "qkind": kind, "source": "nazk_decl", "ref": d["id"], "url": d["url"],
                              "title": f"Декларація {d['year'] or ''} · {d['name']}", "snippet": f"{d['work_place'] or ''} — {d['work_post'] or ''}", "payload": d})
-            ftotal, fops = fop_search(q)
+            ftotal, fops = fop_search(q, deadline=deadline) if not NO_FOP else (None, [])
             if ftotal is not None:
-                notes.append(f"ЄДР ФОП: {ftotal}")
+                notes.append(f"ЄДР ФОП: {ftotal}" if ftotal >= 0 else f"ЄДР ФОП: {-ftotal - 1}+ (скан не завершено, повторіть)")
                 for f in fops:
                     hits.append({"query": q, "qkind": kind, "source": "edr_fop", "ref": f["record"], "url": None, "title": f"ФОП {f['name']}",
                                  "snippet": f"{f['stan'] or ''}; {f['registration'] or ''}", "payload": f})
@@ -260,7 +272,10 @@ def main():
     ap.add_argument("--pages", type=int, default=2)
     ap.add_argument("--texts", type=int, default=10)
     ap.add_argument("--max-seconds", type=int, default=150, help="time budget per invocation (device shells are short-lived)")
+    ap.add_argument("--no-fop", action="store_true", help="skip the ЄДР ФОП scan (slow)")
     a = ap.parse_args()
+    global NO_FOP
+    NO_FOP = a.no_fop
     env = cfg()
     if not env["INGEST_TOKEN"]:
         sys.exit("INGEST_TOKEN missing (.env)")
