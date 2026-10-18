@@ -88,7 +88,26 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .chat button.send{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:0 14px;font:inherit;cursor:pointer}
 .chat button.send:disabled{opacity:.6;cursor:default}
 .chat .ex{display:flex;flex-wrap:wrap;gap:4px}
-@media (max-width:760px){.main{grid-template-columns:1fr;grid-template-rows:minmax(300px,50vh) auto}.panel{max-height:45vh}}
+.fbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.active{display:contents}
+.chip.on{background:var(--accent-soft);border-color:var(--accent)}
+.chip .x{font-weight:600;margin-left:2px;color:var(--muted)}
+.chip.add{border-style:dashed}
+#ftext{flex:1 1 220px;min-width:0;font:inherit;font-size:13px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--fg)}
+.fmenu{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.fmhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.fmhead .chip{margin-left:auto}
+.fsec .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 4px}
+.hints{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.hints:empty{display:none}
+.tod{position:absolute;right:10px;bottom:8px;background:var(--accent);color:#fff;border-color:var(--accent)}
+@media (max-width:760px){
+  html,body{height:auto}body{display:block;padding-block:8px}
+  .top{gap:6px}.top h1{font-size:14px;flex:1 1 100%}.top #stats{display:none}
+  .tabs{position:sticky;top:0;z-index:15;background:var(--bg);padding:4px 0}
+  .main{display:flex;flex-direction:column;margin-top:10px}.canvas{height:54vh;min-height:300px}.canvas .hint{display:none}.panel{max-height:none;margin-top:10px}
+  .search input,#ftext,.chat textarea,select,input[type=date]{font-size:16px}
+  .fmenu{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:72vh;overflow:auto;border-radius:14px 14px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.25);padding-bottom:max(12px,env(safe-area-inset-bottom))}
+  .sugg{max-height:50vh}.legend{margin-top:8px}.chat .log{max-height:50vh}.fc .bars{grid-template-columns:1fr}
+}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -99,15 +118,19 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
   <div class="search"><input id="q" type="search" placeholder="Особа, компанія, номер справи (991/1234/21), ЄДРПОУ…" autocomplete="off" aria-label="Пошук об'єкта"><div class="sugg" id="sugg" hidden></div></div>
   <span class="meta" id="stats"></span>
 </div>
-<div class="filters">
-  <div class="group" id="types"><span class="lbl">Вузли</span></div>
-  <div class="group" id="srcs"><span class="lbl">Джерела</span></div>
-  <div class="group"><span class="lbl">Роль</span><select id="role"><option value="">усі</option></select></div>
-  <div class="group"><span class="lbl">Дати</span><input type="date" id="d0"><span class="meta">–</span><input type="date" id="d1"></div>
-  <div class="group"><span class="lbl">Глибина</span><select id="depth"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></div>
+<div class="filters" id="filters">
+  <div class="fbar">
+    <button class="chip add" id="addf" type="button" aria-expanded="false">＋ фільтр</button>
+    <div class="active" id="active"></div>
+    <input id="ftext" type="search" placeholder="фільтр словами: 2025 Харків вирок Олександрович" aria-label="Фільтр словами" autocomplete="off">
+    <span class="group"><span class="lbl">Глибина</span><select id="depth"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></span>
+    <button class="chip" id="clearf" type="button" hidden>скинути все</button>
+  </div>
+  <div class="fmenu" id="fmenu" hidden><div class="fmhead"><b>Додати фільтр</b><span class="meta" id="fmnote"></span><button type="button" class="chip" id="fmclose">закрити</button></div><div id="fmbody"></div></div>
+  <div class="hints" id="fhints"></div>
 </div>
 <div class="main">
-  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><span class="meta count" id="count"></span><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div></div>
+  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><span class="meta count" id="count"></span><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div><button type="button" class="chip tod" id="todetails" hidden>деталі ↓</button></div>
   <aside class="panel" id="panel"><p class="empty">Введіть об'єкт у пошук або натисніть вузол.</p></aside>
 </div>
 <div class="legend" id="legend"></div>
@@ -154,34 +177,72 @@ function mergeCase(cause){const list=(DEC&&DEC.cases[cause])||[];if(!list.length
   return cid;}
 const adj=new Map(); G.edges.forEach((e,i)=>{e.i=i;(adj.get(e.source)||adj.set(e.source,[]).get(e.source)).push(e);(adj.get(e.target)||adj.set(e.target,[]).get(e.target)).push(e);});
 const msgIndex=new Map(G.nodes.filter(n=>n.type==='post').map(n=>[n.id.slice(5),n]));
-const state={types:new Set(Object.keys(TYPES)),srcs:new Set(G.sources),role:'',d0:'',d1:'',depth:2,center:null};
+const state={depth:2,center:null,f:[]};
 try{const s=JSON.parse(localStorage.getItem('graph-ui')||'{}');if(s.depth)state.depth=s.depth;}catch(_){}
-function save(){try{localStorage.setItem('graph-ui',JSON.stringify({depth:state.depth}))}catch(_){}}
-// chips
-const typesEl=document.getElementById('types'),srcsEl=document.getElementById('srcs');
-function chip(parent,label,color,on,toggle){const b=document.createElement('button');b.className='chip';b.type='button';b.setAttribute('aria-pressed',on);b.innerHTML=(color?`<span class="dot" style="background:${color}"></span>`:'')+label;b.onclick=()=>{const v=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',v);toggle(v);render();};parent.appendChild(b);}
-Object.entries(TYPES).forEach(([t,l])=>chip(typesEl,l,COLORS[t],true,v=>v?state.types.add(t):state.types.delete(t)));
-G.sources.forEach(s=>chip(srcsEl,SRC[s]||s,null,true,v=>v?state.srcs.add(s):state.srcs.delete(s)));
-const roleSel=document.getElementById('role');[...new Set(G.edges.map(e=>e.rel))].sort().forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=REL[r]||r;roleSel.appendChild(o)});
-roleSel.onchange=()=>{state.role=roleSel.value;render()};
-const d0=document.getElementById('d0'),d1=document.getElementById('d1');d0.onchange=()=>{state.d0=d0.value;render()};d1.onchange=()=>{state.d1=d1.value;render()};
+try{const h=new URLSearchParams(location.hash.slice(1));if(h.get('f'))state.f=JSON.parse(h.get('f'));if(h.get('c'))state.center=h.get('c');}catch(_){}
+function save(){try{localStorage.setItem('graph-ui',JSON.stringify({depth:state.depth}))}catch(_){}const h=new URLSearchParams();if(state.f.length)h.set('f',JSON.stringify(state.f));if(state.center)h.set('c',state.center);history.replaceState(null,'','#'+h.toString());}
+// ---- facets: every filter is a (facet, value) chip the user adds or removes; values are computed from the data around the selected object
+const OBL=['Вінниц','Волин','Дніпропетров','Донец','Житомир','Закарпат','Запоріз','Івано-Франків','Київ','Кіровоград','Луган','Львів','Миколаїв','Одес','Полтав','Рівн','Сум','Терноп','Харків','Херсон','Хмельниц','Черкас','Чернівец','Черніг','Крим','Севастопол'];
+const OBLN={'Вінниц':'Вінницька','Волин':'Волинська','Дніпропетров':'Дніпропетровська','Донец':'Донецька','Житомир':'Житомирська','Закарпат':'Закарпатська','Запоріз':'Запорізька','Івано-Франків':'Івано-Франківська','Київ':'Київ / Київська','Кіровоград':'Кіровоградська','Луган':'Луганська','Львів':'Львівська','Миколаїв':'Миколаївська','Одес':'Одеська','Полтав':'Полтавська','Рівн':'Рівненська','Сум':'Сумська','Терноп':'Тернопільська','Харків':'Харківська','Херсон':'Херсонська','Хмельниц':'Хмельницька','Черкас':'Черкаська','Чернівец':'Чернівецька','Черніг':'Чернігівська','Крим':'Крим','Севастопол':'Севастополь'};
+const CITY={'Дніпр':'Дніпропетров','Кривий Ріг':'Дніпропетров','Кам\'янськ':'Дніпропетров','Кременчу':'Полтав','Маріупол':'Донец','Краматор':'Донец','Слов\'янськ':'Донец','Ужгород':'Закарпат','Луцьк':'Волин','Рівне':'Рівн','Суми':'Сум','Тернопіл':'Терноп','Черкаси':'Черкас','Чернігів':'Черніг','Чернівці':'Чернівец','Хмельницьк':'Хмельниц','Житомир':'Житомир','Полтав':'Полтав','Миколаїв':'Миколаїв','Херсон':'Херсон','Запоріж':'Запоріз','Львів':'Львів','Одес':'Одес','Харк':'Харків','Київ':'Київ','Вінниц':'Вінниц','Луганськ':'Луган','Донецьк':'Донец','Кропивницьк':'Кіровоград','Івано-Франківськ':'Івано-Франків'};
+function regionOf(s){if(!s)return null;for(const k of OBL)if(s.includes(k))return OBLN[k];for(const [c,k] of Object.entries(CITY))if(s.includes(c))return OBLN[k];return null}
+function patrOf(n){const src=n.type==='person'?n.label:(n.type==='declaration'?(n.label.split('·')[1]||''):'');const w=src.trim().split(/\s+/);return w.length>=3&&/(ович|івна|ївна|евич|йович|ич)$/i.test(w[2])?w[2]:null}
+function provOf(n){return {decision:'реєстр судових рішень',court:'реєстр судових рішень',registry:'ЄДР',declaration:'декларації НАЗК',web:'інтернет',post:'пости та ЗМІ',case:'справи',person:'особи',org:'організації',asset:'активи'}[n.type]||n.type}
+const FACETS={
+  type:{label:'Тип вузла',get:n=>n.type,fmt:v=>TYPES[v]||v},
+  prov:{label:'Походження даних',get:n=>provOf(n)},
+  year:{label:'Рік',get:n=>{const d=n.date||n.year||n.publ;return d?String(d).slice(0,4):null}},
+  region:{label:'Регіон (суд / декларація)',get:n=>n.region||regionOf(n.court)||regionOf(n.label.includes('суд')?n.label:'')},
+  court:{label:'Суд',get:n=>n.court||(n.type==='court'?n.label:null)},
+  patr:{label:'По батькові',get:patrOf},
+  form:{label:'Форма рішення',get:n=>n.form||null},
+  kind:{label:'Судочинство',get:n=>n.type==='decision'?n.kind:null},
+  org:{label:'Орган / місце роботи',get:n=>n.org||n.agency||null},
+  stan:{label:'Стан у ЄДР',get:n=>n.stan||null},
+  rel:{label:'Тип зв\'язку',edge:true,get:e=>e.rel,fmt:v=>REL[v]||v},
+  esrc:{label:'Джерело зв\'язку',edge:true,get:e=>e.src?(SRC[e.src]||e.src):null,fmt:v=>v==='analyst'?'аналітик (вказано вручну)':v},
+  text:{label:'Текст',get:n=>null}
+};
+const active=document.getElementById('active'),clearB=document.getElementById('clearf'),fmenu=document.getElementById('fmenu'),fmbody=document.getElementById('fmbody'),addB=document.getElementById('addf'),ftext=document.getElementById('ftext');
+function addF(k,v){if(!state.f.some(f=>f.k===k&&f.v===v))state.f.push({k,v});drawF();render()}
+function rmF(i){state.f.splice(i,1);drawF();render()}
+function drawF(){active.innerHTML='';state.f.forEach((f,i)=>{const b=document.createElement('button');b.type='button';b.className='chip on';b.innerHTML=`<span class="meta">${esc(FACETS[f.k].label)}:</span> ${esc((FACETS[f.k].fmt||(x=>x))(f.v))} <span class="x" aria-label="прибрати">×</span>`;b.onclick=()=>rmF(i);active.appendChild(b)});clearB.hidden=!state.f.length;save()}
+clearB.onclick=()=>{state.f=[];drawF();render()};
+function groups(){const g={};for(const f of state.f)(g[f.k]||(g[f.k]=[])).push(f.v);return g}
+function nodeOk(n,g){if(n.id===state.center)return true;for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(F.edge)continue;if(k==='text'){if(!vals.every(v=>hay(n).includes(v.toLowerCase())))return false;continue}const x=F.get(n);if(x==null&&k!=='type')continue;if(!vals.includes(x))return false}return true}
+function edgeOk(e,g){for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(!F.edge)continue;const x=F.get(e);if(x==null)continue;if(!vals.includes(x))return false}const a=byId.get(e.source),b=byId.get(e.target);return nodeOk(a,g)&&nodeOk(b,g)}
+function ego(center,depth,g=groups()){
+  const seen=new Map([[center,0]]);const q=[center];const edges=new Set();
+  while(q.length){const u=q.shift();const d=seen.get(u);if(d>=depth)continue;
+    for(const e of adj.get(u)||[]){if(!edgeOk(e,g))continue;const v=e.source===u?e.target:e.source;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);q.push(v)}}}
+  return {nodes:[...seen.keys()].map(id=>byId.get(id)),edges:[...edges]};
+}
+// facet values available around the current object (computed on the unfiltered neighbourhood so removed values can be added back)
+function facetCounts(){if(!state.center)return{};const {nodes,edges}=ego(state.center,state.depth,{});const out={};for(const [k,F] of Object.entries(FACETS)){if(k==='text')continue;const c=new Map();for(const x of (F.edge?edges:nodes)){if(!F.edge&&x.id===state.center)continue;const v=F.get(x);if(v==null)continue;c.set(v,(c.get(v)||0)+1)}if(c.size)out[k]=[...c].sort((a,b)=>b[1]-a[1])}return out}
+function openMenu(){const fc=facetCounts();fmbody.innerHTML='';document.getElementById('fmnote').textContent=state.center?`значення — з оточення «${byId.get(state.center).label}»`:'';
+  for(const [k,vals] of Object.entries(fc)){const F=FACETS[k];const sec=document.createElement('div');sec.className='fsec';sec.innerHTML=`<div class="lbl">${esc(F.label)}</div>`;const row=document.createElement('div');row.className='group';
+    vals.slice(0,14).forEach(([v,n])=>{const b=document.createElement('button');b.type='button';b.className='chip';b.setAttribute('aria-pressed',state.f.some(f=>f.k===k&&f.v===v));b.innerHTML=`${esc((F.fmt||(x=>x))(v))} <span class="meta">${n}</span>`;b.onclick=()=>{const i=state.f.findIndex(f=>f.k===k&&f.v===v);if(i>=0)rmF(i);else addF(k,v);openMenu()};row.appendChild(b)});
+    if(vals.length>14){const m=document.createElement('span');m.className='meta';m.textContent=`+${vals.length-14} ще — уточніть словами`;row.appendChild(m)}sec.appendChild(row);fmbody.appendChild(sec)}
+  if(!fmbody.children.length)fmbody.innerHTML='<p class="empty">Спочатку виберіть об\'єкт.</p>';fmenu.hidden=false;addB.setAttribute('aria-expanded','true')}
+function closeMenu(){fmenu.hidden=true;addB.setAttribute('aria-expanded','false')}
+addB.onclick=()=>fmenu.hidden?openMenu():closeMenu();document.getElementById('fmclose').onclick=closeMenu;
+// smart hints: when the neighbourhood is crowded, propose the facet that splits it best (homonyms → patronymic, region, year…)
+function hints(nodes){const h=document.getElementById('fhints');h.innerHTML='';const others=nodes.filter(n=>n.id!==state.center);if(others.length<12)return;const fc=facetCounts();let best=null;
+  for(const k of ['patr','region','year','org','form','prov','court']){const vals=(fc[k]||[]).filter(([v,n])=>n>=2&&!state.f.some(f=>f.k===k&&f.v===v));if(vals.length<2)continue;const cover=vals.reduce((a,[,n])=>a+n,0);const score=Math.min(vals.length,6)*cover;if(!best||score>best.score)best={k,vals,score}}
+  if(!best)return;const F=FACETS[best.k];h.innerHTML=`<span class="meta">Багато об'єктів (${others.length}). Уточнити за «${esc(F.label)}»:</span>`;best.vals.slice(0,6).forEach(([v,n])=>{const b=document.createElement('button');b.type='button';b.className='chip';b.innerHTML=`${esc((F.fmt||(x=>x))(v))} <span class="meta">${n}</span>`;b.onclick=()=>addF(best.k,v);h.appendChild(b)})}
+// words → filters: years, regions, decision forms, relation/type names; anything else is a text match
+function parseWords(t){const toks=t.split(/[\s,;]+/).filter(Boolean);for(const tok of toks){if(/^(19|20)\d\d$/.test(tok)){addF('year',tok);continue}
+  const r=regionOf(tok[0].toUpperCase()+tok.slice(1));if(r){addF('region',r);continue}
+  if(/(ович|івна|ївна|евич)$/i.test(tok)){addF('patr',tok[0].toUpperCase()+tok.slice(1).toLowerCase());continue}
+  const fm=['Вирок','Ухвала','Рішення','Постанова'].find(f=>f.toLowerCase().startsWith(tok.toLowerCase()));if(fm){addF('form',fm);continue}
+  const ty=Object.entries(TYPES).find(([k,l])=>l.toLowerCase().startsWith(tok.toLowerCase()));if(ty){addF('type',ty[0]);continue}
+  const rl=Object.entries(REL).find(([k,l])=>l.toLowerCase()===tok.toLowerCase());if(rl){addF('rel',rl[0]);continue}
+  addF('text',tok)}}
+ftext.onkeydown=e=>{if(e.key==='Enter'){parseWords(ftext.value.trim());ftext.value=''}};
 const depthSel=document.getElementById('depth');depthSel.value=state.depth;depthSel.onchange=()=>{state.depth=+depthSel.value;save();render()};
 document.getElementById('legend').innerHTML=Object.entries(TYPES).map(([t,l])=>`<span><span class="dot" style="background:${COLORS[t]}"></span>${l}</span>`).join('');
 document.getElementById('stats').textContent=`${G.nodes.length} вузлів · ${G.edges.length} зв'язків · дані на ${G.generated}`;
-// filters on edges
-function edgeOk(e){
-  if(state.role&&e.rel!==state.role)return false;
-  if(e.src&&!state.srcs.has(e.src))return false;
-  if(e.date){if(state.d0&&e.date<state.d0)return false;if(state.d1&&e.date>state.d1)return false;}
-  const a=byId.get(e.source),b=byId.get(e.target);
-  return state.types.has(a.type)&&state.types.has(b.type);
-}
-function ego(center,depth){
-  const seen=new Map([[center,0]]);const q=[center];const edges=new Set();
-  while(q.length){const u=q.shift();const d=seen.get(u);if(d>=depth)continue;
-    for(const e of adj.get(u)||[]){if(!edgeOk(e))continue;const v=e.source===u?e.target:e.source;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);q.push(v)}}}
-  return {nodes:[...seen.keys()].map(id=>byId.get(id)),edges:[...edges]};
-}
+drawF();
 // search
 const q=document.getElementById('q'),sugg=document.getElementById('sugg');
 function hay(n){return [n.label,n.edrpou,n.position,n.full,n.summary,n.text,n.agency,n.ref,n.judge,n.doc_id].filter(Boolean).join(' ').toLowerCase()}
@@ -233,7 +294,7 @@ function render(){
   if(sim)sim.stop();
   sim=d3.forceSimulation(ns).force('link',d3.forceLink(ls).id(d=>d.id).distance(d=>d.source.type==='post'||d.target.type==='post'?40:70)).force('charge',d3.forceManyBody().strength(-180)).force('center',d3.forceCenter(W/2,H/2)).force('collide',d3.forceCollide(16))
     .on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${d.x},${d.y})`)});
-  panel(nodes,edges);
+  panel(nodes,edges);hints(nodes);save();
 }
 function panel(nodes,edges){
   const n=byId.get(state.center);const p=document.getElementById('panel');
@@ -254,7 +315,8 @@ function panel(nodes,edges){
   }
   p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));p.scrollTop=0;
 }
-function select(id){state.center=id;render();}
+function select(id){state.center=id;render();const tb=document.getElementById('todetails');if(window.matchMedia('(max-width:760px)').matches){tb.hidden=false;}}
+document.getElementById('todetails').onclick=()=>document.getElementById('panel').scrollIntoView({behavior:'smooth',block:'start'});
 window.addEventListener('resize',()=>{if(state.center)render()});
 // tabs + fact-check (API version only)
 if(CAN_QUEUE){document.getElementById('tabs').hidden=false;const V={true:'підтверджено',false:'спростовано',partial:'частково',unresolvable:'не перевірено',pending:'не перевірялось'};const SIDE={RU_official:'РФ офіційні',RU_milblogger:'РФ воєнкори',RU_media:'РФ медіа',UA_official:'Україна офіційні',UA_media:'Україна медіа',US_admin:'США адміністрація',US_right:'США праві',US_left:'США ліві',US_congress_bipartisan:'США Конгрес',US_other:'США інші',EU:'ЄС',NATO:'НАТО',other:'інші'};
@@ -284,7 +346,7 @@ if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const
   ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}};}
 // initial object: the most connected person
 const start=G.nodes.filter(n=>n.type==='person').sort((a,b)=>(adj.get(b.id)||[]).length-(adj.get(a.id)||[]).length)[0];
-if(start){q.value=start.label;select(start.id)}
+if(state.center&&byId.has(state.center)){q.value=byId.get(state.center).label;select(state.center)}else if(start){q.value=start.label;select(start.id)}
 })();
 </script>
 
