@@ -45,7 +45,7 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;font-size:13px}
 .kv .k{color:var(--muted)}
 .rel{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
-.rel li{display:grid;grid-template-columns:1fr;gap:2px;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
+.rel li.more button{color:var(--accent)}.rel li{display:grid;grid-template-columns:1fr;gap:2px;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
 .rel li button{all:unset;cursor:pointer;color:var(--fg);font-weight:500;display:flex;gap:6px;align-items:center}
 .rel li button:hover{color:var(--accent)}
 .rel .r{font-size:12px;color:var(--muted)}
@@ -103,7 +103,7 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
   html,body{height:auto}body{display:block;padding-block:8px}
   .top{gap:6px}.top h1{font-size:14px;flex:1 1 100%}.top #stats{display:none}
   .tabs{position:sticky;top:0;z-index:15;background:var(--bg);padding:4px 0}
-  .main{display:flex;flex-direction:column;margin-top:10px}.canvas{height:54vh;min-height:300px}.canvas .hint{display:none}.panel{max-height:none;margin-top:10px}
+  .main{display:flex;flex-direction:column;margin-top:10px}.canvas{height:54vh;min-height:300px}.canvas .hint{display:none}.panel{max-height:70vh;margin-top:10px}
   .search input,#ftext,.chat textarea,select,input[type=date]{font-size:16px}
   .fmenu{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:72vh;overflow:auto;border-radius:14px 14px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.25);padding-bottom:max(12px,env(safe-area-inset-bottom))}
   .sugg{max-height:50vh}.legend{margin-top:8px}.chat .log{max-height:50vh}.fc .bars{grid-template-columns:1fr}
@@ -177,7 +177,7 @@ function mergeCase(cause){const list=(DEC&&DEC.cases[cause])||[];if(!list.length
   return cid;}
 const adj=new Map(); G.edges.forEach((e,i)=>{e.i=i;(adj.get(e.source)||adj.set(e.source,[]).get(e.source)).push(e);(adj.get(e.target)||adj.set(e.target,[]).get(e.target)).push(e);});
 const msgIndex=new Map(G.nodes.filter(n=>n.type==='post').map(n=>[n.id.slice(5),n]));
-const state={depth:2,center:null,f:[]};
+const state={depth:window.matchMedia('(max-width:760px)').matches?1:2,center:null,f:[]};
 try{const s=JSON.parse(localStorage.getItem('graph-ui')||'{}');if(s.depth)state.depth=s.depth;}catch(_){}
 try{const h=new URLSearchParams(location.hash.slice(1));if(h.get('f'))state.f=JSON.parse(h.get('f'));if(h.get('c'))state.center=h.get('c');}catch(_){}
 function save(){try{localStorage.setItem('graph-ui',JSON.stringify({depth:state.depth}))}catch(_){}const h=new URLSearchParams();if(state.f.length)h.set('f',JSON.stringify(state.f));if(state.center)h.set('c',state.center);history.replaceState(null,'','#'+h.toString());}
@@ -192,7 +192,7 @@ const FACETS={
   type:{label:'Тип вузла',get:n=>n.type,fmt:v=>TYPES[v]||v},
   prov:{label:'Походження даних',get:n=>provOf(n)},
   year:{label:'Рік',get:n=>{const d=n.date||n.year||n.publ;return d?String(d).slice(0,4):null}},
-  region:{label:'Регіон (суд / декларація)',get:n=>n.region||regionOf(n.court)||regionOf(n.label.includes('суд')?n.label:'')},
+  region:{label:'Регіон (суд / декларація)',get:n=>regionOf(n.region)||n.region||regionOf(n.court)||regionOf(n.label.includes('суд')?n.label:'')||null},
   court:{label:'Суд',get:n=>n.court||(n.type==='court'?n.label:null)},
   patr:{label:'По батькові',get:patrOf},
   form:{label:'Форма рішення',get:n=>n.form||null},
@@ -228,7 +228,7 @@ function closeMenu(){fmenu.hidden=true;addB.setAttribute('aria-expanded','false'
 addB.onclick=()=>fmenu.hidden?openMenu():closeMenu();document.getElementById('fmclose').onclick=closeMenu;
 // smart hints: when the neighbourhood is crowded, propose the facet that splits it best (homonyms → patronymic, region, year…)
 function hints(nodes){const h=document.getElementById('fhints');h.innerHTML='';const others=nodes.filter(n=>n.id!==state.center);if(others.length<12)return;const fc=facetCounts();let best=null;
-  for(const k of ['patr','region','year','org','form','prov','court']){const vals=(fc[k]||[]).filter(([v,n])=>n>=2&&!state.f.some(f=>f.k===k&&f.v===v));if(vals.length<2)continue;const cover=vals.reduce((a,[,n])=>a+n,0);const score=Math.min(vals.length,6)*cover;if(!best||score>best.score)best={k,vals,score}}
+  const W={patr:5,region:3,year:2,org:2,form:1.5,court:1,prov:1};for(const k of Object.keys(W)){const vals=(fc[k]||[]).filter(([v,n])=>n>=2&&!state.f.some(f=>f.k===k&&f.v===v));if(vals.length<2)continue;const cover=vals.reduce((a,[,n])=>a+n,0);const score=W[k]*Math.min(vals.length,6)*cover/others.length;if(!best||score>best.score)best={k,vals,score}}
   if(!best)return;const F=FACETS[best.k];h.innerHTML=`<span class="meta">Багато об'єктів (${others.length}). Уточнити за «${esc(F.label)}»:</span>`;best.vals.slice(0,6).forEach(([v,n])=>{const b=document.createElement('button');b.type='button';b.className='chip';b.innerHTML=`${esc((F.fmt||(x=>x))(v))} <span class="meta">${n}</span>`;b.onclick=()=>addF(best.k,v);h.appendChild(b)})}
 // words → filters: years, regions, decision forms, relation/type names; anything else is a text match
 function parseWords(t){const toks=t.split(/[\s,;]+/).filter(Boolean);for(const tok of toks){if(/^(19|20)\d\d$/.test(tok)){addF('year',tok);continue}
@@ -286,11 +286,11 @@ function render(){
   const link=g.append('g').selectAll('line').data(ls).join('line').attr('class',d=>'link'+(d.rel==='registry_record'||d.rel==='founder'||d.rel==='beneficiary'||d.rel==='signer'?' reg':'')).attr('stroke-width',d=>Math.min(4,1+(d.msgs||[]).length*.6));
   const node=g.append('g').selectAll('g').data(ns).join('g').attr('class',d=>'node'+(d.id===state.center?' center':''))
     .call(d3.drag().on('start',(ev,d)=>{if(!ev.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y}).on('drag',(ev,d)=>{d.fx=ev.x;d.fy=ev.y}).on('end',(ev,d)=>{if(!ev.active)sim.alphaTarget(0);d.fx=null;d.fy=null}));
-  node.append('circle').attr('r',d=>d.id===state.center?11:d.type==='post'?4:6+Math.min(6,((adj.get(d.id)||[]).length)*.4)).attr('fill',d=>COLORS[d.type])
+  node.append('circle').attr('r',d=>d.id===state.center?11:d.type==='post'?4:(ns.length>140?3.5:6)+Math.min(6,((adj.get(d.id)||[]).length)*.4)).attr('fill',d=>COLORS[d.type])
     .on('click',(ev,d)=>{ev.stopPropagation();select(d.id)})
     .on('mousemove',(ev,d)=>{tip.hidden=false;tip.textContent=d.label+(d.position?' · '+d.position:'');const r=svg.node().getBoundingClientRect();tip.style.left=(ev.clientX-r.left)+'px';tip.style.top=(ev.clientY-r.top)+'px'})
     .on('mouseleave',()=>tip.hidden=true);
-  node.filter(d=>d.type!=='post'||d.id===state.center).append('text').attr('dx',9).attr('dy',4).text(d=>d.label.length>34?d.label.slice(0,33)+'…':d.label);
+  const crowded=ns.length>140;node.filter(d=>d.id===state.center||(!crowded&&d.type!=='post')||(crowded&&(adj.get(d.id)||[]).length>=4&&d.type!=='post')).append('text').attr('dx',9).attr('dy',4).text(d=>d.label.length>34?d.label.slice(0,33)+'…':d.label);
   if(sim)sim.stop();
   sim=d3.forceSimulation(ns).force('link',d3.forceLink(ls).id(d=>d.id).distance(d=>d.source.type==='post'||d.target.type==='post'?40:70)).force('charge',d3.forceManyBody().strength(-180)).force('center',d3.forceCenter(W/2,H/2)).force('collide',d3.forceCollide(16))
     .on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${d.x},${d.y})`)});
@@ -309,11 +309,11 @@ function panel(nodes,edges){
   if(!mine.length)html+=`<p class="empty">За поточними фільтрами зв'язків немає.</p>`;
   for(const [rel,items] of [...groups].sort((a,b)=>b[1].length-a[1].length)){
     html+=`<div class="meta" style="margin:8px 0 4px">${esc(REL[rel]||rel)} · ${items.length}</div><ul class="rel">`;
-    for(const [oid,e] of items){const o=byId.get(oid);const ev=(e.msgs||[]).map(m=>msgIndex.get(m)).filter(Boolean).slice(0,3);
+    let shown=0;for(const [oid,e] of items){if(++shown>25){html+=`<li class="more"><button type="button" data-more="1">показати ще ${items.length-25}…</button></li>`;break}const o=byId.get(oid);const ev=(e.msgs||[]).map(m=>msgIndex.get(m)).filter(Boolean).slice(0,3);
       html+=`<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}${ev.length?`<ul class="ev">${ev.map(m=>`<li>${m.date||''} · ${esc(SRC[m.src]||m.src||'')} · ${esc(m.text||'')}${m.url?` <a href="${esc(m.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:(e.rel==='registry_record'||e.detail?'':'')}</li>`}
     html+='</ul>';
   }
-  p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));p.scrollTop=0;
+  p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));p.querySelectorAll('li.more button').forEach(b=>b.onclick=()=>{const ul=b.closest('ul');const rel=[...groups].find(([r,it])=>ul.previousElementSibling.textContent.startsWith(REL[r]||r));if(!rel)return;const extra=rel[1].slice(25).map(([oid,e])=>{const o=byId.get(oid);return `<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}</li>`}).join('');b.closest('li').outerHTML=extra;ul.querySelectorAll('button[data-id]').forEach(x=>x.onclick=()=>select(x.dataset.id))});p.scrollTop=0;
 }
 function select(id){state.center=id;render();const tb=document.getElementById('todetails');if(window.matchMedia('(max-width:760px)').matches){tb.hidden=false;}}
 document.getElementById('todetails').onclick=()=>document.getElementById('panel').scrollIntoView({behavior:'smooth',block:'start'});
