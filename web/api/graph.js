@@ -49,16 +49,31 @@ export default async function handler(req, res) {
       if (a.lp) edge(node("person:" + norm(a.lp).toLowerCase(), "person", norm(a.lp)), id, "owns_or_linked", a.m, { date: a.t, src: a.s });
       for (const ck of caseByMsg.get(a.m) || []) edge(id, ck, "seized_or_named", a.m, { date: a.t, src: a.s });
     }
+    function objFor(qq) {
+      const k = qq.toLowerCase().replace(/\s+/g, " ").trim();
+      for (const c of ["person:" + k, "org:" + k]) if (nodes.has(c)) return c;
+      return node("person:" + k, /^(тов|пат|прат|ат|дп|кп)\b/i.test(k) ? "org" : "person", qq.replace(/\b\w/gu, (c) => c.toUpperCase()));
+    }
     for (const e of edr) {
       const rk = node("registry:" + e.edrpou, "registry", `ЄДР ${e.edrpou} · ${e.name}`, { stan: e.stan, full: e.full, edrpou: e.edrpou });
       for (const q of e.q || []) { const ok = node("org:" + norm(q).toLowerCase(), "org", norm(q)); nodes.get(ok).edrpou = e.edrpou; edge(ok, rk, "registry_record", null); }
+      // Founders are kept under their FULL name (surname, name, patronymic): two people who share surname and name are
+      // different nodes. A person query ("Кравченко Дмитро") is linked to each full-name match with a "namesake" edge,
+      // so the user sees the candidates and picks by patronymic instead of the graph merging strangers into one person.
+      const pq = (e.q || []).filter((x) => /^person:/.test(x)).map((x) => x.slice(7).toLowerCase());
+      const big = (e.founders || []).length > 60;  // cooperatives with thousands of members: list only query matches
+      nodes.get(rk).n_founders = (e.founders || []).length;
       const people = (list, rel) => { for (const f of list || []) {
         const nm = String(f).split(";")[0].trim(); if (!nm) continue;
         const tail = String(f).split(";")[1] || "";
-        if (/\d{8}/.test(tail)) { edge(node("org:" + nm.toLowerCase(), "org", nm), rk, "founder", null); continue; }
-        const short = nm.split(/\s+/).slice(0, 2).join(" ");
-        const title = short.replace(/[^\s'’-]+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
-        edge(node("person:" + short.toLowerCase(), "person", title), rk, rel, null, { detail: String(f) });
+        if (/\d{8}/.test(tail)) { if (!big) edge(node("org:" + nm.toLowerCase(), "org", nm), rk, "founder", null); continue; }
+        const low = nm.toLowerCase().replace(/\s+/g, " ");
+        const hit = pq.find((q) => low.startsWith(q));
+        if (big && !hit) continue;
+        const title = low.replace(/[^\s'’-]+/g, (w) => w[0].toUpperCase() + w.slice(1));
+        const pid = node("person:" + low, "person", title);
+        edge(pid, rk, rel, null, { detail: String(f) });
+        if (hit && low !== hit) edge(objFor(hit), pid, "namesake", null, { detail: "збіг прізвища та імені у ЄДР; це той самий чи інший — визначає по батькові" });
       } };
       people(e.founders, "founder"); people(e.benef, "beneficiary"); people(e.signers, "signer");
     }
@@ -68,13 +83,6 @@ export default async function handler(req, res) {
           FROM query_hits h JOIN messages mm ON mm.id = h.message_id ORDER BY mm.ts_published DESC LIMIT 2000`.catch(() => []),
       sql`SELECT query, url, title, snippet, domain, engine FROM web_mentions ORDER BY fetched_at DESC LIMIT 1000`.catch(() => []),
     ]);
-    const objFor = (qq) => {
-      const k = qq.toLowerCase().replace(/\s+/g, " ").trim();
-      const cand = ["person:" + k, "org:" + k];
-      for (const c of cand) if (nodes.has(c)) return c;
-      const m = [...nodes.keys()].find((id) => (id.startsWith("person:") || id.startsWith("org:")) && id.slice(id.indexOf(":") + 1).startsWith(k.split(" ")[0]));
-      return m || node("person:" + k, /^(тов|пат|прат|ат|дп|кп)\b/i.test(k) ? "org" : "person", qq.replace(/\b\w/gu, (c) => c.toUpperCase()));
-    };
     for (const h of hits) {
       if (!msgMap.has(h.m)) msgMap.set(h.m, { m: h.m, s: h.s, t: h.t, u: h.u, x: h.x });
       edge(objFor(h.query), post(h.m), "mentioned_in", h.m, { date: h.t, src: h.s });
