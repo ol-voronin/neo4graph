@@ -100,6 +100,9 @@ def main():
         run([py, "src/edrsr_index.py", "--years", a.years, "--cause", q, "--texts", str(a.texts)], log, "ЄДРСР: decisions for the case")
         run([py, "src/extract_court_texts.py", "--cause", q], log, "LLM: entities from decision texts")
         run([py, "src/edr_match.py", "--download", "--from-db"], log, "ЄДР: companies named in the case")
+        run([py, "src/web_mentions.py", f"справа {q}"], log, "web: public mentions of the case")
+        run([py, "src/web_mentions.py", f'"{q}"'], log, "web: exact case number")
+        run([py, "src/link_media_names.py", "--cause", q], log, "media: who the press names in connection with the case (media claims only)")
     elif kind in ("org", "edrpou"):
         names = q if kind == "org" else ""
         run([py, "src/edr_match.py", "--download", "--from-db", "--names", names] + (["--edrpou", q] if kind == "edrpou" else []), log, "ЄДР: company record, founders, signers")

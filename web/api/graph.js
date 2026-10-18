@@ -90,6 +90,13 @@ export default async function handler(req, res) {
       const wid = node("web:" + w.url, "web", (w.title || w.url).slice(0, 80), { url: w.url, text: w.snippet, src: "reyestr.court.gov.ua", engine: w.engine });
       edge(objFor(base), wid, "court_register_mention", null, { src: "reyestr.court.gov.ua" });
     }
+    // media claims: who the press names in connection with a case (quote + URL as evidence); not a registry fact
+    const media = await sql`SELECT cause_num, name_norm, role, position, quote, url, confidence FROM media_links ORDER BY confidence DESC LIMIT 1000`.catch(() => []);
+    for (const ml of media) {
+      const cid = node("case:" + ml.cause_num.toLowerCase(), "case", "Справа " + ml.cause_num, { ref: ml.cause_num });
+      const pid = node("person:" + norm(ml.name_norm).toLowerCase(), "person", norm(ml.name_norm), { position: ml.position });
+      edge(pid, cid, "named_by_media", null, { detail: `за даними ЗМІ (${Math.round((ml.confidence || 0) * 100)}%): ${ml.role} — «${(ml.quote || "").slice(0, 160)}» ${ml.url}` });
+    }
     const srcSet = [...new Set(msgs.map((x) => x.s))].sort();
     return json(res, 200, { nodes: [...nodes.values()], edges: [...edges.values()], sources: srcSet, generated: new Date().toISOString().slice(0, 10) });
   } catch (e) {
