@@ -24,8 +24,9 @@ GENERAL_SOURCES = ["tg:ukrpravda_news"]
 ANTICORR_RE = (r"(НАБУ|САП\b|ВАКС|Вищ\w+ антикорупційн|НАЗК|ДБР|антикорупц|корупці|хабар|неправомірн\w+ вигод|"
                r"обвинувальн\w+ акт|е-деклар|декларуван|незаконн\w+ збагачен|розкрадан|заволодін|зловживан|"
                r"відмиван|схем\w* на|Міндіч|Енергоатом|Укренерго)")
-ROLES = {"suspect", "defendant", "convicted", "acquitted", "official_commenting", "investigator", "prosecutor", "judge",
-         "lawyer", "journalist", "politician_mentioned", "owner", "other", "private_skipped"}
+ROLES = {"suspect", "defendant", "convicted", "acquitted", "witness", "victim", "official_commenting", "investigator", "prosecutor",
+         "judge", "lawyer", "journalist", "politician_mentioned", "owner", "other", "private_skipped"}
+CONTACT_SALT = "rhetoric-strikes-contacts-v1"
 
 # Post-filter: anything matching these is removed from string fields regardless of what the model did.
 PII_PATTERNS = [
@@ -62,6 +63,16 @@ def clean(o: dict) -> dict:
     if not isinstance(o, dict) or "is_case_related" not in o:
         raise ValueError("no is_case_related")
     out = {"is_case_related": bool(o.get("is_case_related")), "pii_dropped": bool(o.get("pii_dropped"))}
+    # contacts -> salted hashes for entity matching; plaintext never stored; only orgs / officials' service contacts
+    import hashlib
+    keys = []
+    for c in (o.get("contacts") or []):
+        if not isinstance(c, dict) or c.get("owner_kind") not in ("org", "official") or not c.get("value") or not c.get("owner"):
+            continue
+        v = re.sub(r"[\s()\-]", "", str(c["value"]).lower())
+        keys.append({"owner": str(c["owner"])[:160], "owner_kind": c["owner_kind"], "kind": c.get("kind") if c.get("kind") in ("phone", "email") else "other",
+                     "hash": hashlib.sha256((CONTACT_SALT + v).encode()).hexdigest()[:24]})
+    out["contact_keys"] = keys
     for k in ("cases", "persons", "orgs", "assets", "amounts", "claims"):
         v = o.get(k) or []
         if not isinstance(v, list):

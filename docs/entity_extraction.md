@@ -18,6 +18,11 @@ any of these. People appear only when they are public officials, candidates, hea
 or already named as suspects/defendants in the official source; bystanders, victims and witnesses who are private
 persons are not extracted (`role: private_skipped` with no name).
 
+Contacts: official phone/e-mail of an organisation or an official's service contact, when an official source quotes it,
+is kept as a salted hash tied to that object and used only to confirm that two mentions are the same object. Plaintext is
+discarded in code; private persons' contacts are dropped entirely. Roles live on the person–case edge, so the same person
+can be a suspect in one case and a witness in another; witness/victim roles are extracted only for public figures.
+
 Vehicles: a vehicle appearing in two cases is a legitimate graph link, but make/model/year is a weak identifier, so
 links by it are `match: probable`; a plate or VIN quoted in an official public document is `match: strong`.
 
@@ -28,12 +33,13 @@ links by it are `match: probable`; a plate or VIN quoted in an official public d
   "is_case_related": true,
   "cases": [{"ref": "string|null", "nickname": "string|null", "agency": "NABU|SAP|HACC|NAZK|SBI|SBU|court|other|null",
              "stage": "investigation|suspicion|indictment|trial|verdict|appeal|closed|other|null", "summary": "<=200 chars"}],
-  "persons": [{"name": "as written", "name_norm": "Прізвище Ім'я (nominative, Ukrainian)", "role": "suspect|defendant|convicted|acquitted|official_commenting|investigator|prosecutor|judge|lawyer|journalist|politician_mentioned|owner|other|private_skipped",
+  "persons": [{"name": "as written", "name_norm": "Прізвище Ім'я (nominative, Ukrainian)", "role": "suspect|defendant|convicted|acquitted|witness|victim|official_commenting|investigator|prosecutor|judge|lawyer|journalist|politician_mentioned|owner|other|private_skipped",
                "position": "string|null", "org": "string|null", "public_figure": true}],
   "orgs": [{"name": "string", "edrpou": "string|null", "kind": "company|state_body|court|ngo|party|media|other", "role": "string|null"}],
   "assets": [{"type": "vehicle|real_estate|cash|securities|land|other", "description": "as written, no plates for private persons", "plate_or_vin": "string|null", "value": null, "currency": null, "linked_person": "name_norm|null"}],
   "amounts": [{"value": 0, "currency": "UAH|USD|EUR|other", "what": "bribe|damage|bail|assets_seized|contract|other"}],
   "claims": [{"text": "<=200 chars", "kind": "allegation|established_fact|denial|court_finding", "by": "who states it"}],
+  "contacts": [{"owner": "org name or name_norm of a public official", "owner_kind": "org|official", "kind": "phone|email", "value": "as written"}],
   "pii_dropped": false
 }
 ```
@@ -45,11 +51,12 @@ links by it are `match: probable`; a plate or VIN quoted in an official public d
 
 Правила:
 1. Витягуй лише те, що прямо написано в тексті. Нічого не додавай зі своїх знань. Якщо поля немає в тексті — null або порожній список.
-2. Люди: лише публічні посадовці, кандидати, судді, прокурори, адвокати у справі, власники/керівники компаній у справі, або особи, яких джерело вже прямо називає підозрюваними/обвинуваченими. Приватних осіб (потерпілі, свідки, родичі без посади) не називай: додай запис з role "private_skipped" без імені.
+2. Люди: лише публічні посадовці, кандидати, судді, прокурори, адвокати у справі, власники/керівники компаній у справі, або особи, яких джерело вже прямо називає підозрюваними/обвинуваченими. Така публічна особа може бути у цій справі свідком чи потерпілим — тоді role "witness" або "victim". Приватних осіб (потерпілі, свідки, родичі без посади) не називай: додай запис з role "private_skipped" без імені.
 3. Ніколи не витягуй: РНОКПП/ІПН, номери паспортів, телефони, e-mail, домашні адреси, номери авто приватних осіб, банківські реквізити, дані про дітей. Якщо щось із цього було в тексті — пропусти і постав pii_dropped: true.
 4. role описує роль саме в цій справі за текстом. "Підозра" ≠ "обвинувачення" ≠ "вирок": не підвищуй статус.
 5. name_norm: Прізвище Ім'я у називному відмінку українською, без посади.
 6. Активи — як написано (марка, модель, рік, тип нерухомості, місто). Номерний знак — лише якщо його наводить офіційне джерело щодо публічної особи.
 7. claims: короткі перевірювані твердження з позначкою, хто їх робить (слідство, суд, захист, журналіст).
-8. is_case_related: false, якщо повідомлення не про конкретну справу/розслідування (загальні новини, анонси, статистика) — тоді всі списки порожні.
+8. contacts: лише офіційні контакти організацій (телефон, e-mail компанії чи установи) або службові контакти посадовця, наведені в офіційному джерелі. Особисті номери й адреси приватних осіб — ніколи. Значення зберігається лише як хеш для звірки об'єктів.
+9. is_case_related: false, якщо повідомлення не про конкретну справу/розслідування (загальні новини, анонси, статистика) — тоді всі списки порожні.
 ```
