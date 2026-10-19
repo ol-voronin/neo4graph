@@ -255,6 +255,47 @@ def erb_search(name, limit=60):
     return total, out
 
 
+# ---------------------------------------------------------------- YouControl public FOP page (КВЕД etc.)
+def yc_fop(name, limit=5):
+    """YouControl's public ФОП pages carry what the open ЄДР dump no longer has: КВЕД (main + others), registration date,
+    status and city. Only exact full-name matches are taken; street/house is not kept (city level only)."""
+    try:
+        page = get("https://youcontrol.com.ua/search/?" + urllib.parse.urlencode({"q": name})).decode("utf-8", "ignore")
+    except Exception as e:  # noqa: BLE001
+        print("youcontrol search failed:", e)
+        return []
+    out = []
+    key = re.sub(r"\s+", " ", name.strip()).upper()
+    for yid in dict.fromkeys(re.findall(r"fop_details/(\d+)", page)):
+        if len(out) >= limit:
+            break
+        try:
+            h = get(f"https://youcontrol.com.ua/catalog/fop_details/{yid}").decode("utf-8", "ignore")
+        except Exception:  # noqa: BLE001
+            continue
+        t = re.sub(r"<script.*?</script>|<style.*?</style>", "", h, flags=re.S)
+        t = html.unescape(re.sub(r"<[^>]+>", "\n", t))
+        t = re.sub(r"[ \t]+", " ", t)
+        t = re.sub(r"\n\s*\n+", "\n", t)
+        m = re.search(r"ФОП ([А-ЯІЇЄҐ'’\- ]+)\n", t)
+        full = (m.group(1).strip() if m else "").upper()
+        if not full.startswith(key):
+            continue
+        kv = re.search(r"Основний:\s*\n\s*(\d{2}\.\d{2} [^\n]+)", t)
+        others = re.findall(r"\n\s*(\d{2}\.\d{2} [^\n]+)", t.split("Інші:", 1)[1].split("Адреса", 1)[0]) if "Інші:" in t else []
+        reg = re.search(r"Дата реєстрації\s*\n\s*(\d{2}\.\d{2}\.\d{4})", t)
+        st = re.search(r"відзначається як\s*—\s*([^\n|]+)", t)
+        addr = re.search(r"Адреса:\s*\n\s*Україна,\s*\n[^\n]*\n([^\n]*)", t)
+        city = ""
+        if addr:
+            parts = [x.strip() for x in addr.group(1).split(",")]
+            city = ", ".join(x for x in parts if re.search(r"обл\.|місто|м\.|район|смт|село", x))[:80]
+        out.append({"yc_id": yid, "name": full.title(), "kved_main": kv.group(1).strip() if kv else None, "kved_other": [x.strip() for x in others][:12],
+                    "registration": reg.group(1) if reg else None, "status": st.group(1).strip() if st else None, "city": city,
+                    "url": f"https://youcontrol.com.ua/catalog/fop_details/{yid}"})
+    return out
+
+
 # ---------------------------------------------------------------- ingest
 def ingest(env, payload):
     req = urllib.request.Request(env["API_BASE"] + "/api/ingest", data=json.dumps(payload, ensure_ascii=False).encode(),
@@ -327,6 +368,11 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                                  "snippet": f"{f['stan'] or ''}; {f['registration'] or ''}", "payload": f})
             else:
                 notes.append("ЄДР ФОП: дамп не завантажено")
+        if kind == "person" and len(q.split()) >= 3:
+            for y in yc_fop(q):
+                hits.append({"query": q, "qkind": kind, "source": "yc_fop", "ref": y["yc_id"], "url": y["url"],
+                             "title": f"ФОП {y['name']} · КВЕД {y['kved_main'] or '?'}", "snippet": f"{y['status'] or ''}; реєстрація {y['registration'] or '?'}; {y['city']}", "payload": y})
+            notes.append(f"YouControl ФОП: {sum(1 for h in hits if h['source'] == 'yc_fop')}")
         if kind in ("person", "org"):
             etotal, debtors = erb_search(q)
             if etotal is not None:

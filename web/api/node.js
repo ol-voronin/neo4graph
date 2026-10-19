@@ -44,14 +44,16 @@ export default async function handler(req, res) {
         explain: `Запис ЄДР ${r.edrpou}: ${r.name}${r.stan ? " · стан: " + r.stan : ""}. Засновників: ${(r.founders || []).length}, підписантів: ${(r.signers || []).length}, бенефіціарів: ${(r.beneficiaries || []).length}.` +
           (r.matched_queries?.length ? ` Знайдено за запитами: ${r.matched_queries.map((x) => "«" + x.replace(/^person:/, "") + "»").join(", ")}.` : "") });
     }
-    if (kind === "decl" || kind === "fop") {
-      const src = kind === "decl" ? "nazk_decl" : "edr_fop";
+    if (kind === "decl" || kind === "fop" || kind === "fopx") {
+      const src = { decl: "nazk_decl", fop: "edr_fop", fopx: "yc_fop" }[kind];
       const r = (await sql`SELECT query, title, snippet, url, payload, created_at FROM registry_hits WHERE source = ${src} AND ref = ${key}`)[0];
       if (!r) return json(res, 404, { error: "no such hit" });
       const p = r.payload || {};
       const explain = kind === "decl"
         ? `Декларація ${p.year || ""} року, подана ${p.name || ""}: ${p.work_place || "місце роботи не вказано"}${p.work_post ? ", " + p.work_post : ""}${p.region ? " (" + p.region + ")" : ""}. Знайдено в реєстрі декларацій НАЗК за запитом «${r.query}» — це однофамілець, доки не підтверджено по батькові та місцем роботи.`
-        : `ФОП ${p.name || ""}: ${p.stan || ""}; реєстрація ${p.registration || "?"}${p.terminated ? "; припинення: " + p.terminated : ""}. Запис ЄДР (дамп data.gov.ua), знайдено за запитом «${r.query}». Адреси і КВЕД у відкритому дампі відсутні.`;
+        : kind === "fopx"
+        ? `ФОП ${p.name || ""}: ${p.status || ""}; реєстрація ${p.registration || "?"}${p.city ? "; " + p.city : ""}. Основний КВЕД: ${p.kved_main || "?"}${(p.kved_other || []).length ? "; інші: " + p.kved_other.join("; ") : ""}. Дані ЄДР у переказі YouControl (публічна сторінка), знайдено за запитом «${r.query}».`
+        : `ФОП ${p.name || ""}: ${p.stan || ""}; реєстрація ${p.registration || "?"}${p.terminated ? "; припинення: " + p.terminated : ""}. Запис ЄДР (дамп data.gov.ua), знайдено за запитом «${r.query}». КВЕД і адреса у відкритому дампі відсутні — дивіться картку «ФОП … · КВЕД» поруч або YouControl.`;
       return json(res, 200, { kind, record: { ...p, url: r.url, query: r.query, found_at: r.created_at }, explain });
     }
     if (kind === "case") {
