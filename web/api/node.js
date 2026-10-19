@@ -15,6 +15,8 @@ const sentencesWith = (text, needles, max = 6) => {
   return out;
 };
 
+const ymd = (d) => { if (!d) return "?"; const x = d instanceof Date ? d : new Date(d); return isNaN(x) ? String(d).slice(0, 10) : new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+
 export default async function handler(req, res) {
   const url = new URL(req.url, "http://x");
   const id = url.searchParams.get("id") || "";
@@ -65,7 +67,7 @@ export default async function handler(req, res) {
       const media = await sql`SELECT name_norm, role, position, quote, url, confidence FROM media_links WHERE lower(cause_num) = ${key} ORDER BY confidence DESC LIMIT 20`.catch(() => []);
       const timeline = await sql`SELECT doc_id, judgment_form f, adjudication_date d, court, judge FROM court_decisions WHERE lower(cause_num) = ${key} ORDER BY adjudication_date DESC LIMIT 40`;
       return json(res, 200, { kind, forms: decisions, summary: span, media, timeline,
-        explain: span.n ? `Справа ${key}: ${span.n} рішень з ${span.d0} по ${span.d1}, ${span.courts} суд(ів): ${span.court_list}. Текстів завантажено: ${span.texts}.` : `Справа ${key}: рішень у базі ще немає.` });
+        explain: span.n ? `Справа ${key}: ${span.n} рішень з ${ymd(span.d0)} по ${ymd(span.d1)}, ${span.courts} суд(ів): ${span.court_list}. Текстів завантажено: ${span.texts}.` : `Справа ${key}: рішень у базі ще немає.` });
     }
     if (kind === "person" || kind === "org") {
       const name = key;
@@ -82,7 +84,7 @@ export default async function handler(req, res) {
       if (roles.length) parts.push("ролі у справах за текстами: " + roles.map((r) => `${r.role} ×${r.n}`).join(", "));
       for (const h of hits) parts.push(({ reyestr: "рішень судів з цим імʼям", nazk_decl: "декларацій НАЗК", edr_fop: "записів ФОП" }[h.source] || h.source) + ": " + h.n);
       if (orgs.length) parts.push("компаній у ЄДР (засновник/підписант): " + orgs.length);
-      if (mentions[0]?.n) parts.push(`згадок у постах: ${mentions[0].n} (${mentions[0].d0}…${mentions[0].d1})`);
+      if (mentions[0]?.n) parts.push(`згадок у постах: ${mentions[0].n} (${ymd(mentions[0].d0)}…${ymd(mentions[0].d1)})`);
       if (texts.length) parts.push("текстів рішень, де зустрічається імʼя: " + texts.length);
       const explain = (kind === "person" ? "Особа" : "Організація") + ` «${name}». ` + (parts.length ? parts.join("; ") + "." : "Поки лише імʼя з запиту — реєстри нічого не повернули або ще не запитувались.") +
         (kind === "person" && name.split(" ").length < 3 ? " Імʼя без по батькові: усе, що нижче, може належати різним людям." : "");
