@@ -1,0 +1,45 @@
+name: embed-labels
+
+# Free completion of the LLM labels: open embedding model on CPU + logistic classifier trained on the Haiku-labeled posts.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "sentence-transformers model"
+        default: "intfloat/multilingual-e5-small"
+
+concurrency:
+  group: embed
+  cancel-in-progress: false
+
+jobs:
+  embed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache embeddings and model
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/emb
+            ~/.cache/huggingface
+          key: emb-${{ github.event.inputs.model }}-${{ github.run_id }}
+          restore-keys: emb-${{ github.event.inputs.model }}-
+      - name: Install deps
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install sentence-transformers scikit-learn pandas "psycopg[binary]" python-dotenv
+      - name: Embed, train, predict
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EMB_MODEL: ${{ github.event.inputs.model }}
+          TOKENIZERS_PARALLELISM: "false"
+        run: python src/embed_labels.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llm_daily_full
+          path: data/llm_daily_full.csv
