@@ -18,10 +18,9 @@ def main():
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS query_hits (query text, message_id text REFERENCES messages(id) ON DELETE CASCADE, "
                 "where_found text, created_at timestamptz DEFAULT now(), PRIMARY KEY (query, message_id, where_found))")
-    # surname-only pattern for Cyrillic names so inflected forms match (Кацуба / Кацуби / Кацубу)
-    parts = q.split()
-    stem = parts[0][:-1] if re.match(r"^[А-ЯІЇЄҐа-яіїєґ'’-]+$", parts[0]) and len(parts[0]) > 5 else parts[0]
-    pat = re.escape(stem)
+    # inflection-aware name pattern: «Каменська Еліна» matches «Каменської Еліни» / «Каменська Е.», not «Каменських» (names.py)
+    from names import name_regex
+    pat = name_regex(q, pg=True)
     cur.execute("INSERT INTO query_hits(query, message_id, where_found) SELECT %s, id, 'text' FROM messages WHERE text ~* %s "
                 "ON CONFLICT DO NOTHING", (q, pat))
     n1 = cur.rowcount

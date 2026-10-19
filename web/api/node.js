@@ -86,6 +86,16 @@ export default async function handler(req, res) {
         (kind === "person" && name.split(" ").length < 3 ? " Імʼя без по батькові: усе, що нижче, може належати різним людям." : "");
       return json(res, 200, { kind, roles, hits, orgs, mentions: mentions[0], texts, explain });
     }
+    if (kind === "web") {
+      const r = (await sql`SELECT query, url, title, snippet, engine, domain, fetched_at FROM web_mentions WHERE url = ${key} ORDER BY fetched_at DESC LIMIT 1`)[0];
+      if (!r) return json(res, 404, { error: "no such page" });
+      const txt = (r.title || "") + " " + (r.snippet || "");
+      const sur = (r.query || "").split(/\s+/)[0];
+      const names = [...new Set((txt.match(/\p{Lu}\p{Ll}+(?:[-'’]\p{Lu}?\p{Ll}+)?\s+\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+(?:ович|івна|ївна|евич|йович|івич))?/gu) || []).filter((n) => n.split(" ")[0].slice(0, 4).toLowerCase() === sur.slice(0, 4).toLowerCase()))];
+      const ingested = (await sql`SELECT id FROM messages WHERE url = ${key} LIMIT 1`.catch(() => []))[0];
+      return json(res, 200, { kind, record: r, names, ingested: !!ingested,
+        explain: `Сторінка ${r.domain}, знайдена пошуком «${r.query}» (${r.engine}). ${ingested ? "Сторінку вже взято в базу як джерело: люди й організації з неї — у графі." : "Поки це лише посилання зі сніпетом: щоб витягти з неї людей, посади й організації, візьміть сторінку в базу."}` });
+    }
     if (kind === "post") {
       const r = (await sql`SELECT id, source_id, ts_published, url, text, threat_level, event_kind FROM messages WHERE id = ${key}`)[0];
       if (!r) return json(res, 404, { error: "no such post" });

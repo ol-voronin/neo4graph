@@ -106,6 +106,12 @@ def main():
                 break
             except Exception as e:  # noqa: BLE001
                 print(f"{name} failed:", str(e)[:200])
+    # Name queries: keep only pages where the name itself occurs (inflected forms allowed); search engines also return namesakes
+    from names import name_matches, CYR
+    if len(q.split()) in (2, 3) and all(CYR.match(t) for t in q.split()):
+        before = len(hits)
+        hits = [h for h in hits if name_matches(q, (h.get("title") or "") + " " + (h.get("snippet") or ""))]
+        print(f"name filter: {before} -> {len(hits)}")
     # Snippets are stored as the search engine returns them (quotes of public pages); the project's limits are on what we
     # search BY (never phone, address, tax id of a person), not on quoting a public page.
     print(f"{q!r}: {len(hits)} hits via {'+'.join(engines) or 'nothing'}")
