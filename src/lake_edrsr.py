@@ -46,7 +46,7 @@ def download(year, max_age_h=20):
         return p
     print(f"[edrsr {year}] downloading …", flush=True)
     tmp = p.with_suffix(".part")
-    with urllib.request.urlopen(urllib.request.Request(dump_url(year), headers=UA), timeout=1800) as r, open(tmp, "wb") as f:
+    with urllib.request.urlopen(urllib.request.Request(dump_url(year), headers={"User-Agent": UA}), timeout=1800) as r, open(tmp, "wb") as f:
         while chunk := r.read(1 << 22):
             f.write(chunk)
     tmp.replace(p)
