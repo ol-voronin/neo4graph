@@ -57,7 +57,9 @@ def expand(cur, conn, q, kind, log, py):
         # reverse direction: company -> its people. Founders, beneficiaries and signers are public ЄДР data; each one goes
         # to the queue as a full-name person query so the UA leg does ФОП/КВЕД, declarations, court register, debtors for
         # them, and the cloud leg does corpus + web here. Giant cooperatives (>60 founders) are skipped: namesake noise.
-        cur.execute("SELECT founders, beneficiaries, signers FROM edr_orgs WHERE short_name ILIKE %s OR name ILIKE %s OR edrpou = %s", ("%" + q + "%", "%" + q + "%", q))
+        core = re.sub(r"^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо|llc|ltd)\s+", "", re.sub(r"[«»\"'’]", "", q).strip(), flags=re.I).strip()
+        cur.execute("SELECT founders, beneficiaries, signers FROM edr_orgs WHERE regexp_replace(short_name, '[«»\"''’]', '', 'g') ILIKE %s "
+                    "OR regexp_replace(name, '[«»\"''’]', '', 'g') ILIKE %s OR edrpou = %s", ("%" + core + "%", "%" + core + "%", q))
         people = []
         for row in cur.fetchall():
             if len(row[0] or []) > 60:
