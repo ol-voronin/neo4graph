@@ -257,6 +257,10 @@ def main():
     if a.cmd == "build":
         for kind in a.only.split(","):
             t0 = time.time()
+            if kind == "edrsr":  # ЄДРСР metadata + Postgres aggregates (src/lake_edrsr.py); years from EDRSR_YEARS, default current
+                import subprocess
+                subprocess.run([sys.executable, str(ROOT / "src" / "lake_edrsr.py"), "--years", __import__("os").environ.get("EDRSR_YEARS") or time.strftime("%Y")], check=True)
+                continue
             n = {"fop": build_fop, "uo": build_uo, "erb": build_erb}[kind](download(kind))
             print(f"[{kind}] {n:,} rows → {kind}.parquet ({(LAKE / f'{kind}.parquet').stat().st_size / 1e6:.0f} MB) in {time.time() - t0:.0f}s", flush=True)
         import duckdb

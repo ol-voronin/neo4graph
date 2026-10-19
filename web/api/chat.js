@@ -9,6 +9,10 @@ const SYSTEM = `Ти — асистент дослідницької бази п
 У відповіді перелічуй знайдене списком; для справ давай номер, суд, кількість рішень, діапазон дат.
 Номер справи (формат 991/1234/21) → get_case: хронологія рішень із посиланнями. Якщо рішень у базі немає, get_case сам ставить справу в чергу.
 "Знайди ФОП …" → find_fop з повним імʼям. Це лише запис ЄДР ФОП (стан, дата реєстрації, припинення); збіг за імʼям може бути однофамільцем — кажи це.
+Статистика судів за всіма видами проваджень (цивільні, зокрема сімейні; кримінальні; адміністративні; господарські; адмінправопорушення) → court_stats.
+Сімейні справи: category_re "сімейн|шлюб|аліме|батьківськ|усиновл". Кримінальні: justice_kind "Кримінальне"; цивільно-правові: "Цивільне".
+Це агрегати реєстру (кількість рішень і справ, частка з вироком чи рішенням, медіана тривалості), не прогноз для конкретної особи.
+Пам'ятай: у кримінальних "справах" багато ухвал слідчих суддів (обшуки, арешти), тому частка з вироком низька; кажи це.
 Не зводь ФОП із судами, боргами чи іншими реєстрами в одну відповідь про людину і не роби висновків про вину конкретних осіб.`;
 
 const TOOLS = [
@@ -26,6 +30,13 @@ const TOOLS = [
     input_schema: { type: "object", properties: { cause_num: { type: "string" } }, required: ["cause_num"] } },
   { name: "find_fop", description: "Запис ЄДР про ФОП за повним імʼям (прізвище імʼя по батькові): стан, дата реєстрації, припинення. Якщо ще не шукали — ставить пошук у чергу (результат за 5–10 хв).",
     input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
+  { name: "court_stats", description: "Статистика ЄДРСР за всіма видами проваджень: скільки рішень і справ за роками, видом, категорією, областю, формою; частка справ із вироком / рішенням / судовим наказом, медіана тривалості в днях.",
+    input_schema: { type: "object", properties: {
+      year_from: { type: "integer" }, year_to: { type: "integer" },
+      justice_kind: { type: "string", description: "Цивільне | Кримінальне | Адміністративне | Господарське | Адмінправопорушення" },
+      category_re: { type: "string", description: "регулярний вираз по назві категорії, напр. 'сімейн|шлюб|аліме' або 'крадіжк'" },
+      region: { type: "string", description: "фрагмент назви області, напр. 'Харків'" },
+      form: { type: "string", description: "Вирок | Рішення | Ухвала | Постанова | Судовий наказ" } } } },
   { name: "enqueue", description: "Поставити в чергу роботу з реєстрами: kind=case (номер справи), person, org, edrpou, text, web (згадки в інтернеті), category_index (query у форматі 'РІК|фрагмент категорії|форма?' напр. '2025|земел' — індексує всі такі рішення року).",
     input_schema: { type: "object", properties: { query: { type: "string" }, kind: { type: "string", enum: ["case", "person", "org", "edrpou", "text", "web", "category_index", "fop"] } }, required: ["query", "kind"] } },
 ];
@@ -109,6 +120,24 @@ async function runTool(name, a) {
     const rows = await sql`SELECT title, snippet, payload FROM registry_hits WHERE source = 'edr_fop' AND lower(query) = lower(${q}) ORDER BY title LIMIT 20`;
     if (rows.length) return { found: rows.length, records: rows.map((r) => r.payload), note: "Збіг за імʼям: це можуть бути різні люди (однофамільці)." };
     return { found: 0, ...(await enqueue(q, "fop")) };
+  }
+  if (name === "court_stats") {
+    const P = [a.year_from || 2021, a.year_to || a.year_from || 2100, a.justice_kind || "", (a.category_re || "").slice(0, 200), "%" + (a.region || "") + "%", a.form || ""];
+    const W = "year BETWEEN $1 AND $2 AND ($3 = '' OR justice_kind = $3) AND ($4 = '' OR category ~* $4) AND ($5 = '%%' OR region ILIKE $5)";
+    const F = " AND ($6 = '' OR form = $6)";
+    const q = (text) => sql.query(text, P);
+    const [byYear, byForm, topCat, topReg, cases] = await Promise.all([
+      q(`SELECT year, sum(n)::int decisions FROM edrsr_stats WHERE ${W}${F} GROUP BY 1 ORDER BY 1`),
+      q(`SELECT form, sum(n)::int decisions FROM edrsr_stats WHERE ${W} AND $6::text = $6::text GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),
+      q(`SELECT justice_kind, category, sum(n)::int decisions FROM edrsr_stats WHERE ${W}${F} GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 12`),
+      q(`SELECT region, sum(n)::int decisions FROM edrsr_stats WHERE ${W}${F} GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),
+      q(`SELECT year, sum(cases)::int cases, sum(with_verdict)::int with_verdict, sum(with_decision)::int with_decision, sum(with_court_order)::int with_court_order,
+                round((sum(median_days * cases) FILTER (WHERE median_days IS NOT NULL) / nullif(sum(cases) FILTER (WHERE median_days IS NOT NULL), 0))::numeric, 0) median_days_weighted
+         FROM edrsr_case_stats WHERE ${W} AND $6::text = $6::text GROUP BY 1 ORDER BY 1`),
+    ]);
+    if (!byYear.length) return { found: 0, note: "У статистиці немає таких рядків: перевірте рік або фрагмент категорії/області." };
+    return { by_year: byYear, by_form: byForm, top_categories: topCat, top_regions: topReg, cases_by_year: cases,
+      note: "Справа = номер справи в межах року; median_days_weighted — зважене середнє медіан тривалості між першим і останнім рішенням (наближення). Дані: відкриті дампи ЄДРСР (data.gov.ua), без імен сторін." };
   }
   if (name === "enqueue") return enqueue((a.query || "").trim(), a.kind);
   return { error: "unknown tool" };
