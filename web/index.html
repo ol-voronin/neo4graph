@@ -216,15 +216,16 @@ const FACETS={
 const active=document.getElementById('active'),clearB=document.getElementById('clearf'),fmenu=document.getElementById('fmenu'),fmbody=document.getElementById('fmbody'),addB=document.getElementById('addf'),ftext=document.getElementById('ftext');
 function addF(k,v){if(!state.f.some(f=>f.k===k&&f.v===v))state.f.push({k,v});drawF();render()}
 function rmF(i){state.f.splice(i,1);drawF();render()}
-function drawF(){active.innerHTML='';state.f.forEach((f,i)=>{const b=document.createElement('button');b.type='button';b.className='chip on';b.innerHTML=`<span class="meta">${esc(FACETS[f.k].label)}:</span> ${esc((FACETS[f.k].fmt||(x=>x))(f.v))} <span class="x" aria-label="прибрати">×</span>`;b.onclick=()=>rmF(i);active.appendChild(b)});clearB.hidden=!state.f.length;save()}
+function drawF(){active.innerHTML='';const cp=centerPatr();if(cp&&!state.f.some(f=>f.k==='patr')){const b=document.createElement('span');b.className='chip';b.style.opacity='.8';b.title='Однофамільці з іншим по батькові приховані, бо обраний обʼєкт має по батькові. Додайте фільтр «По батькові», щоб керувати цим вручну.';b.innerHTML=`<span class="meta">по батькові (з обʼєкта):</span> ${esc(cp)}`;active.appendChild(b)}state.f.forEach((f,i)=>{const b=document.createElement('button');b.type='button';b.className='chip on';b.innerHTML=`<span class="meta">${esc(FACETS[f.k].label)}:</span> ${esc((FACETS[f.k].fmt||(x=>x))(f.v))} <span class="x" aria-label="прибрати">×</span>`;b.onclick=()=>rmF(i);active.appendChild(b)});clearB.hidden=!state.f.length;save()}
 clearB.onclick=()=>{state.f=[];drawF();render()};
 function groups(){const g={};for(const f of state.f)(g[f.k]||(g[f.k]=[])).push(f.v);return g}
-function nodeOk(n,g){if(n.id===state.center)return true;for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(F.edge)continue;if(k==='text'){if(!vals.every(v=>hay(n).includes(v.toLowerCase())))return false;continue}const x=F.get(n);if(x==null&&k!=='type')continue;if(!vals.includes(x))return false}return true}
+function centerPatr(){const c=byId.get(state.center);return c?patrOf(c):null}
+function nodeOk(n,g){if(n.id===state.center)return true;const cp=centerPatr();if(cp&&!state.f.some(f=>f.k==='patr')){const np=patrOf(n);if(np&&np.toLowerCase()!==cp.toLowerCase())return false}for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(F.edge)continue;if(k==='text'){if(!vals.every(v=>hay(n).includes(v.toLowerCase())))return false;continue}const x=F.get(n);if(x==null&&k!=='type')continue;if(!vals.includes(x))return false}return true}
 function edgeOk(e,g){for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(!F.edge)continue;const x=F.get(e);if(x==null)continue;if(!vals.includes(x))return false}const a=byId.get(e.source),b=byId.get(e.target);return nodeOk(a,g)&&nodeOk(b,g)}
 function ego(center,depth,g=groups()){
   const seen=new Map([[center,0]]);const q=[center];const edges=new Set();
   while(q.length){const u=q.shift();const d=seen.get(u);if(d>=depth)continue;
-    for(const e of adj.get(u)||[]){if(!edgeOk(e,g))continue;const v=e.source===u?e.target:e.source;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);q.push(v)}}}
+    for(const e of adj.get(u)||[]){if(!edgeOk(e,g))continue;const v=e.source===u?e.target:e.source;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);const vn=byId.get(v);const hub=vn&&vn.type==='person'&&!patrOf(vn)&&vn.label.trim().split(/\s+/).length<=2&&centerPatr();if(!hub)q.push(v)}}}
   return {nodes:[...seen.keys()].map(id=>byId.get(id)),edges:[...edges]};
 }
 // facet values available around the current object (computed on the unfiltered neighbourhood so removed values can be added back)
@@ -364,7 +365,7 @@ async function loadDetail(n){const box=document.getElementById('ndetail'),ex=doc
   if(r.kind==='post'&&r.record)h+=`<h3>Повний текст</h3><p class="frag">${esc(r.record.text||'')}</p>`;
   box.innerHTML=h;box.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>{if(!byId.has(b.dataset.id)){q.value=b.textContent.trim();q.dispatchEvent(new Event('input'));return}select(b.dataset.id)});box.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid)select(cid)});
 }catch(e){ex.innerHTML='<span class="meta">Подробиці недоступні.</span>'}}
-function select(id){state.center=id;render();const tb=document.getElementById('todetails');if(window.matchMedia('(max-width:760px)').matches){tb.hidden=false;}}
+function select(id){state.center=id;drawF();render();const tb=document.getElementById('todetails');if(window.matchMedia('(max-width:760px)').matches){tb.hidden=false;}}
 document.getElementById('todetails').onclick=()=>document.getElementById('panel').scrollIntoView({behavior:'smooth',block:'start'});
 window.addEventListener('resize',()=>{if(state.center)render()});
 // tabs + fact-check (API version only)
