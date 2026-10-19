@@ -39,6 +39,11 @@ def main():
         r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
         tail = (r.stdout + r.stderr)[-1500:]
         print(tail)
+        try:  # chains run for minutes; the idle connection is often dropped by then
+            cur.execute("SELECT 1")
+        except Exception:  # noqa: BLE001
+            conn = connect()
+            cur = conn.cursor()
         cur.execute("UPDATE query_queue SET status=%s, finished_at=now(), note=%s WHERE id=%s", ("done" if r.returncode == 0 else "failed", tail[-600:], qid))
         conn.commit()
 
