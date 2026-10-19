@@ -37,7 +37,7 @@ def page_text(url, limit=6000):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cause", required=True)
-    ap.add_argument("--provider", default="anthropic")
+    ap.add_argument("--provider", default="gemini")
     ap.add_argument("--max-pages", type=int, default=6)
     a = ap.parse_args()
     key = "ANTHROPIC_API_KEY" if a.provider == "anthropic" else "GEMINI_API_KEY"

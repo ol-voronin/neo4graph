@@ -34,7 +34,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("url")
     ap.add_argument("--cause", default="")
-    ap.add_argument("--provider", default="anthropic")
+    ap.add_argument("--provider", default="gemini")
     a = ap.parse_args()
     url = a.url.strip()
     dom = urllib.parse.urlparse(url).netloc

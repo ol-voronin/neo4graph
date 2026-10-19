@@ -33,7 +33,7 @@ def actor_key(side, name):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", default="anthropic")
+    ap.add_argument("--provider", default="gemini")
     ap.add_argument("--max-actors", type=int, default=20)
     ap.add_argument("--since", default="2026-03-31")
     ap.add_argument("--dry-run", action="store_true")

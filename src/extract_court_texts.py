@@ -15,7 +15,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cause", default="")
     ap.add_argument("--limit", type=int, default=40)
-    ap.add_argument("--provider", default="anthropic")
+    ap.add_argument("--provider", default="gemini")
     a = ap.parse_args()
     from load_to_db import connect
     conn = connect()
