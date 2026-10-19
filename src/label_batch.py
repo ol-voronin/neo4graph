@@ -106,6 +106,7 @@ def fetch(a):
         if b.processing_status != "ended":
             continue
         ok = bad = 0
+        use = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
         for i, res in enumerate(client.messages.batches.results(meta["batch_id"])):
             info = meta["ids"].get(res.custom_id)
             if not info:
@@ -113,6 +114,9 @@ def fetch(a):
             if res.result.type != "succeeded":
                 bad += 1
                 continue
+            u = getattr(res.result.message, "usage", None)
+            for k in use:
+                use[k] += getattr(u, k, 0) or 0
             try:
                 raw = parse_json(anthropic_text(res.result.message))
                 write_result(cur, raw, info["id"], datetime.fromisoformat(info["ts"]), meta["model"])
@@ -125,9 +129,11 @@ def fetch(a):
                 conn.commit()
         conn.commit()
         meta["written"] = True
-        meta["ok"], meta["bad"] = ok, bad
+        meta["ok"], meta["bad"], meta["usage"] = ok, bad, use
         p.write_text(json.dumps(meta, ensure_ascii=False))
-        print(f"written {ok}, failed {bad}")
+        # Haiku 5.5 batch prices: $0.05/M input, $0.25/M output, cache read $0.005/M, cache write $0.0625/M
+        cost = use["input_tokens"] * .05 + use["output_tokens"] * .25 + use["cache_read_input_tokens"] * .005 + use["cache_creation_input_tokens"] * .0625
+        print(f"written {ok}, failed {bad}; usage {use}; est. cost ${cost / 1e6:.2f}")
 
 
 def status(a):
