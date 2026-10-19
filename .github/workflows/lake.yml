@@ -9,7 +9,10 @@ on:
     inputs:
       only:
         description: "tables to rebuild"
-        default: "fop,uo,erb"
+        default: "fop,uo,erb,edrsr"
+      edrsr_years:
+        description: "ЄДРСР years for the edrsr table, e.g. 2026 or 2021-2025"
+        default: ""
 
 permissions:
   contents: write
@@ -28,9 +31,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install duckdb pyarrow
+      - run: pip install duckdb pyarrow "psycopg[binary]" python-dotenv
       - name: Build Parquet
-        run: python src/lake.py build --only "${{ github.event.inputs.only || 'fop,uo,erb' }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EDRSR_YEARS: ${{ github.event.inputs.edrsr_years }}
+        run: python src/lake.py build --only "${{ github.event.inputs.only || 'fop,uo,erb,edrsr' }}"
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
