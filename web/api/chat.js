@@ -118,7 +118,8 @@ async function runTool(name, a) {
 const CAUSE_ANY = /\d{1,4}\/\d{1,6}\/\d{2}(?:-[\p{L}\d/]+)?/u;
 const CASE_FULL = /^\d{1,4}\/\d{1,6}\/\d{2}(?:-[\p{L}\d/]+)?$/u;
 const FOP_RE = /(?:^|\s)фоп\s+([\p{L}'’ʼ-]+(?:\s+[\p{L}'’ʼ-]+){1,2})/iu;
-const dt = (d) => (d ? String(d).slice(0, 10) : "?");
+const dt = (d) => { if (!d) return "?"; const x = d instanceof Date ? d : new Date(d); return isNaN(x) ? String(d).slice(0, 10) : new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const plural = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many; };
 
 async function direct(text) {
   const c = text.match(CAUSE_ANY);
@@ -127,7 +128,7 @@ async function direct(text) {
     if (out.error) return null;
     if (!out.found) return { answer: `Справи ${c[0]} у базі ще немає. Поставив її в чергу: рішення з'являться за 5–20 хвилин, тоді запитайте ще раз.`, trace: [{ tool: "get_case", input: { cause_num: c[0] }, summary: out }] };
     const s = out.summary;
-    const lines = [`**Справа ${c[0]}** — ${s.n} рішень, ${dt(s.d0)} … ${dt(s.d1)}.`,
+    const lines = [`**Справа ${c[0]}** — ${s.n} ${plural(s.n, "рішення", "рішення", "рішень")}, ${dt(s.d0)} … ${dt(s.d1)}.`,
       `Суди: ${s.court_list || "?"}.${s.judges ? ` Судді: ${s.judges}.` : ""}${s.category ? ` Категорія: ${s.category}.` : ""}`,
       `Форми: ${out.forms.map((f) => `${f.f || "?"} ×${f.n}`).join(", ")}.`, "", "Останні рішення:",
       ...out.timeline.slice(0, 15).map((t) => `- ${dt(t.d)} · ${t.f || "рішення"} · ${t.court || ""}${t.judge ? " · " + t.judge : ""}${t.doc_url ? ` · [текст](${t.doc_url})` : ""}`)];
@@ -139,7 +140,7 @@ async function direct(text) {
     const out = await runTool("find_fop", { name });
     if (out.error) return { answer: out.error, trace: [] };
     if (!out.found) return { answer: `ФОП «${name}» ще не шукали. Поставив пошук у чергу: за 5–10 хвилин запитайте ще раз.`, trace: [{ tool: "find_fop", input: { name }, summary: out }] };
-    const lines = [`**ЄДР, ФОП «${name}»** — ${out.found >= 20 ? "20+ записів (показано 20)" : out.found + " записів"}. Збіг за імʼям: це можуть бути різні люди.`, "",
+    const lines = [`**ЄДР, ФОП «${name}»** — ${out.found >= 20 ? "20+ записів (показано 20)" : out.found + " " + plural(out.found, "запис", "записи", "записів")}. Збіг за імʼям: це можуть бути різні люди.`, "",
       ...out.records.map((r) => `- ${r.name} · ${r.stan || "стан ?"} · реєстрація: ${r.registration || "?"}${r.terminated ? " · припинення: " + r.terminated : ""}`)];
     return { answer: lines.join("\n"), trace: [{ tool: "find_fop", input: { name }, summary: summarize(out) }] };
   }
