@@ -198,3 +198,29 @@ a night, no missiles), 01-24 19 missiles / 375 drones (two days after), then 02-
 quiet on the visit days, a combined strike within two days on either side. Two visits, same shape — still n=2.
 Jan–Mar massive nights for reference: 01-09, 01-20, 02-03, 02-07, 02-12, 02-17, 02-22, 02-26, 03-07, 03-14, 03-24, 03-29
 (roughly weekly — the base rate is ~0.13/day there too). No corpus before 03-31, so no mention features for this stretch.
+
+## Test 3b (LLM labels completed by an open embedding model) — run 2026-10-19 evening, 100% coverage
+
+The missing 21k labels were filled for free: `intfloat/multilingual-e5-small` embeddings of all 27,053 rule-flagged
+panel posts (GitHub Actions CPU, 53 min), logistic classifier trained on the 5,633 Haiku-labeled posts, predictions
+out-of-fold for labeled posts and fitted for the rest (`src/embed_labels.py`, table `message_labels_pred`,
+`data/llm_daily_full.csv`). Agreement with Haiku (5-fold OOF): threat≥2 AUC 0.88 / F1 0.76; l2 0.88 / 0.75;
+threat≥3 0.87 / 0.67; rhetoric 0.91 / 0.73; operational 0.97 / 0.92. Daily features = expected counts (sum of p).
+
+| signal (lag 1 + 3-day mean) | AUC | Δ vs baseline 0.685 [CI] | lag-1 corr with missile_day |
+|---|---|---|---|
+| thr_ru (rule share, reference) | 0.708 | +0.023 [-0.016, +0.070] | +0.27 |
+| l2_ru (rule) | 0.714 | +0.030 [-0.004, +0.066] | — |
+| p2_ru (precision of the rule) | 0.683 | -0.002 | +0.24 |
+| llm_thr_ru | 0.704 | +0.019 [-0.027, +0.077] | **+0.31** |
+| llm_l2_ru | 0.702 | +0.017 [-0.029, +0.075] | **+0.32** |
+| llm_t3_ru | 0.700 | +0.015 [-0.028, +0.069] | +0.31 |
+| llm_rh_ru | 0.686 | +0.001 | — |
+
+Reading: the 20%-sample null in Test 3 was sampling noise (reading (b) was right): at full coverage the LLM-refined
+shares carry the same small lead as the rule shares (+0.015…+0.019 AUC, CI spanning zero), with slightly higher raw
+lag-1 correlations (+0.31 vs +0.27). The refinement does not add predictive power beyond the regex share — the lead
+lives in the *volume of threat-flavoured talk the day before*, not in which posts a model deems real threats. The
+"rhetoric" (non-operational) share carries nothing. Decision: the rule share `thr_ru`/`l2_ru` stays the working
+feature; LLM labeling is not worth paying for at this horizon. Embeddings stay (cached) for the contradiction-candidate
+and repost-dedup work.
