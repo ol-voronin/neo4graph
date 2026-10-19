@@ -41,6 +41,9 @@ jobs:
       - name: Resolve
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_CSE_KEY: ${{ secrets.GOOGLE_CSE_KEY }}
+          GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
         run: |

@@ -22,6 +22,15 @@ def google(q, key, cx, n=10):
     return [{"title": i.get("title"), "url": i.get("link"), "snippet": i.get("snippet"), "engine": "google"} for i in data.get("items", [])]
 
 
+def brave(q, key, n=10):
+    """Brave Search API (web): BRAVE_API_KEY. Free plan is enough for a few dozen objects a day."""
+    url = "https://api.search.brave.com/res/v1/web/search?" + urllib.parse.urlencode({"q": q, "count": n, "country": "ua", "search_lang": "uk", "safesearch": "off"})
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "X-Subscription-Token": key, "User-Agent": UA["User-Agent"]})
+    data = json.loads(urllib.request.urlopen(req, timeout=30).read())
+    return [{"title": i.get("title"), "url": i.get("url"), "snippet": re.sub(r"<[^>]+>", "", i.get("description") or ""), "engine": "brave"}
+            for i in (data.get("web") or {}).get("results", [])]
+
+
 def ddg(q, n=10):
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q, "kl": "ua-uk"})
     page = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8", "replace")
@@ -41,13 +50,25 @@ def main():
     q = " ".join(sys.argv[1:]).strip()
     if len(q) < 3:
         sys.exit("query too short")
-    key, cx = os.environ.get("GOOGLE_CSE_KEY"), os.environ.get("GOOGLE_CSE_ID")
-    try:
-        hits = google(q, key, cx) if key and cx else ddg(q)
-    except Exception as e:  # noqa: BLE001
-        print("search failed:", str(e)[:200])
-        hits = []
-    print(f"{q!r}: {len(hits)} hits via {'google' if key and cx else 'ddg (best effort)'}")
+    key, cx, bk = os.environ.get("GOOGLE_CSE_KEY"), os.environ.get("GOOGLE_CSE_ID"), os.environ.get("BRAVE_API_KEY")
+    # Google "search the entire web" is gone for engines created after 2026-01-20, so Brave is the whole-web engine and a
+    # Google engine (if any) is a curated-sites engine (up to 50 domains); both are used when both keys exist.
+    hits, engines = [], []
+    for name, fn in (("brave", lambda: brave(q, bk)), ("google", lambda: google(q, key, cx))):
+        if (name == "brave" and not bk) or (name == "google" and not (key and cx)):
+            continue
+        try:
+            hits += fn()
+            engines.append(name)
+        except Exception as e:  # noqa: BLE001
+            print(f"{name} failed:", str(e)[:200])
+    if not engines:
+        try:
+            hits = ddg(q)
+            engines = ["ddg (best effort)"]
+        except Exception as e:  # noqa: BLE001
+            print("search failed:", str(e)[:200])
+    print(f"{q!r}: {len(hits)} hits via {'+'.join(engines) or 'nothing'}")
     for h in hits[:10]:
         print(" -", (h["title"] or "")[:70], "|", h["url"][:90])
     from load_to_db import connect
