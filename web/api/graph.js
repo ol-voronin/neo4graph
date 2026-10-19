@@ -132,6 +132,9 @@ export default async function handler(req, res) {
           const hid = node("person:" + norm(p.head).toLowerCase(), "person", norm(p.head), { position: p.head_role || "керівник" });
           edge(hid, who, "director", null, { detail: `${p.head_role || "керівник"}${p.head_since ? " з " + p.head_since : ""} (ЄДР, через YouControl)`, src: "youcontrol.com.ua" });
         }
+      } else if (h.source === "edr_role") {
+        const oid = node("registry:" + p.edrpou, "registry", `ЄДР ${p.edrpou} · ${p.short_name || p.org_name || ""}`, { edrpou: p.edrpou, stan: p.stan, full: p.org_name, src: "ЄДР" });
+        edge(who, oid, { founder: "founder", beneficiary: "beneficiary", signer: "director" }[p.role] || "related", null, { detail: h.snippet, src: "ЄДР (data lake)" });
       } else if (h.source === "erb") {
         const eid = node("erb:" + h.ref, "registry", h.title, { text: h.snippet, org: p.executor, agency: p.publisher, year: p.birth_year ? null : null, src: "Єдиний реєстр боржників", url: h.url, category: p.category });
         edge(who, eid, "debtor_record", null, { detail: h.snippet, src: "erb.minjust.gov.ua" });

@@ -166,9 +166,82 @@ def nazk_declarations(name, max_pages=5):
 
 
 # ---------------------------------------------------------------- ЄДР ФОП dump (optional)
+
+# ---------------------------------------------------------------- data lake (Parquet + DuckDB), replaces per-query grep
+LAKE = HERE / "data" / "lake"
+LAKE_URL = "https://github.com/ol-voronin/neo4graph/releases/download/lake-latest/"
+LAKE_TABLES = ("fop", "erb", "uo", "people_roles")
+
+
+def lake_sync(max_age_h=26):
+    """Fetch the nightly Parquet tables (built in GitHub Actions) when missing or older than a day."""
+    LAKE.mkdir(parents=True, exist_ok=True)
+    for t in LAKE_TABLES:
+        p = LAKE / f"{t}.parquet"
+        if p.exists() and time.time() - p.stat().st_mtime < max_age_h * 3600:
+            continue
+        try:
+            tmp = p.with_suffix(".part")
+            with urllib.request.urlopen(urllib.request.Request(LAKE_URL + p.name, headers={"User-Agent": UA}), timeout=900) as r, open(tmp, "wb") as f:
+                while chunk := r.read(1 << 22):
+                    f.write(chunk)
+            tmp.replace(p)
+            print(f"lake: {p.name} {p.stat().st_size / 1e6:.0f} MB")
+        except Exception as e:  # noqa: BLE001
+            print("lake sync failed:", p.name, e)
+
+
+_LAKE_CON = None
+
+
+def lake_con():
+    global _LAKE_CON
+    if _LAKE_CON is None:
+        try:
+            import duckdb
+        except ImportError:
+            return None
+        con = duckdb.connect()
+        ok = False
+        for t in LAKE_TABLES:
+            p = LAKE / f"{t}.parquet"
+            if p.exists():
+                con.execute(f"CREATE VIEW {t} AS SELECT * FROM read_parquet('{p}')")
+                ok = True
+        _LAKE_CON = con if ok else False
+    return _LAKE_CON or None
+
+
+def lake_has(t):
+    return (LAKE / f"{t}.parquet").exists() and lake_con() is not None
+
+
+def name_key(s):
+    s = (s or "").upper().replace("Ё", "Е").replace("’", "'").replace("`", "'").replace('"', "").replace("«", "").replace("»", "")
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def lake_rows(sql, args):
+    cur = lake_con().execute(sql, args)
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def lake_roles(name, limit=60):
+    """Person -> companies where they are founder / beneficiary / signer (ЄДР юросіб, from the lake)."""
+    if not lake_has("people_roles"):
+        return None, []
+    rows = lake_rows("SELECT r.name, r.role, r.edrpou, r.detail, u.short_name, u.name AS org_name, u.stan FROM people_roles r "
+                     "LEFT JOIN uo u USING (edrpou) WHERE r.name_key LIKE ? LIMIT ?", [name_key(name) + "%", limit])
+    return len(rows), rows
+
+
 def fop_search(name, limit=60, deadline=None):
     """ЄДР ФОП dump: one <SUBJECT> per line, windows-1251, ~5.3 GB unpacked. `unzip -p | grep` scans it in ~25 s;
     the Python fallback (iterparse) is used only when those tools are missing and honours the deadline (partial=True)."""
+    if lake_has("fop"):
+        rows = lake_rows("SELECT record, name, stan, registration, terminated FROM fop WHERE name_key LIKE ?", [name_key(name) + "%"])
+        return len(rows), rows[:limit]
     if not FOP.exists():
         return None, []
     key = re.sub(r"\s+", " ", name.strip()).upper()
@@ -235,6 +308,10 @@ def grep_dump(path, pattern_utf8):
 def erb_search(name, limit=60):
     """Єдиний реєстр боржників: debtors by name (persons are Title Case, companies upper case). Birth date is reduced to the
     year; the debtor code column is kept only when it is an 8-digit ЄДРПОУ (never a person's tax number)."""
+    if lake_has("erb"):
+        rows = lake_rows("SELECT name, birth_date, code, publisher, executor, vp, category FROM erb WHERE name_key LIKE ?", [name_key(name) + "%"])
+        return len(rows), [{"name": r["name"], "birth_year": (r["birth_date"] or "")[-4:] or None, "edrpou": r["code"] if re.fullmatch(r"\d{8}", r["code"] or "") else None,
+                            "publisher": r["publisher"], "executor": r["executor"], "vp": r["vp"], "category": r["category"]} for r in rows[:limit]]
     if not ERB.exists():
         return None, []
     import csv
@@ -418,7 +495,7 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
             for d in decl[:60]:
                 hits.append({"query": q, "qkind": kind, "source": "nazk_decl", "ref": d["id"], "url": d["url"],
                              "title": f"Декларація {d['year'] or ''} · {d['name']}", "snippet": f"{d['work_place'] or ''} — {d['work_post'] or ''}", "payload": d})
-            ftotal, fops = fop_search(q, deadline=deadline) if not NO_FOP else (None, [])
+            ftotal, fops = fop_search(q, deadline=deadline) if (not NO_FOP or lake_has("fop")) else (None, [])
             if ftotal is not None:
                 notes.append(f"ЄДР ФОП: {ftotal}" if ftotal >= 0 else f"ЄДР ФОП: {-ftotal - 1}+ (скан не завершено, повторіть)")
                 for f in fops:
@@ -426,6 +503,14 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                                  "snippet": f"{f['stan'] or ''}; {f['registration'] or ''}", "payload": f})
             else:
                 notes.append("ЄДР ФОП: дамп не завантажено")
+        if kind == "person":
+            rtotal, roles = lake_roles(q)
+            if rtotal is not None:
+                notes.append(f"ЄДР ролі в компаніях: {rtotal}")
+                for r in roles:
+                    hits.append({"query": q, "qkind": kind, "source": "edr_role", "ref": f"{r['edrpou']}:{r['role']}:{name_key(r['name'])}", "url": None,
+                                 "title": f"{ {'founder': 'Засновник', 'beneficiary': 'Бенефіціар', 'signer': 'Підписант/керівник'}[r['role']] } · {r['short_name'] or r['org_name'] or r['edrpou']}",
+                                 "snippet": f"{r['name']} — {r['detail'][:200]}; ЄДРПОУ {r['edrpou']}; {r['stan'] or ''}", "payload": r})
         if kind == "person" and len(q.split()) >= 3:
             for y in yc_fop(q):
                 hits.append({"query": q, "qkind": kind, "source": "yc_fop", "ref": y["yc_id"], "url": y["url"],
@@ -478,8 +563,13 @@ def main():
     if not env["INGEST_TOKEN"]:
         sys.exit("INGEST_TOKEN missing (.env)")
     deadline = time.time() + a.max_seconds
-    if not a.no_fop:
-        ensure_dumps()
+    try:
+        import duckdb  # noqa: F401
+        lake_sync()          # Parquet tables: lookups in < 1 s
+    except ImportError:
+        print("duckdb missing (pip3 install duckdb) — falling back to grep over zipped dumps")
+        if not a.no_fop:
+            ensure_dumps()
     if a.query:
         k = a.kind or classify(a.query)
         print(a.query, "->", k)
