@@ -106,8 +106,8 @@ def main():
                 break
             except Exception as e:  # noqa: BLE001
                 print(f"{name} failed:", str(e)[:200])
-    for h in hits:
-        h["snippet"] = scrub(h.get("snippet"))
+    # Snippets are stored as the search engine returns them (quotes of public pages); the project's limits are on what we
+    # search BY (never phone, address, tax id of a person), not on quoting a public page.
     print(f"{q!r}: {len(hits)} hits via {'+'.join(engines) or 'nothing'}")
     for h in hits[:10]:
         print(" -", (h["title"] or "")[:70], "|", h["url"][:90])
