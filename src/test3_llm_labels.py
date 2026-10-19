@@ -1,11 +1,12 @@
-"""Test 3: LLM threat labels (Haiku batch sample ~20% of rule-flagged panel posts + Gemini) vs missile days in Kharkiv.
+"""Usage: python src/test3_llm_labels.py [data/llm_daily_full.csv]   (default: the 20% Haiku sample)
+Test 3: LLM threat labels (Haiku batch sample ~20% of rule-flagged panel posts + Gemini) vs missile days in Kharkiv.
 Same protocol as test 2: expanding-window one-step logistic, baseline = own lags; signal = yesterday's feature; block-bootstrap CI."""
-import numpy as np, pandas as pd
+import sys, numpy as np, pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler
 RNG=np.random.default_rng(7)
-d=pd.read_csv('data/daily_rhetoric.csv'); l=pd.read_csv('/tmp/claude-0/-home-claude/bf811a2d-7476-58b6-8f9f-2eb8f70b202b/scratchpad/llm_daily.csv'); l.columns=['date']+['L_'+c for c in l.columns[1:]]
+d=pd.read_csv('data/daily_rhetoric.csv'); l=pd.read_csv(sys.argv[1] if len(sys.argv)>1 else 'data/llm_daily.csv'); l.columns=['date']+['L_'+c for c in l.columns[1:]]
 df=d.merge(l,on='date',how='left').sort_values('date').reset_index(drop=True)
 df['missile_day']=(df['missiles']>0).astype(int)
 # LLM features: thr_ru is the daily share of rule-flagged posts; the LLM sample estimates what fraction of those are real threats
