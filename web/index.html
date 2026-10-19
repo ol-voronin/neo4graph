@@ -202,7 +202,7 @@ const FACETS={
   type:{label:'Тип вузла',get:n=>n.type,fmt:v=>TYPES[v]||v},
   prov:{label:'Походження даних',get:n=>provOf(n)},
   year:{label:'Рік',get:n=>{const d=n.date||n.year||n.publ;return d?String(d).slice(0,4):null}},
-  region:{label:'Регіон (суд / декларація)',get:n=>regionOf(n.region)||n.region||regionOf(n.court)||regionOf(n.label.includes('суд')?n.label:'')||null},
+  region:{label:'Регіон (суд / декларація)',get:n=>regionOf(n.region)||(n.region&&!/^\d/.test(n.region)?n.region:null)||regionOf(n.court)||regionOf(n.label.includes('суд')?n.label:'')||null},
   court:{label:'Суд',get:n=>n.court||(n.type==='court'?n.label:null)},
   patr:{label:'По батькові',get:patrOf},
   form:{label:'Форма рішення',get:n=>n.form||null},
