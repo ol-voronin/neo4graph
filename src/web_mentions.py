@@ -31,6 +31,14 @@ def brave(q, key, n=10):
             for i in (data.get("web") or {}).get("results", [])]
 
 
+def tavily(q, key, n=10):
+    """Tavily search API: TAVILY_API_KEY (1,000 credits/month free, no card)."""
+    body = json.dumps({"api_key": key, "query": q, "max_results": n, "search_depth": "basic", "include_answer": False}).encode()
+    req = urllib.request.Request("https://api.tavily.com/search", data=body, headers={"Content-Type": "application/json", "User-Agent": UA["User-Agent"]})
+    data = json.loads(urllib.request.urlopen(req, timeout=40).read())
+    return [{"title": i.get("title"), "url": i.get("url"), "snippet": (i.get("content") or "")[:400], "engine": "tavily"} for i in data.get("results", [])]
+
+
 def ddg(q, n=10):
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q, "kl": "ua-uk"})
     page = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8", "replace")
@@ -50,12 +58,12 @@ def main():
     q = " ".join(sys.argv[1:]).strip()
     if len(q) < 3:
         sys.exit("query too short")
-    key, cx, bk = os.environ.get("GOOGLE_CSE_KEY"), os.environ.get("GOOGLE_CSE_ID"), os.environ.get("BRAVE_API_KEY")
+    key, cx, bk, tk = os.environ.get("GOOGLE_CSE_KEY"), os.environ.get("GOOGLE_CSE_ID"), os.environ.get("BRAVE_API_KEY"), os.environ.get("TAVILY_API_KEY")
     # Google "search the entire web" is gone for engines created after 2026-01-20, so Brave is the whole-web engine and a
     # Google engine (if any) is a curated-sites engine (up to 50 domains); both are used when both keys exist.
     hits, engines = [], []
-    for name, fn in (("brave", lambda: brave(q, bk)), ("google", lambda: google(q, key, cx))):
-        if (name == "brave" and not bk) or (name == "google" and not (key and cx)):
+    for name, fn in (("brave", lambda: brave(q, bk)), ("tavily", lambda: tavily(q, tk)), ("google", lambda: google(q, key, cx))):
+        if (name == "brave" and not bk) or (name == "tavily" and not tk) or (name == "google" and not (key and cx)):
             continue
         try:
             hits += fn()
