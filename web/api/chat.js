@@ -1,4 +1,4 @@
-import { sql, json, classify } from "./_db.js";
+import { sql, json, classify, CAUSE_RE } from "./_db.js";
 
 // POST /api/chat {messages:[{role,content}]} -> answer + structured results. Claude Haiku with tools over the database.
 const SYSTEM = `Ти — асистент дослідницької бази про українські антикорупційні справи, судові рішення, заяви сторін і публічну риторику.
@@ -6,7 +6,10 @@ const SYSTEM = `Ти — асистент дослідницької бази п
 Користуйся інструментами, щоб шукати в базі; не вигадуй даних. Якщо в базі потрібного зрізу ще немає (наприклад, рішення іншого року чи категорії),
 скажи це прямо і постав у чергу індексацію або ланцюжок по реєстрах через enqueue, пояснивши, що результат з'явиться за 10–30 хвилин.
 Категорії справ у реєстрі — українські назви (наприклад, "земельні" справи: шукай за фрагментом "земел"). Рік із фрази "за 25-й рік" = 2025.
-У відповіді перелічуй знайдене списком; для справ давай номер, суд, кількість рішень, діапазон дат.`;
+У відповіді перелічуй знайдене списком; для справ давай номер, суд, кількість рішень, діапазон дат.
+Номер справи (формат 991/1234/21) → get_case: хронологія рішень із посиланнями. Якщо рішень у базі немає, get_case сам ставить справу в чергу.
+"Знайди ФОП …" → find_fop з повним імʼям. Це лише запис ЄДР ФОП (стан, дата реєстрації, припинення); збіг за імʼям може бути однофамільцем — кажи це.
+Не зводь ФОП із судами, боргами чи іншими реєстрами в одну відповідь про людину і не роби висновків про вину конкретних осіб.`;
 
 const TOOLS = [
   { name: "search_decisions", description: "Пошук судових рішень у базі (індекс ЄДРСР). Повертає групування по справах або список рішень.",
@@ -19,9 +22,20 @@ const TOOLS = [
   { name: "search_entities", description: "Люди, компанії (з ЄДРПОУ), справи й активи з антикорупційних постів.", input_schema: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } },
   { name: "search_corpus", description: "Повнотекстовий пошук по постах, новинах, заявах і текстах рішень у базі.", input_schema: { type: "object", properties: { q: { type: "string" }, since: { type: "string" }, until: { type: "string" }, limit: { type: "integer", default: 15 } }, required: ["q"] } },
   { name: "search_statements", description: "Заяви сторін (загрози, обіцянки, прогнози) з вердиктом резолвера і послужний список акторів.", input_schema: { type: "object", properties: { actor_side: { type: "string" }, q: { type: "string" }, limit: { type: "integer", default: 20 } } } },
+  { name: "get_case", description: "Картка справи за номером (напр. 991/1234/21): усі рішення в базі — дати, форми, суди, судді, посилання на тексти. Якщо рішень немає — ставить справу в чергу.",
+    input_schema: { type: "object", properties: { cause_num: { type: "string" } }, required: ["cause_num"] } },
+  { name: "find_fop", description: "Запис ЄДР про ФОП за повним імʼям (прізвище імʼя по батькові): стан, дата реєстрації, припинення. Якщо ще не шукали — ставить пошук у чергу (результат за 5–10 хв).",
+    input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
   { name: "enqueue", description: "Поставити в чергу роботу з реєстрами: kind=case (номер справи), person, org, edrpou, text, web (згадки в інтернеті), category_index (query у форматі 'РІК|фрагмент категорії|форма?' напр. '2025|земел' — індексує всі такі рішення року).",
-    input_schema: { type: "object", properties: { query: { type: "string" }, kind: { type: "string", enum: ["case", "person", "org", "edrpou", "text", "web", "category_index"] } }, required: ["query", "kind"] } },
+    input_schema: { type: "object", properties: { query: { type: "string" }, kind: { type: "string", enum: ["case", "person", "org", "edrpou", "text", "web", "category_index", "fop"] } }, required: ["query", "kind"] } },
 ];
+
+async function enqueue(q, kind) {
+  const open = await sql`SELECT id, status FROM query_queue WHERE query = ${q} AND kind = ${kind} AND status IN ('queued','running') LIMIT 1`;
+  if (open.length) return { queued: true, existing: true, ...open[0] };
+  const row = await sql`INSERT INTO query_queue(query, kind) VALUES (${q}, ${kind}) RETURNING id, status, created_at`;
+  return { queued: true, ...row[0], note: "Черга обробляється кожні 5 хв; пошук ФОП — 5–10 хв, справа чи індексація зрізу року — 5–20 хв." };
+}
 
 async function runTool(name, a) {
   if (name === "search_decisions") {
@@ -77,13 +91,26 @@ async function runTool(name, a) {
     const track = await sql`SELECT * FROM actor_track_record ORDER BY n_resolved DESC LIMIT 30`;
     return { statements: rows, track_record: track };
   }
-  if (name === "enqueue") {
-    const q = (a.query || "").trim();
-    const open = await sql`SELECT id, status FROM query_queue WHERE query = ${q} AND kind = ${a.kind} AND status IN ('queued','running') LIMIT 1`;
-    if (open.length) return { queued: true, existing: true, ...open[0] };
-    const row = await sql`INSERT INTO query_queue(query, kind) VALUES (${q}, ${a.kind}) RETURNING id, status, created_at`;
-    return { queued: true, ...row[0], note: "Воркер забирає чергу кожні 10 хв; індексація зрізу року триває 5–20 хв." };
+  if (name === "get_case") {
+    const num = (a.cause_num || "").trim();
+    if (!CAUSE_RE.test(num)) return { error: "номер справи має вигляд 991/1234/21" };
+    const key = num.toLowerCase();
+    const [sum] = await sql`SELECT count(*)::int n, min(adjudication_date) d0, max(adjudication_date) d1, count(DISTINCT court)::int courts,
+                                   string_agg(DISTINCT court, ' · ') court_list, string_agg(DISTINCT judge, ' · ') judges, count(text)::int texts,
+                                   max(category) category, max(justice_kind) justice_kind FROM court_decisions WHERE lower(cause_num) = ${key}`;
+    if (!sum.n) return { found: 0, ...(await enqueue(num, "case")) };
+    const forms = await sql`SELECT judgment_form f, count(*)::int n FROM court_decisions WHERE lower(cause_num) = ${key} GROUP BY 1 ORDER BY 2 DESC`;
+    const timeline = await sql`SELECT adjudication_date d, judgment_form f, court, judge, doc_url FROM court_decisions WHERE lower(cause_num) = ${key} ORDER BY adjudication_date DESC NULLS LAST LIMIT 40`;
+    return { found: sum.n, summary: sum, forms, timeline };
   }
+  if (name === "find_fop") {
+    const q = (a.name || "").replace(/ФОП/gi, "").replace(/\s+/g, " ").trim();
+    if (q.split(" ").length < 2) return { error: "потрібне повне імʼя: прізвище та імʼя (краще з по батькові)" };
+    const rows = await sql`SELECT title, snippet, payload FROM registry_hits WHERE source = 'edr_fop' AND lower(query) = lower(${q}) ORDER BY title LIMIT 20`;
+    if (rows.length) return { found: rows.length, records: rows.map((r) => r.payload), note: "Збіг за імʼям: це можуть бути різні люди (однофамільці)." };
+    return { found: 0, ...(await enqueue(q, "fop")) };
+  }
+  if (name === "enqueue") return enqueue((a.query || "").trim(), a.kind);
   return { error: "unknown tool" };
 }
 
