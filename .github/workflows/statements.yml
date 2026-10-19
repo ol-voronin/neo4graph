@@ -40,7 +40,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
           PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
         run: |
           python src/extract_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '60' }}" --random ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
@@ -48,7 +48,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
           PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
         run: |
           python src/resolve_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.resolve_limit || '30' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
@@ -56,7 +56,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
           PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
         run: |
           python src/resolve_statements.py --facts --provider "$PROVIDER" --limit "${{ github.event.inputs.resolve_limit || '30' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
@@ -64,7 +64,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
           PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
         run: |
           python src/find_contradictions.py --provider "$PROVIDER" --max-actors 20 ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}

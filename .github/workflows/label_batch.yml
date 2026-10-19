@@ -38,7 +38,7 @@ jobs:
       - name: Run
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
           CMD="${{ github.event.inputs.cmd || 'fetch' }}"
