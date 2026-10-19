@@ -12,8 +12,6 @@ on:
     - cron: "10 19 * * *"
     - cron: "10 20 * * *"
     - cron: "30 9 * * *"
-  push:
-    branches: [prospective-nowcast]   # development check only: backtest + dry-run, no writes
   workflow_dispatch:
     inputs:
       cmd:
@@ -40,11 +38,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         working-directory: src
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            python nowcast.py backtest
-            python nowcast.py predict --dry-run --now "$(TZ=Europe/Kyiv date +%Y-%m-%dT16:00)"
-            python nowcast.py predict --dry-run --now "$(TZ=Europe/Kyiv date +%Y-%m-%dT22:00)"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python nowcast.py "${{ github.event.inputs.cmd }}"
           elif [ "${{ github.event.schedule }}" = "30 9 * * *" ]; then
             python nowcast.py evaluate && python nowcast.py report
