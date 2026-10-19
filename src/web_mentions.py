@@ -39,6 +39,34 @@ def tavily(q, key, n=10):
     return [{"title": i.get("title"), "url": i.get("url"), "snippet": (i.get("content") or "")[:400], "engine": "tavily"} for i in data.get("results", [])]
 
 
+def tavily_keyless(q, n=10):
+    """Tavily hosted MCP in keyless mode (no account; rate-limited). JSON-RPC tools/call over HTTP, SSE-framed reply."""
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "tavily_search", "arguments": {"query": q, "max_results": n}}}).encode()
+    req = urllib.request.Request("https://mcp.tavily.com/mcp/", data=body, headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+                                                                                   "X-Tavily-Access-Mode": "keyless", "User-Agent": UA["User-Agent"]})
+    raw = urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "replace")
+    line = next((l[5:].strip() for l in raw.splitlines() if l.startswith("data:")), raw)
+    msg = json.loads(line)
+    if "error" in msg:
+        raise RuntimeError(msg["error"].get("message", "mcp error"))
+    inner = json.loads(msg["result"]["content"][0]["text"])
+    if inner.get("code"):  # e.g. monthly_cap_reached: keyless mode allows only a handful of queries per month
+        raise RuntimeError(inner.get("message", inner["code"])[:160])
+    return [{"title": i.get("title"), "url": i.get("url"), "snippet": (i.get("content") or "")[:400], "engine": "tavily-keyless"} for i in inner.get("results", [])]
+
+
+# Snippets are shown in the UI next to the URL; phones, e-mails and street addresses of people are dropped from them
+# (the page itself stays one click away for manual verification).
+SCRUB = [re.compile(r"\+?\d[\d\s\-()]{8,}\d"), re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+"), re.compile(r"[\w.*+-]+@[\w*-]+\.[\w*.]+"),
+         re.compile(r"(вул\.|вулиця|просп\.|проспект|пров\.|провулок|бульв\.|бульвар)[^;,.]{0,60}(будинок|буд\.|б\.)?[^;,.]{0,30}(квартира|кв\.)?[^;,.]{0,15}", re.I)]
+
+
+def scrub(t):
+    for r in SCRUB:
+        t = r.sub("[прибрано]", t or "")
+    return t
+
+
 def ddg(q, n=10):
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q, "kl": "ua-uk"})
     page = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8", "replace")
@@ -71,11 +99,15 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"{name} failed:", str(e)[:200])
     if not engines:
-        try:
-            hits = ddg(q)
-            engines = ["ddg (best effort)"]
-        except Exception as e:  # noqa: BLE001
-            print("search failed:", str(e)[:200])
+        for name, fn in (("tavily-keyless", lambda: tavily_keyless(q)), ("ddg (best effort)", lambda: ddg(q))):
+            try:
+                hits = fn()
+                engines = [name]
+                break
+            except Exception as e:  # noqa: BLE001
+                print(f"{name} failed:", str(e)[:200])
+    for h in hits:
+        h["snippet"] = scrub(h.get("snippet"))
     print(f"{q!r}: {len(hits)} hits via {'+'.join(engines) or 'nothing'}")
     for h in hits[:10]:
         print(" -", (h["title"] or "")[:70], "|", h["url"][:90])
