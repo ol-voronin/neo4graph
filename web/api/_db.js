@@ -1,6 +1,8 @@
 import { neon } from "@neondatabase/serverless";
 
 export const sql = neon(process.env.DATABASE_URL);
+// Parameterised query with a text string: driver 0.10.x takes sql(text, params); 1.x moved it to sql.query(text, params).
+export const query = (text, params = []) => (typeof sql.query === "function" ? sql.query(text, params) : sql(text, params));
 
 export function json(res, status, body) {
   res.statusCode = status;

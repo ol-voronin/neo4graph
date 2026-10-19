@@ -1,4 +1,4 @@
-import { sql, json, classify } from "./_db.js";
+import { sql, json, classify, query } from "./_db.js";
 
 // POST /api/chat {messages:[{role,content}]} -> answer + structured results. Claude Haiku with tools over the database.
 const SYSTEM = `Ти — асистент дослідницької бази про українські антикорупційні справи, судові рішення, заяви сторін і публічну риторику.
@@ -63,11 +63,11 @@ async function runTool(name, a) {
     if (a.justice_kind) add("justice_kind ILIKE ?", "%" + a.justice_kind + "%");
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
     if (a.group_by_case !== false) {
-      const rows = await sql.query(`SELECT cause_num, max(court) court, count(*)::int n, min(adjudication_date) d0, max(adjudication_date) d1, max(category) category, string_agg(DISTINCT judgment_form, ', ') forms FROM court_decisions ${w} GROUP BY cause_num ORDER BY n DESC LIMIT ${lim}`, params);
-      const tot = await sql.query(`SELECT count(*)::int n, count(DISTINCT cause_num)::int cases FROM court_decisions ${w}`, params);
+      const rows = await query(`SELECT cause_num, max(court) court, count(*)::int n, min(adjudication_date) d0, max(adjudication_date) d1, max(category) category, string_agg(DISTINCT judgment_form, ', ') forms FROM court_decisions ${w} GROUP BY cause_num ORDER BY n DESC LIMIT ${lim}`, params);
+      const tot = await query(`SELECT count(*)::int n, count(DISTINCT cause_num)::int cases FROM court_decisions ${w}`, params);
       return { total_decisions: tot[0].n, total_cases: tot[0].cases, cases: rows };
     }
-    return { decisions: await sql.query(`SELECT doc_id, cause_num, court, judgment_form, category, adjudication_date, judge, doc_url FROM court_decisions ${w} ORDER BY adjudication_date DESC LIMIT ${lim}`, params) };
+    return { decisions: await query(`SELECT doc_id, cause_num, court, judgment_form, category, adjudication_date, judge, doc_url FROM court_decisions ${w} ORDER BY adjudication_date DESC LIMIT ${lim}`, params) };
   }
   if (name === "list_categories") {
     const rows = await sql`SELECT year, category, count(*)::int n FROM court_decisions WHERE (${a.year || null}::int IS NULL OR year = ${a.year || null}) AND (${a.like || ""} = '' OR category ILIKE ${"%" + (a.like || "") + "%"}) GROUP BY 1,2 ORDER BY n DESC LIMIT 40`;
@@ -125,7 +125,7 @@ async function runTool(name, a) {
     const P = [a.year_from || 2021, a.year_to || a.year_from || 2100, a.justice_kind || "", (a.category_re || "").slice(0, 200), "%" + (a.region || "") + "%", a.form || ""];
     const W = "year BETWEEN $1 AND $2 AND ($3 = '' OR justice_kind = $3) AND ($4 = '' OR category ~* $4) AND ($5 = '%%' OR region ILIKE $5)";
     const F = " AND ($6 = '' OR form = $6)";
-    const q = (text) => sql.query(text, P);
+    const q = (text) => query(text, P);
     const [byYear, byForm, topCat, topReg, cases] = await Promise.all([
       q(`SELECT year, sum(n)::int decisions FROM edrsr_stats WHERE ${W}${F} GROUP BY 1 ORDER BY 1`),
       q(`SELECT form, sum(n)::int decisions FROM edrsr_stats WHERE ${W} AND $6::text = $6::text GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),
