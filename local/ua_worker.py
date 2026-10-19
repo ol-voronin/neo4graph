@@ -31,6 +31,26 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML,
 REYESTR = "https://reyestr.court.gov.ua/"
 NAZK = "https://public-api.nazk.gov.ua/v2/documents/list?query={q}&page={p}"
 FOP = HERE / "data" / "fop.zip"
+ERB = HERE / "data" / "erb.zip"   # Єдиний реєстр боржників (Minjust, data.gov.ua), refreshed by the ministry every few days
+DUMPS = {FOP: "https://data.gov.ua/dataset/03cc1239-3988-4451-aa0d-aadb77448714/resource/c262938f-cce7-4489-a805-2fd7c5a44e0b/download/fop.zip",
+         ERB: "https://data.gov.ua/dataset/783b9b50-faba-4cc9-a393-60485e395b1d/resource/e6ea76c1-01f4-4bd0-a282-7d92d6ecc2a1/download/29-ex_csv_erb.zip"}
+
+
+def ensure_dumps(max_age_days=7):
+    """Download / refresh the open-data dumps the worker greps (ЄДР ФОП, реєстр боржників)."""
+    for path, url in DUMPS.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > 1e7 and time.time() - path.stat().st_mtime < max_age_days * 86400:
+            continue
+        print("downloading", path.name)
+        tmp = path.with_suffix(".part")
+        try:
+            with opener.open(urllib.request.Request(url), timeout=600) as r, open(tmp, "wb") as f:
+                while chunk := r.read(1 << 20):
+                    f.write(chunk)
+            tmp.replace(path)
+        except Exception as e:  # noqa: BLE001
+            print("download failed:", path.name, e)
 CAUSE_RE = re.compile(r"^\d{1,4}/\d{1,6}/\d{2}(?:-[\w/]+)?$")
 ORG_RE = re.compile(r"^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо|фоп)\b|[«»\"]", re.I)
 NAME_RE = re.compile(r"^[^\W\d_][^\W\d_'’-]+(\s+[^\W\d_][^\W\d_'’.-]+){1,2}$")
@@ -197,6 +217,44 @@ def fop_search(name, limit=60, deadline=None):
     return (total if not partial else -total - 1), out
 
 
+def grep_dump(path, pattern_utf8):
+    """Stream a zipped cp1251 dump through grep (fast); yields decoded matching lines."""
+    import shutil
+    import subprocess
+    if not (shutil.which("unzip") and shutil.which("grep")):
+        return
+    pat = pattern_utf8.encode("cp1251", "ignore")
+    p1 = subprocess.Popen(["unzip", "-p", str(path)], stdout=subprocess.PIPE)
+    p2 = subprocess.Popen(["grep", "-a", "-F", pat], stdin=p1.stdout, stdout=subprocess.PIPE, env={"LC_ALL": "C"})
+    p1.stdout.close()
+    for raw in p2.stdout:
+        yield raw.decode("cp1251", "ignore")
+    p2.wait()
+
+
+def erb_search(name, limit=60):
+    """Єдиний реєстр боржників: debtors by name (persons are Title Case, companies upper case). Birth date is reduced to the
+    year; the debtor code column is kept only when it is an 8-digit ЄДРПОУ (never a person's tax number)."""
+    if not ERB.exists():
+        return None, []
+    import csv
+    key = re.sub(r"\s+", " ", name.strip())
+    out, total = [], 0
+    for variant in {key, key.title(), key.upper()}:
+        for line in grep_dump(ERB, '"' + variant):
+            try:
+                r = next(csv.reader([line]))
+            except Exception:  # noqa: BLE001
+                continue
+            if len(r) < 11 or not r[0].lower().startswith(key.lower()):
+                continue
+            total += 1
+            if len(out) < limit:
+                out.append({"name": r[0], "birth_year": r[1][-4:] if r[1] else None, "edrpou": r[2] if re.fullmatch(r"\d{8}", r[2] or "") else None,
+                            "publisher": r[3], "executor": r[4], "vp": r[9], "category": r[10]})
+    return total, out
+
+
 # ---------------------------------------------------------------- ingest
 def ingest(env, payload):
     req = urllib.request.Request(env["API_BASE"] + "/api/ingest", data=json.dumps(payload, ensure_ascii=False).encode(),
@@ -269,6 +327,16 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                                  "snippet": f"{f['stan'] or ''}; {f['registration'] or ''}", "payload": f})
             else:
                 notes.append("ЄДР ФОП: дамп не завантажено")
+        if kind in ("person", "org"):
+            etotal, debtors = erb_search(q)
+            if etotal is not None:
+                notes.append(f"реєстр боржників: {etotal}")
+                for d in debtors:
+                    hits.append({"query": q, "qkind": kind, "source": "erb", "ref": d["vp"], "url": "https://erb.minjust.gov.ua/",
+                                 "title": f"Боржник · {d['category'] or 'провадження'} · {d['name']}" + (f" ({d['birth_year']} р.н.)" if d["birth_year"] else ""),
+                                 "snippet": f"{d['publisher'] or ''}; виконавець: {d['executor'] or ''}; ВП № {d['vp']}", "payload": d})
+            else:
+                notes.append("реєстр боржників: дамп не завантажено")
         got = 0
         for r in all_rows[:min(texts, 5)]:
             if not tleft():
@@ -300,6 +368,8 @@ def main():
     if not env["INGEST_TOKEN"]:
         sys.exit("INGEST_TOKEN missing (.env)")
     deadline = time.time() + a.max_seconds
+    if not a.no_fop:
+        ensure_dumps()
     if a.query:
         k = a.kind or classify(a.query)
         print(a.query, "->", k)

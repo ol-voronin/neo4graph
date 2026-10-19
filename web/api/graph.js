@@ -121,6 +121,9 @@ export default async function handler(req, res) {
       } else if (h.source === "nazk_decl") {
         const did = node("decl:" + h.ref, "declaration", h.title, { url: h.url, text: h.snippet, position: p.work_post, org: p.work_place, year: p.year, region: p.region, src: "НАЗК" });
         edge(who, did, "declaration", null, { detail: h.snippet, src: "public.nazk.gov.ua" });
+      } else if (h.source === "erb") {
+        const eid = node("erb:" + h.ref, "registry", h.title, { text: h.snippet, org: p.executor, agency: p.publisher, year: p.birth_year ? null : null, src: "Єдиний реєстр боржників", url: h.url, category: p.category });
+        edge(who, eid, "debtor_record", null, { detail: h.snippet, src: "erb.minjust.gov.ua" });
       } else if (h.source === "edr_fop") {
         const fid = node("fop:" + h.ref, "registry", h.title, { stan: p.stan, text: h.snippet, src: "ЄДР (ФОП)" });
         edge(who, fid, "fop_record", null, { detail: h.snippet, src: "ЄДР" });
