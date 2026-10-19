@@ -254,17 +254,23 @@ function geminiSchema(s) {
 }
 
 async function geminiLoop(messages, key, trace) {
+  const t0 = Date.now();
   const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
   const tools = [{ functionDeclarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: geminiSchema(t.input_schema) })) }];
   let contents = messages.filter((m) => typeof m.content === "string" && m.content.trim())
     .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
   for (let step = 0; step < 6; step++) {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    const call = () => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents, tools, generationConfig: { temperature: 0.2, maxOutputTokens: 3000 } }),
     });
-    const data = await r.json();
+    let r = await call(), data = await r.json();
+    // free tier: per-minute limit. Wait once if Google says it is short (RetryInfo.retryDelay) and the function has time left.
+    if (r.status === 429) {
+      const wait = Number(((data.error?.details || []).find((d) => d.retryDelay)?.retryDelay || "").replace("s", "")) || 6;
+      if (wait <= 12 && Date.now() - t0 < 15000) { await new Promise((ok) => setTimeout(ok, wait * 1000)); r = await call(); data = await r.json(); }
+    }
     if (r.status === 429) return "Ліміт безкоштовного тарифу Gemini вичерпано. Спробуйте за хвилину. Номери справ і «ФОП Прізвище Імʼя» працюють і без моделі.";
     if (data.error) throw new Error(data.error.message || "gemini error");
     const parts = data.candidates?.[0]?.content?.parts || [];
