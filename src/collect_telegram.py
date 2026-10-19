@@ -18,6 +18,7 @@ import html
 import json
 import re
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,7 +49,13 @@ def fetch(channel: str, before: int | None = None, query: str | None = None) -> 
         params.append(f"before={before}")
     url = f"https://t.me/s/{channel}" + ("?" + "&".join(params) if params else "")
     req = urllib.request.Request(url, headers=UA)
-    return urllib.request.urlopen(req, timeout=25).read().decode("utf-8", "replace")
+    for attempt in range(3):
+        try:
+            return urllib.request.urlopen(req, timeout=25).read().decode("utf-8", "replace")
+        except (urllib.error.URLError, ConnectionError, TimeoutError) as e:  # transient resets: retry with backoff
+            if attempt == 2:
+                raise
+            time.sleep(2 * (attempt + 1))
 
 
 def parse(page: str, channel: str):

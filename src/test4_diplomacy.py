@@ -46,6 +46,25 @@ for k in (1, 2, 3, 5, 7):
     o, _ = follow_rate(df.episode.values, k)
     p = np.array([follow_rate(np.roll(df.episode.values, RNG.integers(5, n - 5)), k)[0] for _ in range(2000)])
     print(f"  within {k} day(s): {o:.2f} vs {p.mean():.2f}, p={(p >= o).mean():.3f}")
+# ---- part 1b: what the spikes were about, and Putin–Trump calls as a cleaner event ----
+# dip_ua / dip_ir: envoy mentions without / with Iran-Pakistan context (the April spikes were the Islamabad talks, not Ukraine);
+# call: Kremlin (Ushakov) readout of a Putin–Trump phone call, by call date.
+def episodes(col, thr=5):
+    med = df[col].rolling(14, min_periods=5).median().shift(1).fillna(0)
+    day = ((df[col] >= thr) & (df[col] >= 3 * med.clip(lower=1))).astype(int)
+    return ((day == 1) & (day.shift(1, fill_value=0) == 0)).astype(int).values
+print("\nevent series → P(massive within k days) vs random dates:")
+for label, ev in (("envoy spikes, Ukraine context", episodes("dip_ua")), ("envoy spikes, Iran context", episodes("dip_ir")), ("Putin–Trump calls", df.call.values)):
+    dates = [str(d.date()) for d in df.date[ev == 1]]
+    print(f"  {label} (n={ev.sum()}): {', '.join(dates)}")
+    for k in (1, 2, 3, 5):
+        o, _ = follow_rate(ev, k)
+        pp = np.array([follow_rate(np.roll(ev, RNG.integers(5, n - 5)), k)[0] for _ in range(2000)])
+        print(f"     within {k}: {o:.2f} vs {pp.mean():.2f}, p={(pp >= o).mean():.3f}")
+for d in df.date[df.call == 1]:
+    i = df.index[df.date == d][0]
+    print("  call", d.date(), "| next 5 days missiles:", list(df.missiles[i + 1:i + 6]), "drones:", list(df.drones[i + 1:i + 6]))
+
 # before vs after: is the strike series calmer on the episode days themselves (pauses during talks)?
 on = df.massive[df.dip_day == 1].mean()
 print(f"\nmassive rate ON diplomacy days: {on:.2f} vs overall {df.massive.mean():.2f}")

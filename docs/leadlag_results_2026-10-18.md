@@ -157,3 +157,44 @@ Reading:
    post timestamps, the waves table has launch windows; and a January backfill to include the 01-22 visit.
 Decision: keep `dip` (envoy mentions, lag 1) as a candidate feature in the national model; re-run when the next
 confirmed visit happens; no claim yet.
+
+### Test 4b — reading the posts behind the spikes (hour level), same day
+
+What the ten "envoy spikes" actually were, from the posts (Kyiv time):
+- **04-08/09, 04-24/25, 06-08 — Iran, not Ukraine.** The April posts are CNN/Axios: "Trump sends Witkoff and Kushner
+  to Pakistan for talks with Iran" (04-24 18:57–23:48). The Islamabad talks dominate the envoy series in April–June.
+  Split: `dip_ua` (no Iran/Pakistan context) vs `dip_ir`.
+- **06-14 — Putin–Trump phone call** (Trump's 80th birthday; Ushakov readout 20:10: "agreed that Witkoff and Kushner
+  will come to Russia again soon"). The combined strike of the night of 06-15 (70 missiles / 611 drones) is counted
+  by the Air Force "from 18:00 on 06-14" — the Shahed wave starts in the same hour as the call, missiles follow at
+  night. A strike of that size is prepared over days: it was not an *answer* to the call.
+- **07-04/05 — Putin–Trump call** (1.5 h, 07-04 evening; posts 07-05 00:15–02:00). Massive strike the next night
+  (from 18:00 07-05: 68 / 351) — ~24 h after the call.
+- **09-04…09-08 — the visit itself.** Spike builds 09-04 (21 posts), peaks 09-05/06 (40–45). No missiles 09-01…09-07,
+  then 32 missiles on the night of 09-08 (the day of the next Putin–Trump call, readout 19:20) and the two biggest
+  drone nights 09-12/13.
+- **10-09/10, 10-13, 10-15 — Putin–Trump call (10-09) and the sanctions/Starlink crisis** talk; 39 missiles 10-14,
+  718 drones 10-15.
+
+Cleaner event: Kremlin (Ushakov) readouts of **Putin–Trump phone calls** — 04-29, 06-14, 07-04, 09-08, 10-09 (n=5).
+What followed: 04-29 → nothing (drone data missing 04-30, 05-03…05-05); 06-14 → 70/611 that night; 07-04 → 68/351
+next night; 09-08 → 539/776 drones on +4/+5; 10-09 → 39 missiles +5, 718 drones +6. Within 2 days 2/5 (random 0.22),
+within 5 days 4/5 (random 0.46, p≈0.2). Ukraine-context envoy spikes (n=5): within 5 days 4/5, p≈0.10.
+Iran-context spikes (n=3): nothing beyond chance.
+
+Reading: at hour level the sequence is not "talk → strike as reaction" — on 06-14 the drones were already in the air
+when the readout came out, and a 50–70-missile salvo is assembled over days. The pattern that survives is the one
+reported for 2025 (the 07-03-2025 call followed by the then-record 550-drone night on Kyiv): **large pre-planned
+salvos land within 0–2 days of a Putin–Trump contact**, and the two biggest drone nights of this panel came 4–5 days
+after the Kyiv visit and the 09-08 call. With five calls it is a pattern to watch, not a result; the call dates are
+the feature to keep (`call` column), not the mention counts, because they are exact and not contaminated by Iran.
+
+### January backfill (waves now start 2026-01-01)
+
+Air Force night summaries for 01-01…03-29 were paged from t.me/s/kpszsu (86 nights; day summaries were not posted in
+that format then; parser fixed for the "205-ма ударними БпЛА" wording). Loaded into `waves`. Around the 01-22 Moscow
+visit (Witkoff + Kushner, Thursday): 01-20 33 missiles / 339 drones (two days before), 01-21…01-23 quiet (≈95 drones
+a night, no missiles), 01-24 19 missiles / 375 drones (two days after), then 02-03 67 / 450. Same shape as September:
+quiet on the visit days, a combined strike within two days on either side. Two visits, same shape — still n=2.
+Jan–Mar massive nights for reference: 01-09, 01-20, 02-03, 02-07, 02-12, 02-17, 02-22, 02-26, 03-07, 03-14, 03-24, 03-29
+(roughly weekly — the base rate is ~0.13/day there too). No corpus before 03-31, so no mention features for this stretch.
