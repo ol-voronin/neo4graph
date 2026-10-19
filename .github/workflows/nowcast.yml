@@ -1,0 +1,59 @@
+name: nowcast
+
+# Prospective test (docs/architecture.md, 6.6): forecasts are written BEFORE the outcome window opens and never changed.
+# Cron is UTC; the times below fall inside both models' issue windows in summer (UTC+3) and winter (UTC+2):
+#   national (feature cutoff 15:00, deadline 18:00 Kyiv on D-1) -> 13:10 / 14:10 UTC
+#   Kharkiv  (feature cutoff 21:00, deadline 24:00 Kyiv on D-1) -> 19:10 / 20:10 UTC (second run is a retry; inserts never overwrite)
+#   evaluate after the morning summaries -> 09:30 UTC
+on:
+  schedule:
+    - cron: "10 13 * * *"
+    - cron: "10 14 * * *"
+    - cron: "10 19 * * *"
+    - cron: "10 20 * * *"
+    - cron: "30 9 * * *"
+  push:
+    branches: [prospective-nowcast]   # development check only: backtest + dry-run, no writes
+  workflow_dispatch:
+    inputs:
+      cmd:
+        description: "predict | evaluate | backtest | report"
+        default: "report"
+
+concurrency:
+  group: nowcast
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install "psycopg[binary]" python-dotenv pandas numpy scikit-learn
+      - name: Run
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: src
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            python nowcast.py backtest
+            python nowcast.py predict --dry-run --now "$(TZ=Europe/Kyiv date +%Y-%m-%dT16:00)"
+            python nowcast.py predict --dry-run --now "$(TZ=Europe/Kyiv date +%Y-%m-%dT22:00)"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python nowcast.py "${{ github.event.inputs.cmd }}"
+          elif [ "${{ github.event.schedule }}" = "30 9 * * *" ]; then
+            python nowcast.py evaluate && python nowcast.py report
+          else
+            python nowcast.py predict
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nowcast-${{ github.run_id }}
+          path: data/backtest_nowcast.json
+          if-no-files-found: ignore
