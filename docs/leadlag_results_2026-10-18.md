@@ -98,3 +98,62 @@ to be real threats; (b) the per-day LLM share is too noisy at this sample size: 
 binomial SE of ≈0.06 on a mean of 0.10 (relative error ~60%), which is enough to drown a +0.03 effect. The full
 batch (all 26,848) would cut that error by ~sqrt(5). Decision: do not spend on re-labeling until the company key
 question is settled; if (b) is to be tested cheaply, label only the 90 missile days ± 1 in full (~12k posts).
+
+## Test 4 (US-envoy diplomacy: Witkoff / Kushner visits and massive strikes) — run 2026-10-19
+
+Question (Oleksii): do massive strikes cluster around Witkoff/Kushner trips to Moscow and/or Kyiv?
+Data: `data/national_daily.csv` — national daily launched missiles / drones (Air Force summaries, `waves`),
+`dip` = posts per day in the whole corpus mentioning Віткофф or Кушнер (regex, all channels), `peace` = posts about
+peace talks in general (control), `posts` = corpus volume. Window 2026-03-31 … 2026-10-18 (202 days).
+Script: `src/test4_diplomacy.py`.
+
+Events, pre-registered before looking at outcomes:
+- (a) confirmed in-person visits inside the window: Moscow Sat 2026-09-05 (3-hour Putin meeting), Kyiv Sun 2026-09-06
+  (first visit); Putin had announced a 72-hour pause on Kyiv strikes from midnight 09-05. The Jan 22 Moscow visit is
+  before the panel starts (needs a `waves` backfill to January). October: phone calls only, no confirmed trip.
+  So n = 1 episode — descriptive only.
+- (b) "diplomacy episodes": first day of a run with dip ≥ 5 posts and ≥ 3× the trailing-14-day median. Objective,
+  recurs 10 times (04-08, 04-24, 06-08, 06-14, 07-05, 08-31, 09-04, 09-23, 10-09, 10-15).
+Outcome: national "massive" day = missiles ≥ 20 or drones ≥ 400 (24 of 202 days, base rate 0.12).
+Stat: share of episodes followed by a massive day within k days vs. the same share for the episode set circularly
+shifted to random dates (5,000 shifts; keeps the autocorrelation of both series).
+
+| within k days after an episode | observed (n=10) | random-date expectation | one-sided p |
+|---|---|---|---|
+| 1 | **0.40** (04-25, 06-15, 07-06, 10-16) | 0.12 | **0.036** |
+| 2 | 0.50 | 0.22 | 0.060 |
+| 3 | 0.50 | 0.31 | 0.18 |
+| 5 | 0.70 | 0.47 | 0.11 |
+| 7 | 0.80 | 0.59 | 0.14 |
+
+Massive rate ON the episode days themselves 0.15 vs 0.12 (no lull on the talk days in the national series).
+Linear correlations dip[t−k] × missiles[t] are all ≈ 0 (+0.05 at k=1): the relation, if real, is "spike → next-day
+massive strike", not "more talk → more missiles".
+
+Confirmed visit, national series: 09-01…09-07 no missiles, 92–317 drones (the quietest week of the panel; the
+announced Kyiv pause is visible nationally too); 09-08, two days after the Kyiv visit, 32 missiles / 166 drones;
+09-12/13 the two largest drone nights of the panel (539 / 776). Pattern consistent with "pause during the visit,
+heavy strikes right after", but it is one episode.
+
+Out-of-sample day-ahead model (protocol of tests 2/3: expanding logistic, baseline = own lags; 172 test days):
+
+| target | baseline AUC | +dip (count) | +dip_share | +dip_day | +peace (control) | +thr_ru |
+|---|---|---|---|---|---|---|
+| national massive day (22 positives) | 0.488 | 0.554 (**+0.067** [−0.05, +0.21]) | +0.051 | +0.033 | −0.016 | −0.011 |
+| Kharkiv missile day (84 positives) | 0.677 | −0.005 | −0.011 | −0.017 | −0.002 | +0.024 |
+
+Reading:
+1. Four of the ten diplomacy spikes were followed the next day by one of the panel's biggest national strikes
+   (04-25: 47 missiles/619 drones; 06-15: 70/611; 07-06: 68/351; 10-16: 464 drones after 718 on 10-15). Against a
+   12% base rate that is p ≈ 0.04 at lag 1 — but it is the best of five lags tested on ten events, so treat it as a
+   lead worth tracking, not a finding. A general "peace talks" mention series carries nothing (control passes): the
+   effect, if any, is specific to the envoys, not to diplomacy talk in general.
+2. The national massive-day model is near chance on its own lags (AUC 0.49; massive days are not autocorrelated),
+   and the envoy count is the only feature that moves it (+0.07 AUC, CI wide, 22 positives). For Kharkiv missile
+   days it adds nothing — Kharkiv is hit on ordinary days; the envoy signal, if real, is about nationwide salvos.
+3. Mechanism is undetermined by this data: "strike as answer to talks", "talks scheduled when a strike is expected",
+   and "both driven by a third thing (e.g. a US deadline)" all fit. Next step that would separate them: hour-level
+   timing (did the spike in mentions precede the launch, or did the launch produce the mentions?) — the corpus has
+   post timestamps, the waves table has launch windows; and a January backfill to include the 01-22 visit.
+Decision: keep `dip` (envoy mentions, lag 1) as a candidate feature in the national model; re-run when the next
+confirmed visit happens; no claim yet.
