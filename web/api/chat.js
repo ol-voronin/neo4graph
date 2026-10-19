@@ -100,7 +100,7 @@ async function runTool(name, a) {
                                    max(category) category, max(justice_kind) justice_kind FROM court_decisions WHERE (lower(cause_num) = ${key} OR lower(cause_num) LIKE ${key + '-%'})`;
     if (!sum.n) return { found: 0, ...(await enqueue(num, "case")) };
     const forms = await sql`SELECT judgment_form f, count(*)::int n FROM court_decisions WHERE (lower(cause_num) = ${key} OR lower(cause_num) LIKE ${key + '-%'}) GROUP BY 1 ORDER BY 2 DESC`;
-    const timeline = await sql`SELECT adjudication_date d, judgment_form f, court, judge, doc_url FROM court_decisions WHERE (lower(cause_num) = ${key} OR lower(cause_num) LIKE ${key + '-%'}) ORDER BY adjudication_date DESC NULLS LAST LIMIT 40`;
+    const timeline = await sql`SELECT doc_id, adjudication_date d, judgment_form f, court, judge, doc_url FROM court_decisions WHERE (lower(cause_num) = ${key} OR lower(cause_num) LIKE ${key + '-%'}) ORDER BY adjudication_date DESC NULLS LAST LIMIT 40`;
     return { found: sum.n, summary: sum, forms, timeline };
   }
   if (name === "find_fop") {
@@ -112,6 +112,47 @@ async function runTool(name, a) {
   }
   if (name === "enqueue") return enqueue((a.query || "").trim(), a.kind);
   return { error: "unknown tool" };
+}
+
+// ---- graph payload: what the tools found, as nodes/edges with the same ids as /api/graph, so the page can merge and focus ----
+const lc = (x) => String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
+function toGraph(trace) {
+  const nodes = new Map(), edges = [];
+  let focus = null;
+  const node = (id, type, label, attrs = {}) => { if (!nodes.has(id)) nodes.set(id, { id, type, label, ...attrs }); focus ??= id; return id; };
+  const edge = (source, target, rel, attrs = {}) => edges.push({ source, target, rel, msgs: [], ...attrs });
+  for (const t of trace) {
+    const o = t.summary || {};
+    if (t.tool === "get_case" && o.found) {
+      const num = t.input.cause_num, cid = node("case:" + lc(num), "case", "Справа " + num, { ref: num });
+      for (const d of o.timeline || []) {
+        if (!d.doc_id) continue;
+        const date = dt(d.d), did = node("decision:" + d.doc_id, "decision", `${d.f || "Рішення"} ${date}`, { doc_id: d.doc_id, form: d.f, date, court: d.court, judge: d.judge, url: d.doc_url, status: "1" });
+        edge(did, cid, "decision_of", { date });
+      }
+    }
+    if (t.tool === "find_fop" && o.found) {
+      const name = String(t.input.name || "").replace(/ФОП/gi, "").replace(/\s+/g, " ").trim();
+      const pid = node("person:" + lc(name), "person", name);
+      for (const r of o.records || []) {
+        const fid = node("fop:" + r.record, "registry", "ФОП " + r.name, { stan: r.stan, text: `${r.stan || ""}; ${r.registration || ""}`, src: "ЄДР (ФОП)" });
+        edge(pid, fid, "fop_record", { detail: "збіг за імʼям (можливий однофамілець)", src: "ЄДР" });
+      }
+    }
+    if (t.tool === "search_decisions") {
+      for (const c of o.cases || []) if (c.cause_num) node("case:" + lc(c.cause_num), "case", "Справа " + c.cause_num, { ref: c.cause_num });
+      for (const d of o.decisions || []) {
+        const date = dt(d.adjudication_date), did = node("decision:" + d.doc_id, "decision", `${d.judgment_form || "Рішення"} ${date}`, { doc_id: d.doc_id, form: d.judgment_form, date, court: d.court, judge: d.judge, url: d.doc_url });
+        if (d.cause_num) edge(did, node("case:" + lc(d.cause_num), "case", "Справа " + d.cause_num, { ref: d.cause_num }), "decision_of", { date });
+      }
+    }
+    if (t.tool === "search_entities") {
+      for (const e of o.edr || []) node("registry:" + e.edrpou, "registry", `ЄДР ${e.edrpou} · ${e.short_name || ""}`, { edrpou: e.edrpou, stan: e.stan });
+      for (const x of o.orgs || []) node("org:" + lc(x.name), "org", x.name, x.edrpou ? { edrpou: x.edrpou } : {});
+      for (const x of o.persons || []) node("person:" + lc(x.name_norm), "person", x.name_norm, { position: x.position });
+    }
+  }
+  return nodes.size ? { nodes: [...nodes.values()].slice(0, 60), edges: edges.slice(0, 120), focus } : null;
 }
 
 // ---- direct answers without a model: case numbers and "ФОП <name>" are recognised by pattern (free, instant) ----
@@ -226,9 +267,9 @@ export default async function handler(req, res) {
     // short lookups go straight to the base; longer questions go to the model when one is configured (it has the same tools)
     const hasModel = !!(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY);
     const d = !hasModel || last.length <= 80 ? await direct(last) : null;
-    if (d) return json(res, 200, { ...d, mode: "direct" });
-    if (process.env.ANTHROPIC_API_KEY) return json(res, 200, { answer: await claudeLoop(messages, process.env.ANTHROPIC_API_KEY, trace), trace, mode: "claude" });
-    if (process.env.GEMINI_API_KEY) return json(res, 200, { answer: await geminiLoop(messages, process.env.GEMINI_API_KEY, trace), trace, mode: "gemini" });
+    if (d) return json(res, 200, { ...d, graph: toGraph(d.trace), mode: "direct" });
+    if (process.env.ANTHROPIC_API_KEY) { const answer = await claudeLoop(messages, process.env.ANTHROPIC_API_KEY, trace); return json(res, 200, { answer, trace, graph: toGraph(trace), mode: "claude" }); }
+    if (process.env.GEMINI_API_KEY) { const answer = await geminiLoop(messages, process.env.GEMINI_API_KEY, trace); return json(res, 200, { answer, trace, graph: toGraph(trace), mode: "gemini" }); }
     return json(res, 503, { error: "Чат ще не підключено: на Vercel немає GEMINI_API_KEY (безкоштовно) чи ANTHROPIC_API_KEY. Номер справи або «ФОП Прізвище Імʼя» працюють і без ключа." });
   } catch (e) {
     return json(res, 500, { error: String(e.message || e), trace });
