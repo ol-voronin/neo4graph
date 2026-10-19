@@ -296,6 +296,64 @@ def yc_fop(name, limit=5):
     return out
 
 
+def yc_company(q, kind="org", limit=3):
+    """YouControl's public company page: what the open ЄДР dump lacks — КВЕД (main + others), head (name, since, role),
+    legal address (as shown: YouControl masks house numbers), status, capital, registration date, counts of licences /
+    trade marks / vehicles / court documents, VAT status. Company data only; founders' home addresses are not kept."""
+    def page_text(u):
+        h = get(u).decode("utf-8", "ignore")
+        t = re.sub(r"<script.*?</script>|<style.*?</style>", "", h, flags=re.S)
+        t = html.unescape(re.sub(r"<[^>]+>", "\n", t))
+        t = re.sub(r"[ \t\xa0]+", " ", t)
+        return re.sub(r"\n\s*\n+", "\n", t)
+    key = re.sub(r"[«»\"'’]", "", q).strip().lower()
+    key = re.sub(r"^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо|llc|ltd)\s+", "", key).strip()
+    if kind == "edrpou":
+        ids = [q]
+    else:
+        try:
+            page = get("https://youcontrol.com.ua/search/?" + urllib.parse.urlencode({"q": key})).decode("utf-8", "ignore")
+        except Exception as e:  # noqa: BLE001
+            print("youcontrol search failed:", e)
+            return []
+        ids = list(dict.fromkeys(re.findall(r"company_details/(\d{8})", page)))
+    out = []
+    for cid in ids:
+        if len(out) >= limit:
+            break
+        try:
+            t = page_text(f"https://youcontrol.com.ua/catalog/company_details/{cid}/")
+        except Exception:  # noqa: BLE001
+            continue
+        m = re.search(r"Юридичній особі \"?([^\n\"]+?)\"? присвоєно код ЄДРПОУ (\d{8})", t)
+        short = m.group(1).strip() if m else ""
+        m2 = re.search(r"судові рішення, в яких згадується юридична особа ([^\n,]+?),", t)
+        full = m2.group(1).strip() if m2 else ""
+        if kind != "edrpou" and key and key not in (short + " " + full).lower():
+            continue
+        def grab(pat, flags=0):
+            mm = re.search(pat, t, flags)
+            return mm.group(1).strip() if mm else None
+        head = re.search(r"Уповноважені особи\s*\n\s*Детальніше\s*\n\s*([А-ЯІЇЄҐ'’\- ]+)\n\s*(\d{2}\.\d{2}\.\d{4})?,?\s*([^\n]*)", t)
+        others = []
+        if "Інші:" in t:
+            for ln in t.split("Інші:", 1)[1].split("\n")[1:40]:
+                if re.match(r"\s*\d{2}\.\d{2} ", ln):
+                    others.append(ln.strip())
+                elif others:
+                    break
+        assets = grab(r"(зареєстровано \d+ торгов\w+ мар\w+, \d+ одиниц\w+ автотранспорту[^.]*ліценз\w+)")
+        out.append({"edrpou": cid, "name": full or short, "short_name": short, "status": grab(r"Статус з ЄДР\s*\n\s*([^\n]+)"),
+                    "registration": grab(r"Дата реєстрації\s*\n\s*(\d{2}\.\d{2}\.\d{4})"), "opf": grab(r"Організаційно-правова форма\s*\n([^\n]+)"),
+                    "capital": grab(r"Розмір статутного капіталу\s*\n\s*([^\n]+)"), "kved_main": grab(r"Основний:\s*\n\s*(\d{2}\.\d{2} [^\n]+)"),
+                    "kved_other": others[:15], "head": head.group(1).strip().title() if head else None,
+                    "head_since": head.group(2) if head and head.group(2) else None, "head_role": (head.group(3).strip(" ,") if head else None),
+                    "address": grab(r"Місцезнаходження юридичної особи:\s*\n\s*([^\n]+)"), "vat": grab(r"Реєстр платників ПДВ\s*\n[^\n]*\n\s*([^\n]+)"),
+                    "assets": assets, "court_docs": grab(r"згадується в (\d+) судових документах"),
+                    "url": f"https://youcontrol.com.ua/catalog/company_details/{cid}/"})
+    return out
+
+
 # ---------------------------------------------------------------- ingest
 def ingest(env, payload):
     req = urllib.request.Request(env["API_BASE"] + "/api/ingest", data=json.dumps(payload, ensure_ascii=False).encode(),
@@ -334,7 +392,7 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                 got += 1
         notes.append(f"текстів: {got}")
     else:
-        exprs = [f'"{q}"'] if kind in ("person", "org") else [q]
+        exprs = [f'"{q}"'] if kind in ("person", "org", "edrpou") else [q]
         if kind == "person" and len(q.split()) >= 2:
             w = q.split()
             exprs.append(f'"{w[0]} {" ".join(x[0] + "." for x in w[1:])}"')  # Прізвище І.Б.
@@ -373,7 +431,13 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                 hits.append({"query": q, "qkind": kind, "source": "yc_fop", "ref": y["yc_id"], "url": y["url"],
                              "title": f"ФОП {y['name']} · КВЕД {y['kved_main'] or '?'}", "snippet": f"{y['status'] or ''}; реєстрація {y['registration'] or '?'}; {y['city']}", "payload": y})
             notes.append(f"YouControl ФОП: {sum(1 for h in hits if h['source'] == 'yc_fop')}")
-        if kind in ("person", "org"):
+        if kind in ("org", "edrpou"):
+            for c in yc_company(q, kind):
+                hits.append({"query": q, "qkind": kind, "source": "yc_org", "ref": c["edrpou"], "url": c["url"],
+                             "title": f"{c['short_name'] or c['name']} · {c['edrpou']} · КВЕД {(c['kved_main'] or '?')[:5]}",
+                             "snippet": f"{c['status'] or ''}; реєстрація {c['registration'] or '?'}; керівник: {c['head'] or '?'}; {c['kved_main'] or ''}", "payload": c})
+            notes.append(f"YouControl компанія: {sum(1 for h in hits if h['source'] == 'yc_org')}")
+        if kind in ("person", "org", "edrpou"):
             etotal, debtors = erb_search(q)
             if etotal is not None:
                 notes.append(f"реєстр боржників: {etotal}")

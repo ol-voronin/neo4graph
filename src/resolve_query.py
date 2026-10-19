@@ -54,13 +54,32 @@ def expand(cur, conn, q, kind, log, py):
         cur.execute("SELECT short_name, edrpou FROM edr_orgs WHERE EXISTS (SELECT 1 FROM unnest(matched_queries) m WHERE m ILIKE %s)", ("person:%" + q.split()[0].lower() + "%",))
         targets += [("org", r[0]) for r in cur.fetchall() if r[0]]
     elif kind in ("org", "edrpou"):
+        # reverse direction: company -> its people. Founders, beneficiaries and signers are public ЄДР data; each one goes
+        # to the queue as a full-name person query so the UA leg does ФОП/КВЕД, declarations, court register, debtors for
+        # them, and the cloud leg does corpus + web here. Giant cooperatives (>60 founders) are skipped: namesake noise.
         cur.execute("SELECT founders, beneficiaries, signers FROM edr_orgs WHERE short_name ILIKE %s OR name ILIKE %s OR edrpou = %s", ("%" + q + "%", "%" + q + "%", q))
+        people = []
         for row in cur.fetchall():
+            if len(row[0] or []) > 60:
+                continue
             for lst in row:
                 for f in (lst or []):
-                    nm = str(f).split(";")[0].strip()
-                    if nm and not re.search(r"\d{8}", str(f).split(";")[1] if ";" in str(f) else ""):
-                        targets.append(("person", " ".join(nm.title().split()[:2])))
+                    head = str(f).split(";")[0].strip()
+                    head = re.sub(r"\s+-\s+(керівник|підписант|директор).*$", "", head, flags=re.I)
+                    if re.search(r"\d{8}", str(f).split(";")[1] if ";" in str(f) else ""):
+                        continue  # a company as founder: handled as an org, not a person
+                    words = head.split()
+                    if 2 <= len(words) <= 3 and all(re.fullmatch(r"[^\W\d_][^\W\d_'’-]+", w) for w in words):
+                        people.append(" ".join(w.title() for w in words))
+        people = list(dict.fromkeys(people))[:10]
+        targets += [("person", p) for p in people]
+        queued = 0
+        for p in people:
+            cur.execute("INSERT INTO query_queue(query, kind, note) SELECT %s, 'person', %s WHERE NOT EXISTS (SELECT 1 FROM query_queue WHERE query = %s)",
+                        (p, f"hop-2: засновник/підписант «{q}» (ЄДР)", p))
+            queued += cur.rowcount
+        conn.commit()
+        print(f"hop 2 (company -> people): {len(people)} names, {queued} queued for the UA leg")
     elif kind == "case":
         cur.execute("SELECT DISTINCT name_norm FROM ee_persons p JOIN messages m ON m.id = p.message_id WHERE m.source_id = 'edrsr:court' AND m.text LIKE %s", ("Справа " + q + "%",))
         targets += [("person", r[0]) for r in cur.fetchall()]

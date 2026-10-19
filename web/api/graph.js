@@ -124,6 +124,14 @@ export default async function handler(req, res) {
       } else if (h.source === "yc_fop") {
         const fid = node("fopx:" + h.ref, "registry", h.title, { stan: p.status, text: h.snippet, kved_main: p.kved_main, kved_other: p.kved_other, registration: p.registration, city: p.city, url: h.url, src: "ЄДР (через YouControl)" });
         edge(who, fid, "fop_record", null, { detail: h.snippet, src: "youcontrol.com.ua" });
+      } else if (h.source === "yc_org") {
+        const oid = node("orgx:" + h.ref, "registry", h.title, { stan: p.status, text: h.snippet, kved_main: p.kved_main, kved_other: p.kved_other, registration: p.registration,
+          capital: p.capital, address: p.address, head: p.head, head_since: p.head_since, vat: p.vat, assets: p.assets, court_docs: p.court_docs, edrpou: p.edrpou, url: h.url, src: "ЄДР (через YouControl)" });
+        edge(who, oid, "company_card", null, { detail: h.snippet, src: "youcontrol.com.ua" });
+        if (p.head && /^\p{Lu}/u.test(p.head)) {
+          const hid = node("person:" + norm(p.head).toLowerCase(), "person", norm(p.head), { position: p.head_role || "керівник" });
+          edge(hid, who, "director", null, { detail: `${p.head_role || "керівник"}${p.head_since ? " з " + p.head_since : ""} (ЄДР, через YouControl)`, src: "youcontrol.com.ua" });
+        }
       } else if (h.source === "erb") {
         const eid = node("erb:" + h.ref, "registry", h.title, { text: h.snippet, org: p.executor, agency: p.publisher, year: p.birth_year ? null : null, src: "Єдиний реєстр боржників", url: h.url, category: p.category });
         edge(who, eid, "debtor_record", null, { detail: h.snippet, src: "erb.minjust.gov.ua" });
