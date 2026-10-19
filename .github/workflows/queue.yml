@@ -20,11 +20,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "psycopg[binary]" python-dotenv anthropic
+      - run: pip install "psycopg[binary]" python-dotenv anthropic duckdb
       - uses: actions/cache@v4
         with:
           path: |
             data/edr/uo.zip
+            data/lake/fop.parquet
             data/nazk/corrupt.json
           key: dumps-${{ github.run_id }}
           restore-keys: dumps-

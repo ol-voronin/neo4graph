@@ -28,6 +28,8 @@ def main():
         if kind == "category_index":  # "2025|земел" or "2025|земел|Вирок"
             parts = query.split("|")
             cmd = [sys.executable, "src/edrsr_index.py", "--years", parts[0], "--category", parts[1]] + (["--form", parts[2]] if len(parts) > 2 and parts[2] else []) + ["--texts", "0"]
+        elif kind == "fop":  # ЄДР ФОП card only (chat "знайди ФОП …"), no registry chain
+            cmd = [sys.executable, "src/fop_lookup.py", query]
         elif kind == "web":
             cmd = [sys.executable, "src/web_mentions.py", query]
         elif kind == "url":  # "https://... | 932/2641/25" optional case after a pipe
