@@ -69,3 +69,32 @@ Reading: on missile days (not drones) Russian threat rhetoric the day before car
 borderline signal: +0.03 AUC, CI touching zero. Not yet the pre-registered success, but the first result that
 points the right way in direction, consistency across related signals, and out-of-sample behaviour. Target for
 the next round: missile days, not the drone-inclusive index.
+
+## Test 3 (LLM threat labels instead of regex flags) — run 2026-10-19 morning, on a 20% sample
+
+Labels: Haiku 5.5 batch, 5,501 of the 26,848 rule-flagged panel posts (the batch finished, but the company key was
+disabled before the rest was downloaded; the remainder is unreachable with a key from another organisation).
+Coverage: 177 of 201 days, mean 28 labeled RU posts per day, of which ~2.6 are LLM `threat_level >= 2`.
+Features: `p2_ru` = share of rule-flagged posts the LLM confirms as threat (daily rule precision);
+`llm_thr_ru = thr_ru * p2_ru` (estimated share of all RU posts that are real threats); `llm_l2_ru` (threat with
+target/timeframe, not scheduled context), `llm_t3_ru` (threat >= 3), `llm_rh_ru` (rhetoric, not operational).
+Protocol as test 2 (missile_day, expanding logistic, baseline = own lags; 171 test days, 84 positives).
+
+| signal (lag 1 + 3-day mean) | AUC | Δ vs baseline 0.685 [block-bootstrap CI] | Brier |
+|---|---|---|---|
+| thr_ru (rule share, reference) | 0.708 | +0.023 [-0.016, +0.070] | 0.229 |
+| l2_ru (rule) | 0.714 | +0.030 [-0.004, +0.066] | 0.226 |
+| p2_ru (LLM precision of the rule) | 0.673 | -0.012 [-0.035, +0.004] | 0.239 |
+| llm_thr_ru | 0.674 | -0.011 [-0.034, +0.004] | 0.239 |
+| llm_l2_ru | 0.676 | -0.009 [-0.028, +0.008] | 0.239 |
+| llm_t3_ru | 0.672 | -0.013 [-0.043, +0.011] | 0.241 |
+| llm_rh_ru | 0.651 | -0.034 [-0.070, -0.000] | 0.249 |
+
+Lag-1 correlations with missile_day: thr_ru +0.27, all LLM features between -0.07 and +0.03.
+
+Reading: the rule shares reproduce test 2 (+0.02..0.03 AUC); the LLM-refined shares carry nothing. Two readings,
+not yet separable: (a) the small lead is in the *volume of threat-flavoured talk*, not in posts the model judges
+to be real threats; (b) the per-day LLM share is too noisy at this sample size: ~28 labels/day with p≈0.1 gives a
+binomial SE of ≈0.06 on a mean of 0.10 (relative error ~60%), which is enough to drown a +0.03 effect. The full
+batch (all 26,848) would cut that error by ~sqrt(5). Decision: do not spend on re-labeling until the company key
+question is settled; if (b) is to be tested cheaply, label only the 90 missile days ± 1 in full (~12k posts).
