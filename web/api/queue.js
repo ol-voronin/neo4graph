@@ -32,7 +32,8 @@ export default async function handler(req, res) {
                            (SELECT ua_status FROM query_queue x WHERE x.id = query_queue.id) ua_status, (SELECT ua_note FROM query_queue x WHERE x.id = query_queue.id) ua_note
                            FROM query_queue WHERE (${q} = '' OR query = ${q}) ORDER BY created_at DESC LIMIT 20`.catch(() =>
                            sql`SELECT id, query, kind, status, created_at, started_at, finished_at, note FROM query_queue WHERE (${q} = '' OR query = ${q}) ORDER BY created_at DESC LIMIT 20`);
-    return json(res, 200, { items: rows });
+    const worker = await sql`SELECT seen_at, note FROM worker_status WHERE name = 'ua'`.catch(() => []);
+    return json(res, 200, { items: rows, worker: worker[0] || null });
   } catch (e) {
     return json(res, 500, { error: String(e.message || e) });
   }

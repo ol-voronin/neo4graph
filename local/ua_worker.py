@@ -306,6 +306,10 @@ def main():
         print(process(env, a.query, k, a.pages, a.texts, deadline))
         return
     while True:
+        try:
+            ingest(env, {"kind": "heartbeat", "note": f"loop={a.loop}s fop={'yes' if FOP.exists() else 'no'}"})
+        except Exception as e:  # noqa: BLE001
+            print("heartbeat failed:", e)
         req = urllib.request.Request(env["API_BASE"] + "/api/queue?pending=ua", headers={"x-ingest-token": env["INGEST_TOKEN"]})
         items = json.loads(urllib.request.urlopen(req, timeout=60).read()).get("items", [])
         print(f"pending: {len(items)}")

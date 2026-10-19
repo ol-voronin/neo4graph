@@ -11,6 +11,7 @@ export async function ensure() {
   await sql`ALTER TABLE query_queue ADD COLUMN IF NOT EXISTS ua_status text`;
   await sql`ALTER TABLE query_queue ADD COLUMN IF NOT EXISTS ua_note text`;
   await sql`ALTER TABLE query_queue ADD COLUMN IF NOT EXISTS ua_done_at timestamptz`;
+  await sql`CREATE TABLE IF NOT EXISTS worker_status (name text PRIMARY KEY, seen_at timestamptz NOT NULL DEFAULT now(), note text)`;
 }
 
 export default async function handler(req, res) {
@@ -47,6 +48,9 @@ export default async function handler(req, res) {
                   ON CONFLICT (src_kind, src_name, dst_kind, dst_name, relation) DO UPDATE SET note = EXCLUDED.note`;
         n++;
       }
+    } else if (kind === "heartbeat") {
+      await sql`INSERT INTO worker_status(name, seen_at, note) VALUES ('ua', now(), ${note || null}) ON CONFLICT (name) DO UPDATE SET seen_at = now(), note = EXCLUDED.note`;
+      n = 1;
     } else if (kind === "queue") {
       await sql`UPDATE query_queue SET ua_status = ${status || "done"}, ua_note = ${note || null}, ua_done_at = now() WHERE id = ${queue_id}`;
       n = 1;
