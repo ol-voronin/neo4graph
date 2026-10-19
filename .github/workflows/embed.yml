@@ -21,23 +21,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Cache embeddings and model
-        uses: actions/cache@v4
+      - name: Restore embeddings cache
+        uses: actions/cache/restore@v4
         with:
-          path: |
-            data/emb
-            ~/.cache/huggingface
+          path: data/emb
           key: emb-${{ github.event.inputs.model }}-${{ github.run_id }}
           restore-keys: emb-${{ github.event.inputs.model }}-
       - name: Install deps
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install sentence-transformers scikit-learn pandas "psycopg[binary]" python-dotenv
-      - name: Embed, train, predict
+      - name: Embed (cached)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EMB_MODEL: ${{ github.event.inputs.model }}
           TOKENIZERS_PARALLELISM: "false"
+        run: python src/embed_labels.py --embed-only
+      - name: Save embeddings cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/emb
+          key: emb-${{ github.event.inputs.model }}-${{ github.run_id }}
+      - name: Train, predict, write
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EMB_MODEL: ${{ github.event.inputs.model }}
         run: python src/embed_labels.py
       - uses: actions/upload-artifact@v4
         with:

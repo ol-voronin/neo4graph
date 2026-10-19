@@ -81,6 +81,7 @@ def embed(df):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-write", action="store_true")
+    ap.add_argument("--embed-only", action="store_true", help="compute and cache embeddings, then stop")
     a = ap.parse_args()
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import f1_score, roc_auc_score
@@ -94,6 +95,8 @@ def main():
     lab = Y.t2.notna().values
     print(f"panel posts {len(df)}, labeled {lab.sum()}, by side: {df.side.value_counts().to_dict()}")
     X = embed(df)
+    if a.embed_only:
+        return
     P = pd.DataFrame(index=df.index, columns=TARGETS, dtype=float)
     skf = StratifiedKFold(5, shuffle=True, random_state=0)
     for t in TARGETS:
@@ -122,13 +125,13 @@ def main():
         return
     conn = connect()
     cur = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS message_labels_pred (message_id bigint PRIMARY KEY, model text, " +
+    cur.execute("CREATE TABLE IF NOT EXISTS message_labels_pred (message_id text PRIMARY KEY, model text, " +
                 ", ".join(f"y_{t} smallint" for t in TARGETS) + ", " + ", ".join(f"p_{t} real" for t in TARGETS) + ", pred_at timestamptz DEFAULT now())")
     rows = []
     for i, r in df.iterrows():
         ys = [None if pd.isna(v) else int(v) for v in Y.loc[i]]
         ps = [None if pd.isna(v) else float(v) for v in P.loc[i]]
-        rows.append((int(r.id), MODEL, *ys, *ps))
+        rows.append((str(r.id), MODEL, *ys, *ps))
     cur.executemany("INSERT INTO message_labels_pred(message_id, model, " + ", ".join(f"y_{t}" for t in TARGETS) + ", " + ", ".join(f"p_{t}" for t in TARGETS) +
                     ") VALUES (" + ",".join(["%s"] * (2 + 2 * len(TARGETS))) + ") ON CONFLICT (message_id) DO UPDATE SET model=EXCLUDED.model, " +
                     ", ".join(f"y_{t}=EXCLUDED.y_{t}, p_{t}=EXCLUDED.p_{t}" for t in TARGETS) + ", pred_at=now()", rows)
