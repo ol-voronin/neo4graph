@@ -59,6 +59,26 @@ def main():
     if a.cause:
         cur.execute("INSERT INTO query_hits(query, message_id, where_found) VALUES (%s,%s,'url') ON CONFLICT DO NOTHING", (a.cause, mid))
         conn.commit()
+    # Second hop, public roles only: officials, company owners/directors, suspects/defendants, judges/prosecutors, politicians
+    # found on the page go to the queue as person queries (and companies as org queries). People named on a page in a
+    # private capacity (role "other", private_skipped) stay as nodes linked to the page but are not expanded automatically.
+    PUBLIC = ("official_commenting", "owner", "director", "suspect", "defendant", "convicted", "judge", "prosecutor", "investigator",
+              "politician_mentioned", "lawyer", "notary")
+    cur.execute("SELECT name_norm, role, position FROM ee_persons WHERE message_id = %s AND role = ANY(%s)", (mid, list(PUBLIC)))
+    people = cur.fetchall()
+    cur.execute("SELECT name FROM ee_orgs WHERE message_id = %s AND kind = 'company'", (mid,))
+    orgs = cur.fetchall()
+    queued = 0
+    for nm, role, pos in people[:8]:
+        cur.execute("INSERT INTO query_queue(query, kind, note) SELECT %s, 'person', %s WHERE NOT EXISTS (SELECT 1 FROM query_queue WHERE query = %s)",
+                    (nm, f"hop-2 from {dom}: {role}, {pos or ''}"[:200], nm))
+        queued += cur.rowcount
+    for (nm,) in orgs[:8]:
+        cur.execute("INSERT INTO query_queue(query, kind, note) SELECT %s, 'org', %s WHERE NOT EXISTS (SELECT 1 FROM query_queue WHERE query = %s)",
+                    (nm, f"hop-2 from {dom}", nm))
+        queued += cur.rowcount
+    conn.commit()
+    print(f"hop-2 queued: {queued} (public-role persons {len(people)}, companies {len(orgs)})")
 
 
 if __name__ == "__main__":
