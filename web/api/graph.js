@@ -138,6 +138,15 @@ export default async function handler(req, res) {
       const b = node(l.dst_kind + ":" + norm(l.dst_name).toLowerCase(), l.dst_kind, norm(l.dst_name));
       edge(a, b, l.relation, null, { detail: `вказано аналітиком ${l.d || ""}${l.note ? ": " + l.note : ""}`, src: "analyst" });
     }
+    // public money: spending.gov.ua transactions to companies in the graph (payer state body -> company, totals per pair)
+    const pay = await sql`SELECT recipt_edrpou e, payer_edrpou pe, max(payer_name) pn, count(*)::int n, sum(amount)::float total, min(trans_date)::date d0, max(trans_date)::date d1
+                          FROM public_payments GROUP BY 1, 2 ORDER BY total DESC LIMIT 2000`.catch(() => []);
+    for (const r of pay) {
+      const rk = "registry:" + r.e;
+      if (!nodes.has(rk)) continue;
+      const pid = node("org:" + norm(r.pn || r.pe).toLowerCase(), "org", norm(r.pn || r.pe), { kind: "state_body", edrpou: r.pe });
+      edge(pid, rk, "paid_public_money", null, { detail: `${r.n} платежів на ${Math.round(r.total).toLocaleString("uk-UA")} грн, ${r.d0}…${r.d1} (spending.gov.ua)`, src: "spending.gov.ua", date: r.d1 });
+    }
     const srcSet = [...new Set(msgs.map((x) => x.s))].sort();
     return json(res, 200, { nodes: [...nodes.values()], edges: [...edges.values()], sources: srcSet, generated: new Date().toISOString().slice(0, 10) });
   } catch (e) {
