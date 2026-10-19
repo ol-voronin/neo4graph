@@ -1,0 +1,39 @@
+name: lake
+
+# Nightly: open-data dumps (ЄДР ФОП, ЄДР юросіб, реєстр боржників) -> Parquet, published as release "lake-latest".
+# The UA worker and the cloud chain download these files instead of grepping zipped dumps per query.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "tables to rebuild"
+        default: "fop,uo,erb"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lake
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install duckdb pyarrow
+      - name: Build Parquet
+        run: python src/lake.py build --only "${{ github.event.inputs.only || 'fop,uo,erb' }}"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view lake-latest >/dev/null 2>&1 || gh release create lake-latest --title "Data lake (nightly)" --notes "Parquet tables built from data.gov.ua dumps. Rebuilt nightly by .github/workflows/lake.yml."
+          gh release upload lake-latest data/lake/*.parquet --clobber

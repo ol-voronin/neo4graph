@@ -19,8 +19,8 @@ def main():
     cur.execute("CREATE TABLE IF NOT EXISTS query_hits (query text, message_id text REFERENCES messages(id) ON DELETE CASCADE, "
                 "where_found text, created_at timestamptz DEFAULT now(), PRIMARY KEY (query, message_id, where_found))")
     # inflection-aware name pattern: «Каменська Еліна» matches «Каменської Еліни» / «Каменська Е.», not «Каменських» (names.py)
-    from names import name_regex
-    pat = name_regex(q, pg=True)
+    from names import is_org, name_regex, org_regex
+    pat = org_regex(q, pg=True) if is_org(q) else name_regex(q, pg=True)
     cur.execute("INSERT INTO query_hits(query, message_id, where_found) SELECT %s, id, 'text' FROM messages WHERE text ~* %s "
                 "ON CONFLICT DO NOTHING", (q, pat))
     n1 = cur.rowcount
