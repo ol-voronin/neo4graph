@@ -99,6 +99,14 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .fmhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.fmhead .chip{margin-left:auto}
 .fsec .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:4px 0 4px}
 .hints{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.hints:empty{display:none}
+.path{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:6px}
+.crumb{all:unset;cursor:pointer;display:inline-flex;gap:5px;align-items:center;font-size:12px;color:var(--muted);padding:2px 6px;border-radius:6px}
+.crumb[aria-current="true"]{color:var(--fg);background:var(--accent-soft)}.crumb:hover{color:var(--accent)}
+.explain{border-left:3px solid var(--accent);padding:6px 10px;margin:8px 0;font-size:13px;line-height:1.5;background:var(--accent-soft);border-radius:0 8px 8px 0}
+.frag{font-size:13px;line-height:1.5;border-left:2px solid var(--line);padding-left:10px;margin:6px 0;color:var(--fg)}
+.prov,.plain,.tl{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.prov li{color:var(--muted);font-size:12px;border-left:2px solid var(--line);padding-left:8px}
+.tl li button,.plain li button{all:unset;cursor:pointer;color:var(--fg);font-weight:500;display:inline-flex;gap:5px;align-items:center}.tl li button:hover,.plain li button:hover{color:var(--accent)}
 .tod{position:absolute;right:10px;bottom:8px;background:var(--accent);color:#fff;border-color:var(--accent)}
 @media (max-width:760px){
   html,body{height:auto}body{display:block;padding-block:8px}
@@ -297,25 +305,62 @@ function render(){
     .on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${d.x},${d.y})`)});
   panel(nodes,edges);hints(nodes);save();
 }
+const hist=[];
+const PROV_REL=new Set(['court_register_mention','declaration','fop_record','namesake','named_by_media','web_mention','mentioned_in','registry_record','founder','signer','beneficiary']);
+function fmtDate(d){return d?String(d).slice(0,10):''}
 function panel(nodes,edges){
   const n=byId.get(state.center);const p=document.getElementById('panel');
-  const kv=[];if(n.position)kv.push(['Посада',n.position]);if(n.type==='decision'){kv.push(['№ в ЄДРСР',n.doc_id],['Форма',n.form],['Судочинство',n.kind],['Категорія',n.category],['Суд',n.court],['Суддя',n.judge],['Ухвалено',n.date],['Надійшло до реєстру',n.receipt],['Опубліковано / остання дія',n.publ],['Статус',n.status==='1'?'активне':'вилучене']);}if(n.ref)kv.push(['Номер справи',n.ref]);if(n.edrpou)kv.push(['ЄДРПОУ',n.edrpou]);if(n.agency)kv.push(['Орган',n.agency]);if(n.stage)kv.push(['Стадія',n.stage]);if(n.stan)kv.push(['Стан',n.stan]);if(n.kind)kv.push(['Тип',n.kind]);if(n.summary)kv.push(['Суть',n.summary]);if(n.full)kv.push(['Повна назва',n.full]);if(n.src)kv.push(['Джерело',SRC[n.src]||n.src]);if(n.date)kv.push(['Дата',n.date]);
-  let html=`<div class="meta">${TYPES[n.type]}</div><h2>${esc(n.label)}</h2>`+(kv.length?`<div class="kv">${kv.map(([k,v])=>`<span class="k">${k}</span><span>${esc(v)}</span>`).join('')}</div>`:'');
-  if(n.type==='post'&&n.url)html+=`<p><a class="ev" href="${esc(n.url)}" target="_blank" rel="noopener">Відкрити пост ↗</a></p>`;
-  if(n.type==='web')html+=`<p class="ev">${esc(n.text||'')}<br><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.url)}</a></p>`;
-  if(n.type==='decision'&&n.url)html+=`<p class="ev"><a href="${esc(n.url)}" target="_blank" rel="noopener">Текст рішення у реєстрі (RTF) ↗</a></p><p class="meta">Сторони, адвокати і прокурори є лише в тексті рішення; вони з'являться у графі після кроку «текст → сутності» ланцюжка запиту.</p>`;
+  if(hist[hist.length-1]!==n.id){const i=hist.indexOf(n.id);if(i>=0)hist.splice(i,1);hist.push(n.id);if(hist.length>7)hist.shift()}
   const mine=edges.filter(e=>e.source===n.id||e.target===n.id);
+  // 1. what is selected: type, origin, path of clicks
+  let html=`<div class="path">${hist.map((id,i)=>{const x=byId.get(id);return `<button type="button" class="crumb" data-id="${esc(id)}"${i===hist.length-1?' aria-current="true"':''}><span class="dot" style="background:${COLORS[x.type]}"></span>${esc(x.label.length>28?x.label.slice(0,27)+'…':x.label)}</button>`}).join('<span class="meta">›</span>')}</div>`;
+  html+=`<div class="meta">${TYPES[n.type]||n.type} · ${esc(provOf(n))}${n.src?' · '+esc(SRC[n.src]||n.src):''}</div><h2>${esc(n.label)}</h2>`;
+  html+=`<div class="explain" id="nexplain"><span class="meta">Що це: завантажую…</span></div>`;
+  // 2. facts
+  const kv=[];if(n.position)kv.push(['Посада',n.position]);if(n.org)kv.push(['Орган / місце роботи',n.org]);if(n.year)kv.push(['Рік',n.year]);if(n.region)kv.push(['Регіон',n.region]);
+  if(n.type==='decision'){kv.push(['№ в ЄДРСР',n.doc_id],['Форма',n.form],['Судочинство',n.kind],['Категорія',n.category],['Суд',n.court],['Суддя',n.judge],['Ухвалено',n.date],['Надійшло до реєстру',n.receipt],['Опубліковано / остання дія',n.publ],['Статус',n.status==='1'?'активне':n.status?'вилучене':null]);}
+  if(n.ref)kv.push(['Номер справи',n.ref]);if(n.edrpou)kv.push(['ЄДРПОУ',n.edrpou]);if(n.n_founders)kv.push(['Засновників у записі',n.n_founders]);if(n.agency)kv.push(['Орган',n.agency]);if(n.stage)kv.push(['Стадія',n.stage]);if(n.stan)kv.push(['Стан',n.stan]);if(n.kind&&n.type!=='decision')kv.push(['Тип',n.kind]);if(n.summary)kv.push(['Суть',n.summary]);if(n.full)kv.push(['Повна назва',n.full]);if(n.date&&n.type!=='decision')kv.push(['Дата',n.date]);
+  const kvf=kv.filter(([k,v])=>v!=null&&v!=='');
+  if(kvf.length)html+=`<h3>Дані</h3><div class="kv">${kvf.map(([k,v])=>`<span class="k">${k}</span><span>${esc(v)}</span>`).join('')}</div>`;
+  if(n.type==='post'&&(n.text||n.url))html+=`<p class="frag">${esc(n.text||'')}${n.url?` <a href="${esc(n.url)}" target="_blank" rel="noopener">відкрити пост ↗</a>`:''}</p>`;
+  if(n.type==='web')html+=`<p class="frag">${esc(n.text||'')}<br><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.url)}</a></p>`;
+  if((n.type==='decision'||n.type==='declaration')&&n.url)html+=`<p class="ev"><a href="${esc(n.url)}" target="_blank" rel="noopener">${n.type==='decision'?'Відкрити рішення у реєстрі ↗':'Відкрити декларацію на сайті НАЗК ↗'}</a></p>`;
+  html+=`<div id="ndetail"></div>`;
+  // 3. how it got into the graph
+  const prov=[];const seenP=new Set();for(const e of mine){if(!PROV_REL.has(e.rel)&&!e.detail)continue;const other=byId.get(e.source===n.id?e.target:e.source);const line=`${REL[e.rel]||e.rel}${e.src?' · '+esc(SRC[e.src]||e.src):''}${e.detail?' — '+esc(e.detail):''}${e.rel==='court_register_mention'||e.rel==='declaration'||e.rel==='fop_record'||e.rel==='namesake'?' ← «'+esc(other.label)+'»':''}`;const k=line.slice(0,120);if(seenP.has(k))continue;seenP.add(k);prov.push(line);if(prov.length>=5)break}
+  if(prov.length)html+=`<h3>Звідки це в графі</h3><ul class="prov">${prov.map(x=>`<li>${x}</li>`).join('')}</ul>`;
+  // 4. timeline of dated neighbours
+  const tl=[];for(const e of mine){const o=byId.get(e.source===n.id?e.target:e.source);const d=o.date||e.date||(o.year?String(o.year):'');if(d)tl.push([String(d),o,e])}
+  tl.sort((a,b)=>b[0].localeCompare(a[0]));
+  if(tl.length>=3)html+=`<h3>Хронологія (${tl.length})</h3><ul class="tl">${tl.slice(0,12).map(([d,o,e])=>`<li><span class="meta">${esc(fmtDate(d))}</span> <button type="button" data-id="${esc(o.id)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button> <span class="meta">${esc(REL[e.rel]||e.rel)}</span></li>`).join('')}${tl.length>12?`<li class="meta">…ще ${tl.length-12} у списку звʼязків нижче</li>`:''}</ul>`;
+  // 5. connections, grouped
   const groups=new Map();mine.forEach(e=>{const other=e.source===n.id?e.target:e.source;const key=e.rel;(groups.get(key)||groups.set(key,[]).get(key)).push([other,e])});
-  html+=`<h3>Зв'язки (${mine.length})</h3>`;
-  if(!mine.length)html+=`<p class="empty">За поточними фільтрами зв'язків немає.</p>`;
+  html+=`<h3>Зв'язки (${mine.length}) · за поточними фільтрами</h3>`;
+  if(!mine.length)html+=`<p class="empty">За поточними фільтрами зв'язків немає — зніміть фільтр або збільште глибину.</p>`;
   for(const [rel,items] of [...groups].sort((a,b)=>b[1].length-a[1].length)){
-    html+=`<div class="meta" style="margin:8px 0 4px">${esc(REL[rel]||rel)} · ${items.length}</div><ul class="rel">`;
+    const byType=new Map();items.forEach(([oid])=>{const t=byId.get(oid).type;byType.set(t,(byType.get(t)||0)+1)});
+    html+=`<div class="meta" style="margin:8px 0 4px">${esc(REL[rel]||rel)} · ${items.length} <span style="opacity:.7">(${[...byType].map(([t,c])=>`${TYPES[t]||t}: ${c}`).join(', ')})</span></div><ul class="rel">`;
     let shown=0;for(const [oid,e] of items){if(++shown>25){html+=`<li class="more"><button type="button" data-more="1">показати ще ${items.length-25}…</button></li>`;break}const o=byId.get(oid);const ev=(e.msgs||[]).map(m=>msgIndex.get(m)).filter(Boolean).slice(0,3);
-      html+=`<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}${ev.length?`<ul class="ev">${ev.map(m=>`<li>${m.date||''} · ${esc(SRC[m.src]||m.src||'')} · ${esc(m.text||'')}${m.url?` <a href="${esc(m.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:(e.rel==='registry_record'||e.detail?'':'')}</li>`}
+      html+=`<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${o.position||o.org?`<span class="r">${esc(o.position||o.org)}</span>`:''}${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}${ev.length?`<ul class="ev">${ev.map(m=>`<li>${m.date||''} · ${esc(SRC[m.src]||m.src||'')} · ${esc(m.text||'')}${m.url?` <a href="${esc(m.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:''}</li>`}
     html+='</ul>';
   }
-  p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));p.querySelectorAll('li.more button').forEach(b=>b.onclick=()=>{const ul=b.closest('ul');const rel=[...groups].find(([r,it])=>ul.previousElementSibling.textContent.startsWith(REL[r]||r));if(!rel)return;const extra=rel[1].slice(25).map(([oid,e])=>{const o=byId.get(oid);return `<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}</li>`}).join('');b.closest('li').outerHTML=extra;ul.querySelectorAll('button[data-id]').forEach(x=>x.onclick=()=>select(x.dataset.id))});p.scrollTop=0;
+  p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));
+  p.querySelectorAll('li.more button').forEach(b=>b.onclick=()=>{const ul=b.closest('ul');const rel=[...groups].find(([r,it])=>ul.previousElementSibling.textContent.startsWith(REL[r]||r));if(!rel)return;const extra=rel[1].slice(25).map(([oid,e])=>{const o=byId.get(oid);return `<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}</li>`}).join('');b.closest('li').outerHTML=extra;ul.querySelectorAll('button[data-id]').forEach(x=>x.onclick=()=>select(x.dataset.id))});
+  p.scrollTop=0;
+  if(CAN_QUEUE)loadDetail(n);else document.getElementById('nexplain').innerHTML=`<span class="meta">Що це: ${esc(provOf(n))}; подробиці з реєстрів — у повній версії.</span>`;
 }
+async function loadDetail(n){const box=document.getElementById('ndetail'),ex=document.getElementById('nexplain');try{
+  const r=await (await fetch('/api/node?id='+encodeURIComponent(n.id)+'&q='+encodeURIComponent(q.value||''))).json();
+  if(state.center!==n.id)return;if(r.error){ex.innerHTML=`<span class="meta">${esc(r.error)}</span>`;return}
+  ex.innerHTML=`<b>Що це.</b> ${esc(r.explain||'')}`;let h='';
+  if(r.kind==='decision'){if(r.fragments&&r.fragments.length)h+=`<h3>Фрагменти тексту з імʼям</h3>`+r.fragments.map(f=>`<p class="frag">…${esc(f)}…</p>`).join('');else if(r.record.head)h+=`<h3>Початок тексту</h3><p class="frag">${esc(r.record.head)}…</p>`;if(r.case_summary&&r.case_summary.n>1)h+=`<p class="meta">У справі ${esc(r.record.cause_num)}: ${r.case_summary.n} рішень, ${fmtDate(r.case_summary.d0)} … ${fmtDate(r.case_summary.d1)}. <a href="#" data-case="${esc(r.record.cause_num)}">Відкрити справу</a></p>`}
+  if(r.kind==='registry'){const rec=r.record;const list=(arr,t)=>arr&&arr.length?`<h3>${t} (${arr.length})</h3><ul class="plain">${arr.slice(0,40).map(x=>`<li>${esc(String(x))}</li>`).join('')}${arr.length>40?`<li class="meta">…ще ${arr.length-40}</li>`:''}</ul>`:'';h+=`<div class="kv"><span class="k">Повна назва</span><span>${esc(rec.name)}</span><span class="k">ОПФ</span><span>${esc(rec.opf||'')}</span><span class="k">Статутний капітал</span><span>${esc(rec.authorized_capital||'—')}</span><span class="k">Оновлено</span><span>${fmtDate(rec.updated_at)}</span></div>`+list(rec.signers,'Підписанти / керівники')+list(rec.beneficiaries,'Бенефіціари')+list(rec.founders,'Засновники');if(r.decisions_mentioning)h+=`<p class="meta">Рішень судів у базі, де зустрічається назва: ${r.decisions_mentioning}</p>`}
+  if(r.kind==='decl'||r.kind==='fop'){const rec=r.record;h+=`<div class="kv">${Object.entries(rec).filter(([k,v])=>v&&!['url','query','id','record','found_at'].includes(k)).map(([k,v])=>`<span class="k">${esc({year:'Рік',type:'Тип',name:'Декларант',work_place:'Місце роботи',work_post:'Посада',region:'Регіон',stan:'Стан',registration:'Реєстрація',terminated:'Припинення'}[k]||k)}</span><span>${esc(String(v))}</span>`).join('')}</div>`}
+  if(r.kind==='case'){if(r.forms&&r.forms.length)h+=`<h3>Рішення за формою</h3><div class="group">${r.forms.map(f=>`<span class="chip">${esc(f.f||'?')} <span class="meta">${f.n}</span></span>`).join('')}</div>`;if(r.media&&r.media.length)h+=`<h3>Кого називає преса (не реєстр)</h3><ul class="plain">${r.media.map(m=>`<li><b>${esc(m.name_norm)}</b> — ${esc(m.role||'')}${m.position?', '+esc(m.position):''} <span class="meta">${Math.round((m.confidence||0)*100)}%</span><br><span class="meta">«${esc((m.quote||'').slice(0,200))}»</span> ${m.url?`<a href="${esc(m.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`;if(r.timeline&&r.timeline.length)h+=`<h3>Останні рішення</h3><ul class="tl">${r.timeline.slice(0,15).map(t=>`<li><span class="meta">${fmtDate(t.d)}</span> <a href="https://reyestr.court.gov.ua/Review/${esc(t.doc_id)}" target="_blank" rel="noopener">${esc(t.f||'рішення')}</a> <span class="meta">${esc(t.court||'')}${t.judge?' · '+esc(t.judge):''}</span></li>`).join('')}</ul>`}
+  if(r.kind==='person'||r.kind==='org'){if(r.orgs&&r.orgs.length)h+=`<h3>У ЄДР як засновник / підписант (${r.orgs.length})</h3><ul class="plain">${r.orgs.map(o=>`<li><button type="button" data-id="registry:${esc(o.edrpou)}">${esc(o.short_name||o.edrpou)}</button> <span class="meta">${esc(o.stan||'')}</span></li>`).join('')}</ul>`;if(r.texts&&r.texts.length)h+=`<h3>Тексти рішень з цим імʼям (${r.texts.length})</h3><ul class="tl">${r.texts.map(t=>`<li><span class="meta">${fmtDate(t.d)}</span> <button type="button" data-id="decision:${esc(t.doc_id)}">${esc(t.f||'рішення')}</button> <span class="meta">${esc(t.cause_num||'')} · ${esc(t.court||'')}</span></li>`).join('')}</ul>`}
+  if(r.kind==='post'&&r.record)h+=`<h3>Повний текст</h3><p class="frag">${esc(r.record.text||'')}</p>`;
+  box.innerHTML=h;box.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>{if(!byId.has(b.dataset.id)){q.value=b.textContent.trim();q.dispatchEvent(new Event('input'));return}select(b.dataset.id)});box.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid)select(cid)});
+}catch(e){ex.innerHTML='<span class="meta">Подробиці недоступні.</span>'}}
 function select(id){state.center=id;render();const tb=document.getElementById('todetails');if(window.matchMedia('(max-width:760px)').matches){tb.hidden=false;}}
 document.getElementById('todetails').onclick=()=>document.getElementById('panel').scrollIntoView({behavior:'smooth',block:'start'});
 window.addEventListener('resize',()=>{if(state.center)render()});
