@@ -89,6 +89,7 @@ def main():
     conn = connect()
     cur = conn.cursor()
     df = load_posts(cur)
+    conn.close()  # embedding can take an hour; Neon kills idle transactions — reconnect for the write
     Y = pd.DataFrame([targets_from_raw(r) for r in df.raw], columns=TARGETS)
     lab = Y.t2.notna().values
     print(f"panel posts {len(df)}, labeled {lab.sum()}, by side: {df.side.value_counts().to_dict()}")
@@ -119,6 +120,8 @@ def main():
     print(daily.tail(3).to_string())
     if a.no_write:
         return
+    conn = connect()
+    cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS message_labels_pred (message_id bigint PRIMARY KEY, model text, " +
                 ", ".join(f"y_{t} smallint" for t in TARGETS) + ", " + ", ".join(f"p_{t} real" for t in TARGETS) + ", pred_at timestamptz DEFAULT now())")
     rows = []
