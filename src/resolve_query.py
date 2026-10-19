@@ -75,7 +75,7 @@ def expand(cur, conn, q, kind, log, py):
         run([py, "src/web_mentions.py", f'"{t}" site:reyestr.court.gov.ua'], log, f"hop2 court register (web): {t}")
         if k == "org":
             run([py, "src/edr_match.py", "--download", "--names", t], log, f"hop2 ЄДР: {t}")
-            run([py, "src/spending.py", "--from-db"], log, f"hop2 spending.gov.ua: {t}")
+            run([py, "src/spending.py", "--from-db", "--query", t, "--quarters", "4"], log, f"hop2 spending.gov.ua: {t}")
     conn.commit()
 
 
@@ -109,7 +109,7 @@ def main():
         run([py, "src/edr_match.py", "--download", "--from-db", "--names", names] + (["--edrpou", q] if kind == "edrpou" else []), log, "ЄДР: company record, founders, signers")
         run([py, "src/edrsr_index.py", "--years", a.years, "--from-db", "--texts", str(a.texts)], log, "ЄДРСР: cases referencing it")
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
-        run([py, "src/spending.py", "--from-db"] + (["--edrpou", q] if kind == "edrpou" else []), log, "spending.gov.ua: public money received (2 years)")
+        run([py, "src/spending.py", "--from-db", "--query", q] + (["--edrpou", q] if kind == "edrpou" else []), log, "spending.gov.ua: public money received (2 years)")
     elif kind == "person":
         run([py, "src/corpus_mentions.py", q], log, "corpus: posts and statements mentioning the name")
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")

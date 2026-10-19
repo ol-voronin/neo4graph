@@ -32,6 +32,8 @@ def main():
     ap.add_argument("--edrpou", default="", help="comma-separated ЄДРПОУ codes")
     ap.add_argument("--from-db", action="store_true")
     ap.add_argument("--quarters", type=int, default=8)
+    ap.add_argument("--query", default="", help="with --from-db: only companies matched by this query (edr_orgs.matched_queries)")
+    ap.add_argument("--cap", type=int, default=1500, help="stop paging a company after this many transactions (state giants)")
     a = ap.parse_args()
     from load_to_db import connect
     conn = connect()
@@ -41,7 +43,10 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS public_payments_recipt_idx ON public_payments(recipt_edrpou)")
     codes = [c.strip() for c in a.edrpou.split(",") if c.strip()]
     if a.from_db:
-        cur.execute("SELECT edrpou FROM edr_orgs WHERE edrpou ~ '^\\d{8}$' ORDER BY updated_at DESC LIMIT 40")
+        if a.query:
+            cur.execute("SELECT edrpou FROM edr_orgs WHERE edrpou ~ '^\\d{8}$' AND EXISTS (SELECT 1 FROM unnest(matched_queries) m WHERE m ILIKE %s) ORDER BY updated_at DESC LIMIT 12", ("%" + a.query + "%",))
+        else:
+            cur.execute("SELECT edrpou FROM edr_orgs WHERE edrpou ~ '^\\d{8}$' ORDER BY updated_at DESC LIMIT 12")
         codes += [r[0] for r in cur.fetchall()]
     codes = list(dict.fromkeys(codes))
     if not codes:
@@ -69,6 +74,9 @@ def main():
             conn.commit()
             end = start - dt.timedelta(days=1)
             time.sleep(0.7)
+            if n >= a.cap:
+                print(f"{code}: cap {a.cap} reached, stopping early")
+                break
         top = sorted(payers.items(), key=lambda x: -x[1])[:3]
         print(f"{code}: {n} платежів з бюджету за {a.quarters} кв., {total:,.0f} грн; топ платники: " + "; ".join(f"{k} ({v:,.0f})" for k, v in top))
 
