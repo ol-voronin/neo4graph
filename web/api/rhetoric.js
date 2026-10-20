@@ -3,7 +3,20 @@ import { json, query } from "./_db.js";
 // GET /api/rhetoric?group=country|side|actor&country=&side=&actor=&weeks=26
 // Rhetoric level over time: statements by week (all / threats) per country, side or named actor, with each group's track
 // record (share of resolved statements that came true), plus the share of threat-flavoured posts in the channels by country.
-const KEY = { country: "split_part(actor_side, '_', 1)", side: "actor_side", actor: "coalesce(nullif(actor_name, ''), actor_side)" };
+// One actor, several spellings: institutions by rules, people by surname within their country ("М.В.Захарова" = "Марія Захарова").
+const NM = "coalesce(nullif(trim(actor_name), ''), actor_side)";
+const INSTITUTIONS = [
+  ["(mid_russia|^мид\\M|мзс (рф|росі)|министерств\\w* иностранн)", "МЗС Росії"],
+  ["(минобороны|міноборони (рф|росі)|министерств\\w* обороны|mod_russia)", "Міноборони РФ"],
+  ["(generalstaff|генштаб|генеральн\\w* штаб)", "Генштаб ЗСУ"],
+  ["(офіс президента|офис президента)", "Офіс Президента"],
+  ["^(kremlin|kremlin_ru|кремль)$", "Кремль"],
+];
+const ACTOR_KEY = `CASE ${INSTITUTIONS.map(([re, name]) => `WHEN ${NM} ~* '${re}' THEN '${name}'`).join(" ")}
+  WHEN ${NM} ~ '^([[:upper:]]\\.\\s?)*[[:upper:]][[:alpha:]''’ʼ-]+(\\s+[[:upper:]][[:alpha:]''’ʼ.-]+){0,2}$'
+    THEN split_part(actor_side, '_', 1) || ':' || regexp_replace(regexp_replace(${NM}, '([[:upper:]]\\.\\s?)+', '', 'g'), '^.*\\s', '')
+  ELSE ${NM} END`;
+const KEY = { country: "split_part(actor_side, '_', 1)", side: "actor_side", actor: ACTOR_KEY };
 // same keyword list as rule_features.r_threat (db/migrations/004_rule_features.sql)
 const THREAT_RE = "(удар|ракет|обстріл|обстрел|знищ|уничтож|ядерн|орешник|орєшнік|oreshnik|масован|массирован|відплат|возмезд|ответн|ультиматум|retaliat|strike|missile|nuclear|annihilat|сотр[её]м|стерти)";
 
@@ -19,7 +32,8 @@ export default async function handler(req, res) {
   const S = `FROM statements WHERE ts_published >= now() - ($1::int * interval '1 week') AND ($2 = '' OR actor_side = $2) AND ($4 = '' OR actor_name ILIKE $3) AND ($5 = '' OR split_part(actor_side, '_', 1) = $5)`;
   try {
     const [top, series, types, channels] = await Promise.all([
-      query(`SELECT ${key} AS k, max(split_part(actor_side, '_', 1)) country, max(actor_side) side, count(*)::int n,
+      query(`SELECT ${key} AS k, ${group === "actor" ? `CASE WHEN ${key} LIKE '%:%' THEN coalesce(mode() WITHIN GROUP (ORDER BY ${NM}) FILTER (WHERE ${NM} ~ '\\s'), mode() WITHIN GROUP (ORDER BY ${NM})) ELSE ${key} END` : key} AS label,
+               bool_or(actor_name IS NOT NULL AND trim(actor_name) <> '') named, max(split_part(actor_side, '_', 1)) country, max(actor_side) side, count(*)::int n,
                count(*) FILTER (WHERE stype = 'threat')::int threats, count(*) FILTER (WHERE stype = 'promise')::int promises,
                count(*) FILTER (WHERE stype = 'claim_fact')::int claims, count(*) FILTER (WHERE stype = 'denial')::int denials,
                count(*) FILTER (WHERE status IN ('true', 'false', 'partial'))::int resolved,
