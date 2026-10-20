@@ -8,7 +8,7 @@ import { json, query } from "./_db.js";
 // (initials allowed), no abbreviations or institutional words -> country + surname ("М.В.Захарова" = "Марія Захарова").
 const NM = "trim(regexp_replace(coalesce(nullif(trim(actor_name), ''), actor_side), '\\s*[,(].*$', ''))";
 const RULES = [
-  ["(mid_russia|^мид\\M|мзс (рф|росі)|министерств\\w* иностранн)", "МЗС Росії"],
+  ["(mid_russia|^мид\\M|^мід\\M|мзс (рф|росі)|мід (рф|росі)|министерств\\w* иностранн)", "МЗС Росії"],
   ["(минобороны|міноборони (рф|росі)|министерств\\w* обороны|mod_russia)", "Міноборони РФ"],
   ["(generalstaff|генштаб|генеральн\\w* штаб)", "Генштаб ЗСУ"],
   ["(офіс президента|офис президента)", "Офіс Президента"],
@@ -20,7 +20,7 @@ const RULES = [
   ["(zakharova|захарова)", "RU:Захарова"],
   ["(peskov|песков|пєсков)", "RU:Пєсков"],
 ];
-const PERSON = "^([[:upper:]]\\.\\s?)*[[:upper:]][[:lower:]''’ʼ-]+(\\s+([[:upper:]]\\.\\s?)*[[:upper:]][[:lower:]''’ʼ-]+){0,2}$";
+const PERSON = "^([[:upper:]]\\.\\s?)*[[:upper:]][[:lower:]''’ʼ]+(-[[:upper:]]?[[:lower:]]+)*(\\s+([[:upper:]]\\.\\s?)*[[:upper:]][[:lower:]''’ʼ]+(-[[:upper:]]?[[:lower:]]+)*){0,2}$";
 const NOT_PERSON = "(україн|росі|росс|област|штаб|сил|міністер|министер|канал|посол|голова|президент|служб|офіс|офис|уряд|рада|прес|військ|военн|адміністрац|администрац|командуван|генерал)";
 const ACTOR_KEY = `CASE ${RULES.map(([re, name]) => `WHEN ${NM} ~* '${re}' THEN '${name}'`).join(" ")}
   WHEN ${NM} ~ '${PERSON}' AND ${NM} !~* '${NOT_PERSON}'
