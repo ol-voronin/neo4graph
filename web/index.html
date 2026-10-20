@@ -125,15 +125,55 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
   .sugg{max-height:50vh}.legend{margin-top:8px}.chat .log{max-height:50vh}.fc .bars{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+/* Sections: left menu (stacks to a top bar on phones), home overview, rhetoric tracker, forecast */
+body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
+.side{position:sticky;top:0;height:100vh;box-sizing:border-box;padding:16px 10px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:2px;z-index:30}
+.side .brand{display:flex;gap:10px;align-items:center;padding:6px 8px 14px;color:var(--fg);text-decoration:none;font-weight:600;line-height:1.2;border-radius:8px}
+.side .brand:hover{background:var(--accent-soft)}.side .brand small{display:block;font-weight:400;color:var(--muted);font-size:11px;margin-top:2px}
+.side .logo{width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--panel);display:grid;place-items:center;font-size:16px;flex:none}
+.side button{display:flex;gap:8px;align-items:center;text-align:left;padding:9px 10px;border-radius:8px;border:0;background:none;color:var(--fg);font:inherit;cursor:pointer;white-space:nowrap}
+.side button:hover{background:var(--accent-soft)}.side button[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.side button:focus-visible,.side .brand:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.side .navnote{margin-top:auto;font-size:11px;color:var(--muted);padding:0 8px}
+.content{display:flex;flex-direction:column;gap:10px;min-width:0;box-sizing:border-box;padding:12px max(16px,env(safe-area-inset-right,0px)) 12px 16px}
+.home h1{font-size:22px;margin:4px 0 6px}.home p.lead{color:var(--muted);max-width:720px;margin:0 0 14px}
+.cards3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card3{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;text-align:left;font:inherit;color:inherit;display:flex;flex-direction:column;gap:6px}
+.card3:hover{border-color:var(--accent)}.card3 b{font-size:16px}.card3 .num{font-size:24px;font-weight:600;color:var(--accent)}
+.rh{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.rh .row{display:grid;grid-template-columns:minmax(150px,1.4fr) 70px 90px 140px 90px auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.rh .row.head{color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
+.rh .seg{display:flex;gap:4px;flex-wrap:wrap}.rh .seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel);border-color:var(--accent)}
+.rh svg.sp{display:block}.up{color:var(--c-registry)}.down{color:var(--c-asset)}
+.pg .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.pg .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.pg .card b{font-size:22px;display:block}.pg table{border-collapse:collapse;width:100%;background:var(--panel);font-size:13px}.pg th,.pg td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
+.pg .bar{display:inline-block;height:8px;background:var(--accent);border-radius:4px;vertical-align:middle;margin-right:6px}.pg .wrap{overflow-x:auto}
+@media (max-width:760px){body{grid-template-columns:1fr}.side{height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px;gap:4px}
+  .side .brand{padding:4px 8px 4px 0}.side .brand small,.side .navnote{display:none}.rh .row{grid-template-columns:1fr 60px 90px;}.rh .row .hide-m{display:none}}
 </style>
 </head>
 <body>
-<div class="tabs" id="tabs" hidden><button type="button" aria-selected="true" data-tab="graph">Граф</button><button type="button" aria-selected="false" data-tab="factcheck">Фактчек</button></div>
+<nav class="side" id="side" aria-label="Розділи">
+  <a class="brand" href="/" data-view="home" title="На головну"><span class="logo" aria-hidden="true">◎</span><span>Rhetoric Graph<small>граф · фактчек · прогноз</small></span></a>
+  <button type="button" data-view="graph">Граф зв'язків</button>
+  <button type="button" data-view="factcheck">Фактчек і риторика</button>
+  <button type="button" data-view="prognoz">Прогноз</button>
+  <p class="navnote">Дослідження на відкритих даних. Не попередження про загрозу.</p>
+</nav>
+<div class="content" id="content">
+<section class="home" id="home" hidden>
+  <h1>Риторика, звʼязки, удари</h1>
+  <p class="lead">Дослідницький проєкт: чи передує зміна риторики масованим ударам, хто що обіцяв і чи збулося, як повʼязані справи, компанії та посадовці. Лише публічні джерела.</p>
+  <div class="cards3">
+    <button type="button" class="card3" data-view="graph"><b>Граф зв'язків</b><span class="num" id="h-graph">—</span><span class="meta">вузлів: особи в процесуальних ролях, компанії, справи, рішення судів, реєстри. Пошук і чат по базі.</span></button>
+    <button type="button" class="card3" data-view="factcheck"><b>Фактчек і риторика</b><span class="num" id="h-fc">—</span><span class="meta">заяв сторін за 26 тижнів: що сказали, чи збулося, рівень погроз по країнах і людях.</span></button>
+    <button type="button" class="card3" data-view="prognoz"><b>Прогноз</b><span class="num" id="h-pg">—</span><span class="meta">прогнозів, записаних до події: чи кращі сигнали риторики за власну історію ударів.</span></button>
+  </div>
+</section>
 <div class="top" id="graphtop">
   <h1>Граф зв'язків · антикорупційний шар</h1>
   <div class="search"><input id="q" type="search" placeholder="Особа, компанія, номер справи (991/1234/21), ЄДРПОУ…" autocomplete="off" aria-label="Пошук об'єкта"><div class="sugg" id="sugg" hidden></div></div>
   <span class="meta" id="stats"></span>
-  <a class="meta" href="/prognoz.html">Прогноз · дослідження</a>
 </div>
 <div class="filters" id="filters">
   <div class="fbar">
@@ -152,6 +192,16 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 </div>
 <div class="legend" id="legend"></div>
 <section class="fc" id="factcheck" hidden>
+  <div class="rh" id="rhet">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+      <b>Рівень риторики</b>
+      <div class="seg" role="group" aria-label="Групувати"><button type="button" class="chip" data-g="country" aria-pressed="true">країни</button><button type="button" class="chip" data-g="side" aria-pressed="false">сторони</button><button type="button" class="chip" data-g="actor" aria-pressed="false">люди</button></div>
+      <input id="rhq" type="search" placeholder="імʼя або посада" aria-label="Фільтр за імʼям" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;font-size:12px">
+    </div>
+    <div class="meta">Заяви за 26 тижнів: скільки, яка частка — погрози, і скільки перевірених заяв збулося. Графік — погрози по тижнях. «у графі» відкриває людину в графі звʼязків.</div>
+    <div id="rhrows"><p class="empty">Завантаження…</p></div>
+    <div class="meta" id="rhch"></div>
+  </div>
   <div class="ctl"><span class="meta">Вердикти: підтверджено / спростовано / частково / не перевірено. Оцінюється відповідність доказам, не намір.</span>
     <select id="fcside"><option value="">усі сторони</option></select><select id="fcstatus"><option value="">усі вердикти</option><option value="true">підтверджено</option><option value="false">спростовано</option><option value="partial">частково</option><option value="unresolvable">не перевірено</option><option value="pending">ще не перевірялось</option></select>
     <input id="fcq" type="search" placeholder="пошук у цитатах" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;font-size:12px"></div>
@@ -162,12 +212,20 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
   <h3 style="margin:4px 0 0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Перевірка фактів і прогнозів</h3>
   <div class="fcl" id="fclist"><p class="empty">Завантаження…</p></div>
 </section>
+<section class="pg" id="prognoz" hidden>
+  <h2 style="margin:4px 0">Проспективна перевірка «риторика → удари»</h2>
+  <p class="meta" style="font-family:var(--font);font-size:13px;max-width:760px">Дослідження, <b>не попередження про загрозу</b>. Кожен прогноз записується до початку дня, на який він зроблений, і більше не змінюється. Через 2–3 місяці стане видно, чи кандидатні сигнали стабільно кращі за базову лінію.</p>
+  <div class="cards" id="pgcards"><p class="meta">Завантаження…</p></div>
+  <div class="wrap" style="margin-top:12px"><table><thead><tr><th>День</th><th>Модель</th><th>Ймовірність</th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div>
+</section>
 <section class="chat" id="chat" hidden>
   <div class="meta">Запит словами: модель перекладає його у пошук по базі та реєстрах і відповідає з конкретикою.</div>
   <div class="log" id="chatlog"></div>
   <div class="ex" id="chatex"></div>
   <form id="chatform"><textarea id="chatq" placeholder="Напр.: знайди справи за 2025 рік щодо земельних питань" aria-label="Запит до бази"></textarea><button class="send" id="chatsend" type="submit">Запитати</button></form>
 </section>
+<script>/* show the right section before the graph data arrives (no flash of the graph on the home page) */
+{const u=new URL(location.href),v=u.searchParams.get('view')||(location.hash.length>1?'graph':'home');if(v!=='graph'){['graphtop','filters','legend'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});const m=document.querySelector('.main');if(m)m.hidden=true}const t=document.getElementById(v==='prognoz'?'prognoz':v==='factcheck'?'factcheck':'home');if(v!=='graph'&&t)t.hidden=false}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script>window.__API__=true</script>
 <script>
@@ -395,9 +453,8 @@ function select(id){state.center=id;drawF();render();const tb=document.getElemen
 document.getElementById('todetails').onclick=()=>document.getElementById('panel').scrollIntoView({behavior:'smooth',block:'start'});
 window.addEventListener('resize',()=>{if(state.center)render()});
 // tabs + fact-check (API version only)
-if(CAN_QUEUE){document.getElementById('tabs').hidden=false;const V={true:'підтверджено',false:'спростовано',partial:'частково',unresolvable:'не перевірено',pending:'не перевірялось'};const SIDE={RU_official:'РФ офіційні',RU_milblogger:'РФ воєнкори',RU_media:'РФ медіа',UA_official:'Україна офіційні',UA_media:'Україна медіа',US_admin:'США адміністрація',US_right:'США праві',US_left:'США ліві',US_congress_bipartisan:'США Конгрес',US_other:'США інші',EU:'ЄС',NATO:'НАТО',other:'інші'};
+if(CAN_QUEUE){const V={true:'підтверджено',false:'спростовано',partial:'частково',unresolvable:'не перевірено',pending:'не перевірялось'};const SIDE={RU_official:'РФ офіційні',RU_milblogger:'РФ воєнкори',RU_media:'РФ медіа',UA_official:'Україна офіційні',UA_media:'Україна медіа',US_admin:'США адміністрація',US_right:'США праві',US_left:'США ліві',US_congress_bipartisan:'США Конгрес',US_other:'США інші',EU:'ЄС',NATO:'НАТО',other:'інші'};
   const fc=document.getElementById('factcheck'),gtop=document.getElementById('graphtop'),main=document.querySelector('.main'),filt=document.querySelector('.filters'),leg=document.getElementById('legend');
-  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));const g=b.dataset.tab==='graph';[gtop,main,filt,leg].forEach(el=>el.hidden=!g);fc.hidden=g;if(!g)loadFC();try{localStorage.setItem('tab',b.dataset.tab)}catch(_){}});
   const sideSel=document.getElementById('fcside');Object.entries(SIDE).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v;sideSel.appendChild(o)});
   let fcLoaded=false;let loadFC=async function(){const side=sideSel.value,st=document.getElementById('fcstatus').value,qq=document.getElementById('fcq').value.trim();const r=await (await fetch(`/api/factcheck?side=${encodeURIComponent(side)}&status=${encodeURIComponent(st)}&q=${encodeURIComponent(qq)}`)).json();if(r.error){document.getElementById('fclist').innerHTML='<p class="empty">'+esc(r.error)+'</p>';return}
     const evm=new Map((r.evidence||[]).map(e=>[e.id,e]));
@@ -409,7 +466,7 @@ if(CAN_QUEUE){document.getElementById('tabs').hidden=false;const V={true:'під
     document.getElementById('clist').innerHTML=(r.items||[]).map(i=>`<div class="fci"><div><span class="badge v-partial">${KIND[i.kind]||i.kind}</span> <span class="meta">${esc(SIDE[i.actor_side]||i.actor_side)}${i.actor_name?' · '+esc(i.actor_name):''} · ${esc(i.topic||'')} · ${Math.round((i.confidence||0)*100)}%</span></div><div class="q">${(i.a_date||'').slice(0,10)}: «${esc(i.a_quote)}»${i.a_url?` <a href="${esc(i.a_url)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:''}</div><div class="q">${i.b_quote?`${(i.b_date||'').slice(0,10)}: «${esc(i.b_quote)}»${i.b_url?` <a href="${esc(i.b_url)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:''}`:`${esc(i.e_date||'')}: дія — ${esc(i.e_type||'')}, ${esc(i.e_details||'')}`}</div><div class="meta">${esc(i.explanation||'')}</div></div>`).join('')||'<p class="empty">Суперечностей за цими фільтрами немає.</p>';}
   const _loadFC=loadFC;loadFC=async()=>{await Promise.all([_loadFC(),loadC()])};
   sideSel.onchange=loadFC;document.getElementById('fcstatus').onchange=loadFC;document.getElementById('fcq').onkeydown=e=>{if(e.key==='Enter')loadFC()};
-  try{if(localStorage.getItem('tab')==='factcheck')document.querySelector('#tabs button[data-tab="factcheck"]').click()}catch(_){}}
+  window.__loadFC=()=>loadFC();}
 // chat (API version only)
 if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const log=document.getElementById('chatlog'),form=document.getElementById('chatform'),ta=document.getElementById('chatq'),btn=document.getElementById('chatsend');const hist=[];
   const EX=['знайди справи за 2025 рік щодо земельних питань','які категорії справ є в індексі за 2021','що відомо про Кацубу і його компанії','заяви Кремля з погрозами за останній місяць і чи збулися'];
@@ -437,8 +494,63 @@ async function emptyState(){document.getElementById('panel').innerHTML=`<div cla
     const w=r.worker;const st=document.getElementById('stats');if(w&&w.seen_at){const ago=Math.round((Date.now()-new Date(w.seen_at))/60000);st.textContent+=` · воркер UA: ${ago<=6?'онлайн':'офлайн '+(ago<120?ago+' хв':Math.round(ago/60)+' год')}`}}catch(e){document.getElementById('ex-recent').textContent=''}}
 if(state.center&&byId.has(state.center)){q.value=byId.get(state.center).label;select(state.center)}else{emptyState()}
 q.addEventListener('input',()=>{if(!q.value.trim()&&!state.center)emptyState()});
+// ---------- sections: home / graph / factcheck+rhetoric / forecast; ?view= in the URL, the graph keeps its own #hash ----------
+const VIEWS={home:['home'],graph:['graphtop','filters','main','legend','chat'],factcheck:['factcheck'],prognoz:['prognoz']};
+const elOf=id=>document.getElementById(id)||document.querySelector('.'+id);
+const loaded={};
+function show(v,push=true){if(!VIEWS[v])v='home';for(const [k,ids] of Object.entries(VIEWS))ids.forEach(id=>{const el=elOf(id);if(el&&!(id==='chat'&&!CAN_QUEUE))el.hidden=k!==v});
+  document.querySelectorAll('#side [data-view]').forEach(b=>b.tagName==='BUTTON'&&b.setAttribute('aria-current',b.dataset.view===v?'page':'false'));
+  if(push){const u=new URL(location.href);if(v==='home')u.searchParams.delete('view');else u.searchParams.set('view',v);if(v!=='graph')u.hash='';history.pushState({v},'',u)}
+  if(v==='graph'&&state.center)render();
+  if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet()}
+  if(v==='prognoz'&&!loaded.pg){loaded.pg=1;loadPG()}
+  if(v==='home')loadHome();window.scrollTo({top:0})}
+document.querySelectorAll('#side [data-view],#home [data-view]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();show(b.dataset.view)}));
+window.addEventListener('popstate',()=>show(new URL(location.href).searchParams.get('view')||'home',false));
+window.__show=show;
+async function loadHome(){document.getElementById('h-graph').textContent=G.nodes.length.toLocaleString('uk-UA');
+  if(!CAN_QUEUE)return;
+  if(!loaded.hfc){loaded.hfc=1;fetch('/api/rhetoric?group=country').then(r=>r.json()).then(r=>{document.getElementById('h-fc').textContent=(r.top||[]).reduce((s,x)=>s+x.n,0).toLocaleString('uk-UA')}).catch(()=>{})}
+  if(!loaded.hpg){loaded.hpg=1;fetch('/api/predictions').then(r=>r.json()).then(r=>{document.getElementById('h-pg').textContent=(r.rows||[]).length}).catch(()=>{})}}
+// rhetoric tracker
+const CNAME={RU:'Росія',UA:'Україна',US:'США',EU:'ЄС',NATO:'НАТО',other:'інші'};
+const SNAME={RU_official:'РФ офіційні',RU_milblogger:'РФ воєнкори',RU_media:'РФ медіа',UA_official:'Україна офіційні',UA_media:'Україна медіа',US_admin:'США адміністрація',US_right:'США праві',US_left:'США ліві',US_congress_bipartisan:'Конгрес США',US_other:'США інші',EU:'ЄС',NATO:'НАТО',other:'інші'};
+function spark(vals,w=136,h=26){if(!vals.length)return'';const mx=Math.max(1,...vals),st=vals.length>1?w/(vals.length-1):w;const pts=vals.map((v,i)=>`${(i*st).toFixed(1)},${(h-2-(h-4)*v/mx).toFixed(1)}`).join(' ');
+  return `<svg class="sp" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline fill="none" stroke="var(--accent)" stroke-width="1.6" points="${pts}"/></svg>`}
+let rhGroup='country';
+async function loadRhet(){const box=document.getElementById('rhrows');box.innerHTML='<p class="empty">Завантаження…</p>';
+  try{const qq=document.getElementById('rhq').value.trim();const r=await (await fetch(`/api/rhetoric?group=${rhGroup}&actor=${encodeURIComponent(qq)}`)).json();if(r.error){box.innerHTML='<p class="empty">'+esc(r.error)+'</p>';return}
+    const weeks=[...new Set((r.series||[]).map(x=>x.w))].sort();const by=new Map();(r.series||[]).forEach(x=>{(by.get(x.k)||by.set(x.k,new Map()).get(x.k)).set(x.w,x.threats)});
+    const name=t=>rhGroup==='country'?(CNAME[t.k]||t.k):rhGroup==='side'?(SNAME[t.k]||t.k):t.k;
+    box.innerHTML=`<div class="row head"><span>${rhGroup==='actor'?'людина':rhGroup==='side'?'сторона':'країна'}</span><span>заяв</span><span>погрози</span><span class="hide-m">погрози по тижнях</span><span class="hide-m">збулося</span><span></span></div>`+
+      (r.top||[]).map(t=>{const vals=weeks.map(w=>(by.get(t.k)||new Map()).get(w)||0);const h=Math.floor(vals.length/2),a=vals.slice(0,h).reduce((s,x)=>s+x,0),b=vals.slice(h).reduce((s,x)=>s+x,0);
+        const trend=b>a*1.3&&b-a>=2?'<span class="up" title="друга половина періоду вища">▲</span>':a>b*1.3&&a-b>=2?'<span class="down" title="друга половина періоду нижча">▼</span>':'';
+        return `<div class="row"><span><b>${esc(name(t))}</b>${rhGroup==='actor'?` <span class="meta">${esc(SNAME[t.side]||t.side||'')}</span>`:''}</span><span>${t.n}</span><span>${t.threats} <span class="meta">(${t.n?Math.round(100*t.threats/t.n):0}%)</span> ${trend}</span>
+          <span class="hide-m">${spark(vals)}</span><span class="hide-m">${t.pct_true==null?'<span class="meta">—</span>':Math.round(100*t.pct_true)+'%'} <span class="meta">з ${t.resolved}</span></span>
+          <span>${rhGroup==='actor'?`<button type="button" class="chip" data-g2="${esc(t.k)}">у графі</button>`:`<button type="button" class="chip" data-drill="${esc(t.k)}">люди</button>`}</span></div>`}).join('')||'<p class="empty">За ці тижні заяв не знайдено.</p>';
+    box.querySelectorAll('[data-g2]').forEach(b=>b.onclick=()=>{show('graph');q.value=b.dataset.g2;q.dispatchEvent(new Event('input'));q.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))});
+    box.querySelectorAll('[data-drill]').forEach(b=>b.onclick=()=>{rhGroup='actor';document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.g==='actor'));
+      const sel=document.getElementById('fcside');if(sel&&[...sel.options].some(o=>o.value===b.dataset.drill)){sel.value=b.dataset.drill;sel.dispatchEvent(new Event('change'))}loadRhet()});
+    const ch=r.channels||[];const ser=c=>weeks.length?ch.filter(x=>x.country===c).map(x=>x.threat_share):[];const last=c=>{const v=ch.filter(x=>x.country===c);return v.length?Math.round(100*v[v.length-1].threat_share)+'%':'—'};
+    document.getElementById('rhch').innerHTML=ch.length?`Канали (частка постів зі словами погроз, по тижнях): РФ ${spark(ser('RU'),110,20)} зараз ${last('RU')} · Україна ${spark(ser('UA'),110,20)} зараз ${last('UA')}`:'';
+  }catch(e){box.innerHTML='<p class="empty">Не вдалося завантажити: '+esc(e.message)+'</p>'}}
+document.querySelectorAll('#rhet .seg button').forEach(b=>b.onclick=()=>{rhGroup=b.dataset.g;document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x===b));loadRhet()});
+document.getElementById('rhq').onkeydown=e=>{if(e.key==='Enter'){if(e.target.value.trim()&&rhGroup!=='actor'){rhGroup='actor';document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.g==='actor'))}loadRhet()}};
+// forecast (was /prognoz.html)
+const PM={nat_massive_v1:{t:'Масований удар по Україні',k:'кандидат: згадки Віткоффа/Кушнера',vs:'nat_massive_base_v1'},nat_massive_base_v1:{t:'Масований удар по Україні',k:'база: власна історія'},
+  kh_missile_v1:{t:'Ракетний день, Харківщина',k:'кандидат: погрози в RU-каналах',vs:'kh_missile_base_v1'},kh_missile_base_v1:{t:'Ракетний день, Харківщина',k:'база: власна історія'}};
+function aucOf(y,p){const P=[],N=[];y.forEach((v,i)=>(v?P:N).push(p[i]));if(!P.length||!N.length)return null;let s=0;for(const a of P)for(const b of N)s+=a>b?1:a===b?.5:0;return s/(P.length*N.length)}
+const f3=(x,d=3)=>x==null?'—':x.toFixed(d);
+async function loadPG(){try{const {rows=[]}=await (await fetch('/api/predictions')).json();const by={};rows.filter(r=>r.outcome!=null).forEach(r=>(by[r.model]??=new Map()).set(r.d,r));
+  document.getElementById('pgcards').innerHTML=Object.entries(PM).filter(([,v])=>v.vs).map(([k,v])=>{const a=by[k]||new Map(),b=by[v.vs]||new Map(),days=[...a.keys()].filter(d=>b.has(d));const y=days.map(d=>a.get(d).outcome);const A=aucOf(y,days.map(d=>a.get(d).p)),B=aucOf(y,days.map(d=>b.get(d).p));
+    return `<div class="card"><div class="meta">${esc(v.t)}</div><b>${A!=null&&B!=null?(A-B>=0?'+':'')+f3(A-B):'—'}</b><div class="meta">різниця AUC кандидат − база · оцінених днів ${days.length}, з подією ${y.filter(Boolean).length}</div></div>`}).join('');
+  document.getElementById('pgrows').innerHTML=rows.slice(0,120).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(PM[r.model]?.t||r.model)}<div class="meta">${esc(PM[r.model]?.k||'')}</div></td><td><span class="bar" style="width:${Math.round(r.p*80)}px"></span>${f3(r.p,2)}</td>
+    <td>${r.outcome==null?'<span class="meta">ще невідомо</span>':r.outcome?'<b>так</b>':'<span class="meta">ні</span>'}</td><td class="meta">${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}</td></tr>`).join('')||'<tr><td colspan="5" class="meta">Ще немає прогнозів.</td></tr>';
+}catch(e){document.getElementById('pgcards').innerHTML='<p class="meta">Помилка: '+esc(e.message)+'</p>'}}
+// first view: ?view=, or the graph when the URL already points at a graph object, otherwise home
+{const v=new URL(location.href).searchParams.get('view');show(v||(location.hash.length>1?'graph':'home'),false)}
 })();
 </script>
-
+</div>
 </body>
 </html>
