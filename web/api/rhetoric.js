@@ -1,6 +1,6 @@
 import { json, query } from "./_db.js";
 
-// GET /api/rhetoric?group=country|side|actor&side=&actor=&weeks=26
+// GET /api/rhetoric?group=country|side|actor&country=&side=&actor=&weeks=26
 // Rhetoric level over time: statements by week (all / threats) per country, side or named actor, with each group's track
 // record (share of resolved statements that came true), plus the share of threat-flavoured posts in the channels by country.
 const KEY = { country: "split_part(actor_side, '_', 1)", side: "actor_side", actor: "coalesce(nullif(actor_name, ''), actor_side)" };
@@ -11,11 +11,12 @@ export default async function handler(req, res) {
   const u = new URL(req.url, "http://x");
   const group = KEY[u.searchParams.get("group")] ? u.searchParams.get("group") : "country";
   const side = u.searchParams.get("side") || "";
+  const country = u.searchParams.get("country") || "";
   const actor = u.searchParams.get("actor") || "";
   const weeks = Math.min(104, Math.max(4, +(u.searchParams.get("weeks") || 26)));
   const key = KEY[group];
-  const P = [weeks, side, "%" + actor + "%", actor];
-  const S = `FROM statements WHERE ts_published >= now() - ($1::int * interval '1 week') AND ($2 = '' OR actor_side = $2) AND ($4 = '' OR actor_name ILIKE $3)`;
+  const P = [weeks, side, "%" + actor + "%", actor, country];
+  const S = `FROM statements WHERE ts_published >= now() - ($1::int * interval '1 week') AND ($2 = '' OR actor_side = $2) AND ($4 = '' OR actor_name ILIKE $3) AND ($5 = '' OR split_part(actor_side, '_', 1) = $5)`;
   try {
     const [top, series, types, channels] = await Promise.all([
       query(`SELECT ${key} AS k, max(split_part(actor_side, '_', 1)) country, max(actor_side) side, count(*)::int n,

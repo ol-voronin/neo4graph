@@ -144,7 +144,7 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
 .rh .row{display:grid;grid-template-columns:minmax(150px,1.4fr) 70px 90px 140px 90px auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
 .rh .row.head{color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
 .rh .seg{display:flex;gap:4px;flex-wrap:wrap}.rh .seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel);border-color:var(--accent)}
-.rh svg.sp{display:block}.up{color:var(--c-registry)}.down{color:var(--c-asset)}
+.rh svg.sp{display:block}#rhch svg.sp{display:inline-block;vertical-align:middle;margin:0 4px}.up{color:var(--c-registry)}.down{color:var(--c-asset)}
 .pg .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.pg .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
 .pg .card b{font-size:22px;display:block}.pg table{border-collapse:collapse;width:100%;background:var(--panel);font-size:13px}.pg th,.pg td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
 .pg .bar{display:inline-block;height:8px;background:var(--accent);border-radius:4px;vertical-align:middle;margin-right:6px}.pg .wrap{overflow-x:auto}
@@ -517,9 +517,9 @@ const CNAME={RU:'Росія',UA:'Україна',US:'США',EU:'ЄС',NATO:'Н�
 const SNAME={RU_official:'РФ офіційні',RU_milblogger:'РФ воєнкори',RU_media:'РФ медіа',UA_official:'Україна офіційні',UA_media:'Україна медіа',US_admin:'США адміністрація',US_right:'США праві',US_left:'США ліві',US_congress_bipartisan:'Конгрес США',US_other:'США інші',EU:'ЄС',NATO:'НАТО',other:'інші'};
 function spark(vals,w=136,h=26){if(!vals.length)return'';const mx=Math.max(1,...vals),st=vals.length>1?w/(vals.length-1):w;const pts=vals.map((v,i)=>`${(i*st).toFixed(1)},${(h-2-(h-4)*v/mx).toFixed(1)}`).join(' ');
   return `<svg class="sp" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline fill="none" stroke="var(--accent)" stroke-width="1.6" points="${pts}"/></svg>`}
-let rhGroup='country';
+let rhGroup='country',rhF={};
 async function loadRhet(){const box=document.getElementById('rhrows');box.innerHTML='<p class="empty">Завантаження…</p>';
-  try{const qq=document.getElementById('rhq').value.trim();const r=await (await fetch(`/api/rhetoric?group=${rhGroup}&actor=${encodeURIComponent(qq)}`)).json();if(r.error){box.innerHTML='<p class="empty">'+esc(r.error)+'</p>';return}
+  try{const qq=document.getElementById('rhq').value.trim();const r=await (await fetch(`/api/rhetoric?group=${rhGroup}&actor=${encodeURIComponent(qq)}&country=${encodeURIComponent(rhF.country||'')}&side=${encodeURIComponent(rhF.side||'')}`)).json();if(r.error){box.innerHTML='<p class="empty">'+esc(r.error)+'</p>';return}
     const weeks=[...new Set((r.series||[]).map(x=>x.w))].sort();const by=new Map();(r.series||[]).forEach(x=>{(by.get(x.k)||by.set(x.k,new Map()).get(x.k)).set(x.w,x.threats)});
     const name=t=>rhGroup==='country'?(CNAME[t.k]||t.k):rhGroup==='side'?(SNAME[t.k]||t.k):t.k;
     box.innerHTML=`<div class="row head"><span>${rhGroup==='actor'?'людина':rhGroup==='side'?'сторона':'країна'}</span><span>заяв</span><span>погрози</span><span class="hide-m">погрози по тижнях</span><span class="hide-m">збулося</span><span></span></div>`+
@@ -527,14 +527,16 @@ async function loadRhet(){const box=document.getElementById('rhrows');box.innerH
         const trend=b>a*1.3&&b-a>=2?'<span class="up" title="друга половина періоду вища">▲</span>':a>b*1.3&&a-b>=2?'<span class="down" title="друга половина періоду нижча">▼</span>':'';
         return `<div class="row"><span><b>${esc(name(t))}</b>${rhGroup==='actor'?` <span class="meta">${esc(SNAME[t.side]||t.side||'')}</span>`:''}</span><span>${t.n}</span><span>${t.threats} <span class="meta">(${t.n?Math.round(100*t.threats/t.n):0}%)</span> ${trend}</span>
           <span class="hide-m">${spark(vals)}</span><span class="hide-m">${t.pct_true==null?'<span class="meta">—</span>':Math.round(100*t.pct_true)+'%'} <span class="meta">з ${t.resolved}</span></span>
-          <span>${rhGroup==='actor'?`<button type="button" class="chip" data-g2="${esc(t.k)}">у графі</button>`:`<button type="button" class="chip" data-drill="${esc(t.k)}">люди</button>`}</span></div>`}).join('')||'<p class="empty">За ці тижні заяв не знайдено.</p>';
+          <span>${rhGroup==='actor'?(t.k===t.side?'':`<button type="button" class="chip" data-g2="${esc(t.k)}">у графі</button>`):`<button type="button" class="chip" data-drill="${esc(t.k)}">люди</button>`}</span></div>`}).join('')||'<p class="empty">За ці тижні заяв не знайдено.</p>';
     box.querySelectorAll('[data-g2]').forEach(b=>b.onclick=()=>{show('graph');q.value=b.dataset.g2;q.dispatchEvent(new Event('input'));q.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))});
-    box.querySelectorAll('[data-drill]').forEach(b=>b.onclick=()=>{rhGroup='actor';document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.g==='actor'));
-      const sel=document.getElementById('fcside');if(sel&&[...sel.options].some(o=>o.value===b.dataset.drill)){sel.value=b.dataset.drill;sel.dispatchEvent(new Event('change'))}loadRhet()});
+    box.querySelectorAll('[data-drill]').forEach(b=>b.onclick=()=>{rhF=rhGroup==='country'?{country:b.dataset.drill}:{side:b.dataset.drill};rhGroup='actor';document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.g==='actor'));
+      const sel=document.getElementById('fcside');if(rhF.side&&sel&&[...sel.options].some(o=>o.value===rhF.side)){sel.value=rhF.side;sel.dispatchEvent(new Event('change'))}loadRhet()});
+    const fl=rhF.country?(CNAME[rhF.country]||rhF.country):rhF.side?(SNAME[rhF.side]||rhF.side):'';
+    if(fl){const c=document.createElement('p');c.className='meta';c.innerHTML=`Лише: <b>${esc(fl)}</b> <button type="button" class="chip">показати всіх ×</button>`;c.querySelector('button').onclick=()=>{rhF={};loadRhet()};box.prepend(c)}
     const ch=r.channels||[];const ser=c=>weeks.length?ch.filter(x=>x.country===c).map(x=>x.threat_share):[];const last=c=>{const v=ch.filter(x=>x.country===c);return v.length?Math.round(100*v[v.length-1].threat_share)+'%':'—'};
     document.getElementById('rhch').innerHTML=ch.length?`Канали (частка постів зі словами погроз, по тижнях): РФ ${spark(ser('RU'),110,20)} зараз ${last('RU')} · Україна ${spark(ser('UA'),110,20)} зараз ${last('UA')}`:'';
   }catch(e){box.innerHTML='<p class="empty">Не вдалося завантажити: '+esc(e.message)+'</p>'}}
-document.querySelectorAll('#rhet .seg button').forEach(b=>b.onclick=()=>{rhGroup=b.dataset.g;document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x===b));loadRhet()});
+document.querySelectorAll('#rhet .seg button').forEach(b=>b.onclick=()=>{rhGroup=b.dataset.g;if(rhGroup!=='actor')rhF={};document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x===b));loadRhet()});
 document.getElementById('rhq').onkeydown=e=>{if(e.key==='Enter'){if(e.target.value.trim()&&rhGroup!=='actor'){rhGroup='actor';document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.g==='actor'))}loadRhet()}};
 // forecast (was /prognoz.html)
 const PM={nat_massive_v1:{t:'Масований удар по Україні',k:'кандидат: згадки Віткоффа/Кушнера',vs:'nat_massive_base_v1'},nat_massive_base_v1:{t:'Масований удар по Україні',k:'база: власна історія'},
