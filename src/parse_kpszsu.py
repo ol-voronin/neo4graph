@@ -95,8 +95,10 @@ if __name__ == "__main__":
     ap.add_argument("--sql", action="store_true")
     a = ap.parse_args()
     out = {}
-    for line in open(a.src, encoding="utf-8"):
-        w = parse_post(json.loads(line))
+    # files are appended newest-page-first during backfills: order by message id so the later post really wins
+    posts = sorted((json.loads(line) for line in open(a.src, encoding="utf-8")), key=lambda p: p.get("msg_num", 0))
+    for post in posts:
+        w = parse_post(post)
         if w:
             out[w["id"]] = w  # later post (final numbers) wins
     waves = sorted(out.values(), key=lambda w: (w["date"], w["kind"]))

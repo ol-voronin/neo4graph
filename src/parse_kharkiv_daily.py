@@ -15,7 +15,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-START = re.compile(r"Протягом минулої доби")
+# Anchored: other posts quote the phrase mid-text (e.g. 2025-04-19). This format starts on 2025-05-03; the earlier
+# "Харківщина, N <місяць>. Зведення за добу" posts list incidents without consistent weapon totals and are not parsed.
+START = re.compile(r"^\W{0,4}\s*Протягом минулої доби")
 CITY_RE = re.compile(r"ворожих ударів зазнали\s+(м\.\s*Харків|[^.]*?м\.\s*Харків)", re.I)
 SETTL_RE = re.compile(r"зазнали\s+(?:м\.\s*Харків\s+і\s+)?(\d+)\s+населен|зазнали\s+(\d+)\s+населен", re.I)
 DISTR_RE = re.compile(r"Ворог атакував([^.\n]{0,200}?)\s+райони?\s+Харкова", re.I)  # bounded: nested quantifiers backtracked catastrophically
@@ -61,7 +63,7 @@ def parse(text: str):
         killed = WORDNUM.get(g.lower(), None) if not g.isdigit() else int(g)
     d = DISTR_RE.search(text)
     return {**out,
-            "city_attacked": bool(re.search(r"м\.\s*Харків", head)),
+            "city_attacked": bool(re.search(r"(?:м\.|місто)\s*Харків", head)),
             "settlements_n": int(m.group(1) or m.group(2)) if m else None,
             "districts_attacked": districts(d.group(1)) if d else [],
             "killed_first_mention": killed,
@@ -71,8 +73,8 @@ def parse(text: str):
 def main(sql=False):
     rows = {}
     for p in glob.glob(str(ROOT / "data/telegram/synegubov*.jsonl")):
-        for line in open(p, encoding="utf-8"):
-            m = json.loads(line)
+        # order by message id (backfills append newest pages first) so a later correction of the same day wins
+        for m in sorted((json.loads(line) for line in open(p, encoding="utf-8")), key=lambda m: m.get("msg_num", 0)):
             r = parse(m["text"])
             if not r:
                 continue

@@ -1,40 +1,59 @@
 name: waves-backfill
 
-# Nationwide ground truth: Air Force daily summaries (ЗБИТО/ПОДАВЛЕНО) back to a date, collected with a content
-# filter so the chatty kpszsu channel costs almost nothing, then parsed into `waves` and loaded.
+# Ground truth history: Air Force daily summaries (kpszsu) -> `waves` and the Kharkiv governor's daily summaries
+# (synegubov) -> `kharkiv_daily`. Collected with a content filter so the chatty channels cost almost nothing, then
+# parsed and loaded. Only the parsed tables go to Neon; raw posts stay in the run artifact unless load_messages=true.
 
 on:
   workflow_dispatch:
     inputs:
       since:
-        description: "Go back until (UTC, YYYY-MM-DD)"
-        default: "2026-03-31"
+        description: "Air Force: go back until (UTC, YYYY-MM-DD)"
+        default: "2025-01-01"
+      kharkiv_since:
+        description: "Kharkiv summaries: go back until (the parsed format starts 2025-05-03); empty = skip"
+        default: "2025-05-01"
+      load_messages:
+        description: "Also insert the raw summary posts into messages (Neon space)"
+        type: boolean
+        default: false
 
 jobs:
   waves:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install "psycopg[binary]" python-dotenv
-      - name: Collect summaries (filtered, resumable)
+      - name: Collect Air Force summaries (filtered, resumable)
         run: |
           mkdir -p data/telegram
           bash scripts/deepfill_match.sh kpszsu _summaries 'ЗБИТО/ПОДАВЛЕНО|У ніч на|Протягом дня' "${{ github.event.inputs.since }}"
           wc -l data/telegram/kpszsu_summaries.jsonl
-      - name: Parse and load
+      - name: Collect Kharkiv daily summaries (filtered, resumable)
+        if: github.event.inputs.kharkiv_since != ''
+        run: |
+          bash scripts/deepfill_match.sh synegubov _daily '^\W{0,4}\s*Протягом минулої доби' "${{ github.event.inputs.kharkiv_since }}"
+          wc -l data/telegram/synegubov_daily.jsonl
+      - name: Parse
+        run: |
+          python src/parse_kpszsu.py
+          python src/parse_kharkiv_daily.py | head -3
+      - name: Load
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          python src/parse_kpszsu.py
-          python src/load_to_db.py messages
+          if [ "${{ github.event.inputs.load_messages }}" = "true" ]; then python src/load_to_db.py messages; fi
           python src/load_to_db.py waves
+          if [ -s data/kharkiv_daily.jsonl ]; then python src/load_to_db.py kharkiv; fi
       - uses: actions/upload-artifact@v4
         with:
           name: waves-${{ github.run_id }}
           path: |
             data/telegram/kpszsu_summaries.jsonl
+            data/telegram/synegubov_daily.jsonl
             data/waves_kpszsu.jsonl
+            data/kharkiv_daily.jsonl

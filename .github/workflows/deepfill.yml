@@ -1,21 +1,35 @@
 name: deepfill
 
-# One-off deep history backfill of selected Telegram channels into Neon (resumable chunks, then load).
-# Run manually. Public repo => unlimited Actions minutes. Keep the channel list modest: Neon free tier is 0.5 GB
-# (~3 KB per message incl. indexes). Skip the very chatty agencies (tass_agency, SolovievLive).
+# Manual history jobs.
+#   mode=messages: deep backfill of selected channels straight into Neon (the original job; mind the 1 GB limit).
+#   mode=history : panel rhetoric before 2026-03-31 WITHOUT Neon raw rows (src/history.py): per-channel collection
+#                  -> Parquet in release `history-latest` -> daily aggregates in `rhetoric_daily_hist` -> equivalence check.
+#   mode=verify  : only the Python-vs-SQL rule equivalence check on the live panel.
+# TODO: split history/verify into their own workflow file once merged.
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "messages | history | verify"
+        default: "history"
       channels:
-        description: "Space-separated channel names"
+        description: "mode=messages: space-separated channel names"
         default: "V_Zelenskiy_official GeneralStaffZSU MID_Russia rybar wargonzo sashakots meduzalive ukrpravda_news RVvoenkor voenkorKotenok dva_majors boris_rozhin"
       since:
         description: "Go back until this date (UTC, YYYY-MM-DD)"
-        default: "2026-04-01"
+        default: "2025-01-01"
+      skip_collect:
+        description: "mode=history: reuse panel_posts.parquet from the release, only re-aggregate"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
   deepfill:
+    if: github.event.inputs.mode == 'messages'
     runs-on: ubuntu-latest
     timeout-minutes: 340
     steps:
@@ -39,3 +53,96 @@ jobs:
           name: deepfill-counts
           path: data/telegram/*.jsonl
           retention-days: 3
+
+  history-collect:
+    if: github.event.inputs.mode == 'history' && github.event.inputs.skip_collect != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      max-parallel: 4   # polite to t.me
+      matrix:
+        # before = first message id of the live range in Neon (messages, 2026-03-31)
+        include:
+          - { ch: boris_rozhin, before: 205155 }
+          - { ch: RVvoenkor, before: 112207 }
+          - { ch: meduzalive, before: 140388 }
+          - { ch: MID_Russia, before: 76605 }
+          - { ch: ukrpravda_news, before: 76701 }
+          - { ch: dva_majors, before: 90491 }
+          - { ch: voenkorKotenok, before: 71498 }
+          - { ch: rybar, before: 79095 }
+          - { ch: sashakots, before: 60769 }
+          - { ch: wargonzo, before: 33264 }
+          - { ch: GeneralStaffZSU, before: 36730 }
+          - { ch: V_Zelenskiy_official, before: 18493 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas pyarrow python-dotenv
+      - name: Collect ${{ matrix.ch }}
+        run: python src/history.py collect --channel ${{ matrix.ch }} --before ${{ matrix.before }} --since "${{ github.event.inputs.since }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hist-${{ matrix.ch }}
+          path: data/history/${{ matrix.ch }}.jsonl
+          retention-days: 7
+
+  history-build:
+    if: always() && github.event.inputs.mode == 'history'
+    needs: history-collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas pyarrow "psycopg[binary]" python-dotenv
+      - uses: actions/download-artifact@v4
+        if: github.event.inputs.skip_collect != 'true'
+        with:
+          pattern: hist-*
+          path: /tmp/hist
+      - name: Get posts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data/history
+          if [ "${{ github.event.inputs.skip_collect }}" = "true" ]; then
+            gh release download history-latest -p panel_posts.parquet -D data/history
+          else
+            find /tmp/hist -name '*.jsonl' -exec cp {} data/history/ \;
+            python src/history.py pack
+          fi
+      - name: Publish Parquet
+        if: github.event.inputs.skip_collect != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view history-latest >/dev/null 2>&1 || gh release create history-latest --title "Panel rhetoric history" --notes "Raw posts of the 12 panel channels before 2026-03-31 (src/history.py). Built by .github/workflows/deepfill.yml mode=history."
+          gh release upload history-latest data/history/panel_posts.parquet --clobber
+      - name: Aggregate into Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/history.py aggregate
+      - name: Verify rules (Python vs SQL view)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/history.py verify
+
+  verify:
+    if: github.event.inputs.mode == 'verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas pyarrow "psycopg[binary]" python-dotenv
+      - env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/history.py verify
