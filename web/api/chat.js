@@ -272,12 +272,15 @@ async function geminiLoop(messages, key, trace) {
   let contents = messages.filter((m) => typeof m.content === "string" && m.content.trim())
     .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
   for (let step = 0; step < 6; step++) {
+    if (Date.now() - t0 > 40000) return "Не встиг завершити пошук за відведений час; показую знайдене на графі. Уточніть запит.";
     const call = () => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
+      method: "POST", signal: AbortSignal.timeout(Math.max(5000, 45000 - (Date.now() - t0))),
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents, tools, generationConfig: { temperature: 0.2, maxOutputTokens: 3000 } }),
     });
+    const t = Date.now();
     let r = await call(), data = await r.json();
+    console.log("gemini step", step, Date.now() - t, "ms", r.status);
     // free tier: per-minute limit. Wait once if Google says it is short (RetryInfo.retryDelay) and the function has time left.
     if (r.status === 429) {
       const wait = Number(((data.error?.details || []).find((d) => d.retryDelay)?.retryDelay || "").replace("s", "")) || 6;
@@ -289,14 +292,19 @@ async function geminiLoop(messages, key, trace) {
     const calls = parts.filter((p) => p.functionCall);
     if (!calls.length) return parts.filter((p) => p.text).map((p) => p.text).join("\n") || "Модель не дала відповіді; переформулюйте запит.";
     contents = [...contents, { role: "model", parts }];
-    const responses = [];
-    for (const { functionCall: fc } of calls) {
-      let out;
-      try { out = await runTool(fc.name, fc.args || {}); } catch (e) { out = { error: String(e.message || e) }; }
-      trace.push({ tool: fc.name, input: fc.args, summary: summarize(out) });
+    // same as claudeLoop: tools of one step in parallel, each capped at 12 s
+    const outs = await Promise.all(calls.map(async ({ functionCall: fc }) => {
+      const t1 = Date.now();
+      const out = await withTimeout(runTool(fc.name, fc.args || {}), 12000).catch((e) => ({ error: String(e.message || e) }));
+      return { out, ms: Date.now() - t1 };
+    }));
+    const responses = calls.map(({ functionCall: fc }, i) => {
+      const { out, ms } = outs[i];
+      console.log("tool", fc.name, ms, "ms");
+      trace.push({ tool: fc.name, input: fc.args, ms, summary: summarize(out) });
       const str = JSON.stringify(out);
-      responses.push({ functionResponse: { name: fc.name, response: str.length > 12000 ? { truncated: str.slice(0, 12000) } : { result: out } } });
-    }
+      return { functionResponse: { name: fc.name, response: str.length > 12000 ? { truncated: str.slice(0, 12000) } : { result: out } } };
+    });
     contents = [...contents, { role: "user", parts: responses }];
   }
   return "Забагато кроків; уточніть запит.";
