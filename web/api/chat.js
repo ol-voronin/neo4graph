@@ -1,6 +1,7 @@
 import { sql, json, query } from "./_db.js";
 import { resolve, dossier, corpus, caseCard, strikes, rhetoricBefore, withTimeout, CAUSE_ANY, CASE_FULL, FOP_RE } from "./_intent.js";
 import { kyivToday } from "./_text.js";
+import { connectMany } from "./_connect.js";
 
 // POST /api/chat {messages:[{role,content}]} -> answer + structured results + graph. Claude Haiku with tools over the database;
 // before the model runs, the server resolves what the question names and gathers the obvious data (one model step saved).
@@ -17,6 +18,7 @@ const SYSTEM = (today) => `Ти — асистент дослідницької 
 - Якщо в повідомленні є «Сервер уже виконав», використай ці результати і не повторюй ті самі виклики.
 - Відповідай мовою користувача, стисло й конкретно: дати, джерела (канал, суд, реєстр), числа, номери справ, посилання. Кожен факт — з джерелом із результатів інструментів. Не вигадуй.
 - Справи й суди: номер справи → get_case; статистика судів → court_stats (сімейні: category_re "сімейн|шлюб|аліме|батьківськ|усиновл"; у кримінальних багато ухвал слідчих суддів, тому частка вироків низька). Категорії ЄДРСР — українські назви ("земел"). «За 25-й рік» = 2025.
+- Питання «як повʼязаний / яке відношення / при чому / звʼязок між» X і Y (і Z) — обовʼязково connect(items: [X, Y, Z]) з назвами як у запиті (номер справи, прізвище, компанія). Відповідь — не перелік ухвал, а пояснення звʼязку: 1) прямі звʼязки — де саме X названий у справі чи поруч з Y (документ, дата, речення, роль: підозрюваний, свідок, адвокат, суддя, директор компанії-учасника); 2) опосередковані — через компанію, людину-посередника, подію чи інше провадження, кожен крок ланцюжка окремо: «X — засновник ТОВ А (ЄДР) → ТОВ А названа в ухвалі від … у справі Y»; 3) чого не знайдено і чому (наприклад, приватних осіб реєстр знеособлює як ОСОБА_n, тексти не завантажені — запропонуй get_case/enqueue). Позначай силу кожного звʼязку (прямий / через посередника / лише збіг прізвища) і не роби висновків про вину чи причетність понад те, що кажуть документи. Деталі самої справи (форми рішень, суди) — лише коротко, як контекст.
 - ФОП: find_fop; збіг за імʼям може бути однофамільцем — кажи це. Не зводь ФОП, суди й борги в одну історію про людину; не роби висновків про вину. Збіг риторики й ударів у часі не доводить причинності.`;
 
 const TOOLS = [
@@ -51,6 +53,8 @@ const TOOLS = [
       category_re: { type: "string", description: "регулярний вираз по назві категорії, напр. 'сімейн|шлюб|аліме' або 'крадіжк'" },
       region: { type: "string", description: "фрагмент назви області, напр. 'Харків'" },
       form: { type: "string", description: "Вирок | Рішення | Ухвала | Постанова | Судовий наказ" } } } },
+  { name: "connect", description: "Як повʼязані 2–4 обʼєкти (особа, компанія, справа за номером, ЄДРПОУ): ланцюжки в графі (≤4 кроки, кожен крок з типом звʼязку й доказом), де особу названо в текстах рішень справи (речення з роллю), компанії особи (ЄДР, декларації), що фігурують у справі, посередники (люди, компанії, справи, події в межах двох кроків від обох), пости, витягнуті події й рішення судів, де названо обох; для 3+ — ще спільні сусіди всіх. items — як у запиті: «932/2641/25», «Соляник», «ТОВ Ромашка».",
+    input_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 4 } }, required: ["items"] } },
   { name: "enqueue", description: "Поставити в чергу роботу з реєстрами: kind=case (номер справи), person, org, edrpou, text, web (згадки в інтернеті), category_index (query у форматі 'РІК|фрагмент категорії|форма?' напр. '2025|земел' — індексує всі такі рішення року).",
     input_schema: { type: "object", properties: { query: { type: "string" }, kind: { type: "string", enum: ["case", "person", "org", "edrpou", "text", "web", "category_index", "fop"] } }, required: ["query", "kind"] } },
 ];
@@ -142,6 +146,7 @@ async function runTool(name, a) {
     return { by_year: byYear, by_form: byForm, top_categories: topCat, top_regions: topReg, cases_by_year: cases,
       note: "Справа = номер справи в межах року; median_days_weighted — зважене середнє медіан тривалості між першим і останнім рішенням (наближення). Дані: відкриті дампи ЄДРСР (data.gov.ua), без імен сторін." };
   }
+  if (name === "connect") return connectMany(Array.isArray(a.items) ? a.items : [a.a, a.b, a.c].filter(Boolean));
   if (name === "enqueue") return enqueue((a.query || "").trim(), a.kind);
   return { error: "unknown tool" };
 }
@@ -149,7 +154,7 @@ async function runTool(name, a) {
 // one tool call: 12 s cap, result for the model (without the page-only graph), trace entry for the page
 async function call(name, input, trace) {
   const t1 = Date.now();
-  const out = await withTimeout(runTool(name, input || {}), 12000).catch((e) => ({ error: String(e.message || e) }));
+  const out = await withTimeout(runTool(name, input || {}), name === "connect" ? 22000 : 12000).catch((e) => ({ error: String(e.message || e) }));
   const ms = Date.now() - t1;
   console.log("tool", name, ms, "ms");
   const { _graph, ...forModel } = out && typeof out === "object" ? out : { value: out };
@@ -188,6 +193,11 @@ function toGraph(trace) {
     if (t.tool === "resolve") {
       for (const c of (o.candidates || []).slice(0, 6)) node(c.id, c.type, c.label, c.sub ? { sub: c.sub } : {});
       want(o.best, o.best?.startsWith("place:") ? 3 : 1);
+    }
+    if (t.tool === "connect" && t._graph) {
+      for (const n of t._graph.nodes || []) node(n.id, n.type, n.label, n);
+      for (const e of t._graph.edges || []) edge(e.source, e.target, e.rel, e);
+      want(t._graph.focus, 0);
     }
     if (t.tool === "entity_dossier") {
       const id = o.id, g = t._graph;
@@ -261,7 +271,9 @@ const plural = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; retu
 
 async function direct(text) {
   const c = text.match(CAUSE_ANY);
-  if (c) {
+  // only a bare case number (plus a word or two) is answered without the model; «справа N і як повʼязаний X» needs connect
+  const rest = c ? text.replace(c[0], " ").replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter((w) => w.length > 2 && !/^(справ\p{L}*|дело|дела|розкажи|расскажи|про|що|что|номер|покажи)$/iu.test(w)) : [];
+  if (c && rest.length === 0) {
     const trace = [];
     const out = await call("get_case", { cause_num: c[0] }, trace);
     if (out.error) return null;
