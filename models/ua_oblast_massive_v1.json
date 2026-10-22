@@ -1,0 +1,20 @@
+{
+  "name": "ua_oblast_massive_v1",
+  "role": "candidate",
+  "compare_to": "ua_oblast_massive_base_v1",
+  "panel": "oblast",
+  "target": "ob_massive",
+  "target_doc": "oblast massed-strike day D (Kyiv calendar day): missiles >= 7 or strike drones >= 20 in the oblast (FPV excluded), max over the OVA summary and LLM-extracted strike events (view oblast_daily_gt). Negative only when a complete OVA summary exists or the events extractor read >= ee_min_extracted posts of D; otherwise unknown",
+  "cutoff_hour": 15,
+  "deadline_hour": 24,
+  "deadline": "D 00:00 Europe/Kyiv",
+  "signals": ["l2_ru"],
+  "region_signals": ["thr_geo_ru"],
+  "signals_doc": "l2_ru: share of RU panel posts with rule threat level >= 2 (national, tests 2/3); thr_geo_ru: share of RU panel posts flagged r_threat that name a city/oblast of THIS region (geo_regions(), migration 016). Both over the 24 h window ending 15:00 on D-1",
+  "features_doc": "baseline features + signals (window ending at the cutoff and its 3-day mean)",
+  "shrink": 20,
+  "ee_min_extracted": 100,
+  "C": 1.0,
+  "min_train": 60,
+  "frozen": "2026-10-22"
+}

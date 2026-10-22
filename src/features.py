@@ -101,10 +101,146 @@ def design(df: pd.DataFrame, spec: dict) -> pd.DataFrame:
     return F
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Oblast panel (long format): one row per (region_id, d). Same real-time rule as above, applied per region.
+# Ground truth: view oblast_daily_gt (migration 015). Region-specific rhetoric: geo_regions() (migration 016).
+# ---------------------------------------------------------------------------------------------------------------------
+
+def oblast_gt(conn) -> pd.DataFrame:
+    with conn.cursor() as cur:
+        cur.execute("""SELECT region_id, date, missiles, drones, kab, attacked, complete, ee_reports, alert_n, alert_min
+                       FROM oblast_daily_gt WHERE date >= %s::date - 30""", (PANEL_START,))
+        gt = pd.DataFrame(cur.fetchall(), columns=["region_id", "d", "missiles", "drones", "kab", "attacked", "complete", "ee_reports", "alert_n", "alert_min"])
+        cur.execute("SELECT date, n_extracted FROM extraction_coverage_daily WHERE date >= %s::date - 30", (PANEL_START,))
+        cov = pd.DataFrame(cur.fetchall(), columns=["d", "n_extracted"])
+    for f in (gt, cov):
+        f["d"] = pd.to_datetime(f["d"])
+    return gt, cov
+
+
+def rhetoric_geo(conn, cutoff_hour: int) -> pd.DataFrame:
+    """Per target day D and region: RU panel posts flagged r_threat that name a place in the region (geo_regions()),
+    same 24-hour window as rhetoric(). Empty frame (-> NaN -> no forecast) if migration 016 is not applied."""
+    shift = f"{24 - cutoff_hour} hours"
+    q = f"""
+    SELECT ((m.ts_published AT TIME ZONE 'Europe/Kyiv') + interval '{shift}')::date + 1 AS d, g.region_id, count(*) AS n_thr_geo_ru
+    FROM messages m JOIN sources s ON s.id = m.source_id JOIN rule_labels r ON r.message_id = m.id
+    CROSS JOIN LATERAL unnest(geo_regions(m.text)) AS g(region_id)
+    WHERE m.ts_published >= %(start)s::date - 2 AND s.id = ANY(%(panel)s) AND s.country = 'RU' AND length(m.text) >= 40 AND r.r_threat
+    GROUP BY 1, 2"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(q, {"panel": PANEL, "start": PANEL_START})
+            df = pd.DataFrame(cur.fetchall(), columns=["d", "region_id", "n_thr_geo_ru"])
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        print(f"rhetoric_geo unavailable ({str(e).splitlines()[0][:120]}): region signals will be missing")
+        df = pd.DataFrame(columns=["d", "region_id", "n_thr_geo_ru"])
+    df["d"] = pd.to_datetime(df["d"])
+    return df
+
+
+def label_oblast(gt: pd.DataFrame, cov: pd.DataFrame, ee_min_extracted: int) -> pd.DataFrame:
+    """Targets per (region_id, d). Positive evidence from any source; a NEGATIVE needs a complete OVA summary that day
+    or an events extractor that read >= ee_min_extracted posts of that day. Otherwise NaN (unknown, not zero).
+      ob_massive      owner's rule at oblast level: missiles >= 7 or strike drones >= 20 (FPV excluded)
+      ob_missile_day  missiles > 0 (the Kharkiv candidate target, now per oblast)
+    >>> gt = pd.DataFrame({"region_id": ["a", "a", "b", "b"], "d": pd.to_datetime(["2026-05-01", "2026-05-02"] * 2),
+    ...                    "missiles": [8, 0, None, None], "drones": [0, 3, None, 25], "complete": [True, True, False, False]})
+    >>> cov = pd.DataFrame({"d": pd.to_datetime(["2026-05-01", "2026-05-02"]), "n_extracted": [10, 500]})
+    >>> label_oblast(gt, cov, 100)[["region_id", "ob_massive", "ob_missile_day"]].values.tolist()
+    [['a', 1.0, 1.0], ['a', 0.0, 0.0], ['b', nan, nan], ['b', 1.0, 0.0]]
+    """
+    t = gt.merge(cov, on="d", how="left")
+    mis, dr = t["missiles"].fillna(0), t["drones"].fillna(0)
+    known_neg = t["complete"].fillna(False).astype(bool) | (t["n_extracted"].fillna(0) >= ee_min_extracted)
+    for name, hit in (("ob_massive", (mis >= 7) | (dr >= 20)), ("ob_missile_day", mis > 0)):
+        t[name] = np.where(hit, 1.0, np.where(known_neg, 0.0, np.nan))
+    return t.drop(columns=["n_extracted"])
+
+
+def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.DataFrame, start, end, regions,
+               ee_min_extracted: int = 100) -> pd.DataFrame:
+    """Pure assembly (no DB): regions x days grid with national rhetoric (per d), regional rhetoric (per region, d),
+    ground truth and targets. Rows sorted by (region_id, d) with a fresh RangeIndex."""
+    days = pd.date_range(start, end, freq="D")
+    grid = pd.MultiIndex.from_product([sorted(regions), days], names=["region_id", "d"]).to_frame(index=False)
+    lab = label_oblast(gt, cov, ee_min_extracted) if len(gt) else gt.assign(ob_massive=np.nan, ob_missile_day=np.nan)
+    df = grid.merge(lab, on=["region_id", "d"], how="left").merge(nat, on="d", how="left")
+    df = df.merge(geo, on=["region_id", "d"], how="left")
+    have_geo = df.d.isin(set(geo.d)) if len(geo) else pd.Series(False, index=df.index)
+    # a region with no threat post naming it on a day the query ran has 0, not NaN; days outside the query stay NaN
+    df["n_thr_geo_ru"] = df["n_thr_geo_ru"].where(df["n_thr_geo_ru"].notna() | ~have_geo, 0)
+    if "posts_ru" in df:
+        df["thr_geo_ru"] = df["n_thr_geo_ru"] / df["posts_ru"].where(df["posts_ru"] > 0)
+    return df.sort_values(["region_id", "d"]).reset_index(drop=True)
+
+
+def frame_long(conn, cutoff_hour: int, until=None, regions=None, ee_min_extracted: int = 100) -> pd.DataFrame:
+    from oblasts import PANEL_REGIONS
+    end = pd.Timestamp(until) if until is not None else pd.Timestamp.now(tz="Europe/Kyiv").tz_localize(None).normalize() + pd.Timedelta(days=1)
+    nat = rhetoric(conn, cutoff_hour)
+    gt, cov = oblast_gt(conn)
+    return build_long(nat, rhetoric_geo(conn, cutoff_hour), gt, cov, PANEL_START, end, regions or PANEL_REGIONS, ee_min_extracted)
+
+
+def design_long(df: pd.DataFrame, spec: dict, signal_shift: int = 0) -> pd.DataFrame:
+    """Pooled-model inputs per (region, D), only information available before D's outcome window (see module doc):
+      reg_<slug>   region indicator (region as a feature)
+      base         region base rate: expanding mean of the region's target up to D-2, shrunk toward the all-region
+                   rate with weight spec["shrink"] (pseudo-days), so sparse regions borrow strength
+      y2, y2_m7    own target at D-2 and its 7-day mean (unknown days filled with the base rate, y2_known flags them)
+      <exposure>   e.g. alert_min: log1p of D-2 and 7-day mean (alerts are a threat-presence proxy, never the label)
+      <signal>_1, _m3        national signals, window ending at the cutoff on D-1 (as design())
+      <rsignal>_1, _m3       region signals, same window, per region
+    signal_shift: circularly shift every signal column by this many days (shuffled control; keeps autocorrelation).
+    """
+    y = df[spec["target"]]
+    g = df.groupby("region_id", sort=False)
+    F = pd.DataFrame(index=df.index)
+    for r in sorted(df.region_id.unique()):
+        F["reg_" + r] = (df.region_id == r).astype(float)
+    y2 = g[spec["target"]].shift(2)
+    m = spec.get("shrink", 20)
+    known = y2.notna().astype(float)
+    r_sum = y2.fillna(0).groupby(df.region_id).cumsum()
+    r_n = known.groupby(df.region_id).cumsum()
+    day_sum = y2.fillna(0).groupby(df.d).transform("sum")
+    day_n = known.groupby(df.d).transform("sum")
+    order = df.d.rank(method="dense")
+    tot = pd.DataFrame({"o": order, "s": day_sum, "n": day_n}).drop_duplicates("o").set_index("o").sort_index().cumsum()
+    g_rate = (tot.s / tot.n.where(tot.n > 0)).reindex(order.values).to_numpy()
+    g_rate = np.where(np.isnan(g_rate), 0.5, g_rate)
+    F["base"] = (r_sum + m * g_rate) / (r_n + m)
+    F["y2"] = y2.fillna(F["base"])
+    F["y2_known"] = known
+    F["y2_m7"] = y2.groupby(df.region_id).transform(lambda s: s.rolling(7, min_periods=1).mean()).fillna(F["base"])
+    for e in spec.get("exposure", []):
+        lag = np.log1p(g[e].shift(2))
+        F[e + "_2"] = lag
+        F[e + "_m7"] = lag.groupby(df.region_id).transform(lambda s: s.rolling(7, min_periods=4).mean())
+
+    def shifted(col):
+        s = df[col]
+        if not signal_shift:
+            return s
+        days = np.sort(df.d.unique())
+        mp = dict(zip(days, np.roll(days, signal_shift)))
+        src = df.set_index(["region_id", "d"])[col]
+        return pd.Series(src.reindex(list(zip(df.region_id, df.d.map(mp)))).to_numpy(), index=df.index)
+
+    for s in spec.get("signals", []) + spec.get("region_signals", []):
+        v = shifted(s)
+        F[s + "_1"] = v
+        F[s + "_m3"] = v.groupby(df.region_id).transform(lambda x: x.rolling(3, min_periods=2).mean())
+    return F
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--cutoff", type=int, default=24)
     ap.add_argument("--tail", type=int, default=10)
+    ap.add_argument("--long", action="store_true", help="oblast panel (needs migrations 015/016)")
     a = ap.parse_args()
     with connect() as c:
-        print(frame(c, a.cutoff).tail(a.tail).to_string())
+        print((frame_long(c, a.cutoff) if a.long else frame(c, a.cutoff)).tail(a.tail).to_string())

@@ -150,6 +150,7 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
 .pg .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.pg .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
 .pg .card b{font-size:22px;display:block}.pg table{border-collapse:collapse;width:100%;background:var(--panel);font-size:13px}.pg th,.pg td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
 .pg .bar{display:inline-block;height:8px;background:var(--accent);border-radius:4px;vertical-align:middle;margin-right:6px}.pg .wrap{overflow-x:auto}
+.pg .regs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}.pg .reg{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}.pg .reg .bar{opacity:.85}.pg .reg .bar.b{background:var(--muted)}
 @media (max-width:760px){body{grid-template-columns:1fr}.side{height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px;gap:4px}
   .side .brand{padding:4px 8px 4px 0}.side .brand small,.side .navnote{display:none}.rh .row{grid-template-columns:1fr 60px 90px;}.rh .row .hide-m{display:none}}
 </style>
@@ -218,7 +219,9 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
   <h2 style="margin:4px 0">Проспективна перевірка «риторика → удари»</h2>
   <p class="meta" style="font-family:var(--font);font-size:13px;max-width:760px">Дослідження, <b>не попередження про загрозу</b>. Кожен прогноз записується до початку дня, на який він зроблений, і більше не змінюється. Через 2–3 місяці стане видно, чи кандидатні сигнали стабільно кращі за базову лінію.</p>
   <div class="cards" id="pgcards"><p class="meta">Завантаження…</p></div>
-  <div class="wrap" style="margin-top:12px"><table><thead><tr><th>День</th><th>Модель</th><th>Ймовірність</th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div>
+  <h3 class="meta" style="margin:14px 0 6px" id="pgregh">Масований удар по областях</h3>
+  <div class="regs" id="pgregs"></div>
+  <div class="wrap" style="margin-top:12px"><table><thead><tr><th>День</th><th>Область</th><th>Модель</th><th>Ймовірність</th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div>
 </section>
 <section class="chat" id="chat" hidden>
   <div class="meta">Запит словами: модель перекладає його у пошук по базі та реєстрах і відповідає з конкретикою.</div>
@@ -591,14 +594,23 @@ document.querySelectorAll('#rhet .seg button').forEach(b=>b.onclick=()=>{rhGroup
 document.getElementById('rhq').onkeydown=e=>{if(e.key==='Enter'){if(e.target.value.trim()&&rhGroup!=='actor'){rhGroup='actor';document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.g==='actor'))}loadRhet()}};
 // forecast (was /prognoz.html)
 const PM={nat_massive_v1:{t:'Масований удар по Україні',k:'кандидат: згадки Віткоффа/Кушнера',vs:'nat_massive_base_v1'},nat_massive_base_v1:{t:'Масований удар по Україні',k:'база: власна історія'},
-  kh_missile_v1:{t:'Ракетний день, Харківщина',k:'кандидат: погрози в RU-каналах',vs:'kh_missile_base_v1'},kh_missile_base_v1:{t:'Ракетний день, Харківщина',k:'база: власна історія'}};
+  kh_missile_v1:{t:'Ракетний день, Харківщина',k:'кандидат: погрози в RU-каналах',vs:'kh_missile_base_v1'},kh_missile_base_v1:{t:'Ракетний день, Харківщина',k:'база: власна історія'},
+  ua_oblast_massive_v1:{t:'Масований удар, по областях',k:'кандидат: погрози RU + згадки області',vs:'ua_oblast_massive_base_v1'},ua_oblast_massive_base_v1:{t:'Масований удар, по областях',k:'база: історія області'}};
+const RN={cherkaska:'Черкаська',chernihivska:'Чернігівська',chernivetska:'Чернівецька',dnipropetrovska:'Дніпропетровська',donetska:'Донецька','ivano-frankivska':'Івано-Франківська',kharkivska:'Харківська',khersonska:'Херсонська',khmelnytska:'Хмельницька',kirovohradska:'Кіровоградська','kyiv-city':'м. Київ',kyivska:'Київська',luhanska:'Луганська',lvivska:'Львівська',mykolaivska:'Миколаївська',odeska:'Одеська',poltavska:'Полтавська',rivnenska:'Рівненська',sumska:'Сумська',ternopilska:'Тернопільська',vinnytska:'Вінницька',volynska:'Волинська',zakarpatska:'Закарпатська',zaporizka:'Запорізька',zhytomyrska:'Житомирська',ukraine:'Україна'};
+const rn=r=>RN[r]||r||'Україна';
 function aucOf(y,p){const P=[],N=[];y.forEach((v,i)=>(v?P:N).push(p[i]));if(!P.length||!N.length)return null;let s=0;for(const a of P)for(const b of N)s+=a>b?1:a===b?.5:0;return s/(P.length*N.length)}
 const f3=(x,d=3)=>x==null?'—':x.toFixed(d);
-async function loadPG(){try{const {rows=[]}=await (await fetch('/api/predictions')).json();const by={};rows.filter(r=>r.outcome!=null).forEach(r=>(by[r.model]??=new Map()).set(r.d,r));
+async function loadPG(){try{const {rows=[]}=await (await fetch('/api/predictions')).json();const by={},key=r=>r.d+'|'+(r.region||'');rows.filter(r=>r.outcome!=null).forEach(r=>(by[r.model]??=new Map()).set(key(r),r));
   document.getElementById('pgcards').innerHTML=Object.entries(PM).filter(([,v])=>v.vs).map(([k,v])=>{const a=by[k]||new Map(),b=by[v.vs]||new Map(),days=[...a.keys()].filter(d=>b.has(d));const y=days.map(d=>a.get(d).outcome);const A=aucOf(y,days.map(d=>a.get(d).p)),B=aucOf(y,days.map(d=>b.get(d).p));
-    return `<div class="card"><div class="meta">${esc(v.t)}</div><b>${A!=null&&B!=null?(A-B>=0?'+':'')+f3(A-B):'—'}</b><div class="meta">різниця AUC кандидат − база · оцінених днів ${days.length}, з подією ${y.filter(Boolean).length}</div></div>`}).join('');
-  document.getElementById('pgrows').innerHTML=rows.slice(0,120).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(PM[r.model]?.t||r.model)}<div class="meta">${esc(PM[r.model]?.k||'')}</div></td><td><span class="bar" style="width:${Math.round(r.p*80)}px"></span>${f3(r.p,2)}</td>
-    <td>${r.outcome==null?'<span class="meta">ще невідомо</span>':r.outcome?'<b>так</b>':'<span class="meta">ні</span>'}</td><td class="meta">${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}</td></tr>`).join('')||'<tr><td colspan="5" class="meta">Ще немає прогнозів.</td></tr>';
+    return `<div class="card"><div class="meta">${esc(v.t)}</div><b>${A!=null&&B!=null?(A-B>=0?'+':'')+f3(A-B):'—'}</b><div class="meta">різниця AUC кандидат − база · оцінених ${k.startsWith('ua_oblast')?'область-днів':'днів'} ${days.length}, з подією ${y.filter(Boolean).length}</div></div>`}).join('');
+  // per-oblast list: the latest day of the pooled model, candidate bar next to the baseline bar, highest first
+  const C='ua_oblast_massive_v1',Bm=PM[C].vs,last=rows.filter(r=>r.model===C||r.model===Bm).reduce((m,r)=>r.d>m?r.d:m,'');
+  const cur=rows.filter(r=>r.d===last),reg={};cur.forEach(r=>{(reg[r.region]??={})[r.model===C?'c':'b']=r});
+  document.getElementById('pgregh').textContent=last?`Масований удар по областях (≥7 ракет або ≥20 ударних дронів), ${last}`:'Масований удар по областях: прогнозів ще немає';
+  document.getElementById('pgregs').innerHTML=Object.entries(reg).sort((x,y)=>((y[1].c||y[1].b).p)-((x[1].c||x[1].b).p)).map(([r,v])=>`<div class="reg"><b style="font-size:13px;display:inline">${esc(rn(r))}</b>
+    <div title="кандидат"><span class="bar" style="width:${Math.round((v.c?.p||0)*90)}px"></span>${f3(v.c?.p,2)}</div><div class="meta" title="база"><span class="bar b" style="width:${Math.round((v.b?.p||0)*90)}px"></span>${f3(v.b?.p,2)} база${v.c?.outcome!=null?` · сталося: ${v.c.outcome?'так':'ні'}`:''}</div></div>`).join('');
+  document.getElementById('pgrows').innerHTML=rows.slice(0,150).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(rn(r.region))}</td><td>${esc(PM[r.model]?.t||r.model)}<div class="meta">${esc(PM[r.model]?.k||'')}</div></td><td><span class="bar" style="width:${Math.round(r.p*80)}px"></span>${f3(r.p,2)}</td>
+    <td>${r.outcome==null?'<span class="meta">ще невідомо</span>':r.outcome?'<b>так</b>':'<span class="meta">ні</span>'}</td><td class="meta">${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}</td></tr>`).join('')||'<tr><td colspan="6" class="meta">Ще немає прогнозів.</td></tr>';
 }catch(e){document.getElementById('pgcards').innerHTML='<p class="meta">Помилка: '+esc(e.message)+'</p>'}}
 // first view: ?view=, or the graph when the URL already points at a graph object, otherwise home
 {const v=new URL(location.href).searchParams.get('view');show(v||(location.hash.length>1?'graph':'home'),false)}
