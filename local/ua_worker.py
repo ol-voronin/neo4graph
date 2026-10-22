@@ -350,7 +350,7 @@ def decl_items(doc, query):
             own = owner_of(it)
             if step in ("step_3", "step_4"):
                 area = _v(it.get("totalArea"))
-                city = _v(it.get("city")) or _v(it.get("ua_cityName"))
+                city = next((c for c in (_v(it.get("city")), _v(it.get("ua_cityName"))) if c and not re.fullmatch(r"[\d.\s]+", c)), "")  # not path codes
                 add(step, it, " ".join(x for x in (ot or "Нерухомість", f"{area} м²" if area else "", city) if x), owner=own, region=_region(it),
                     value=_num(it.get("costDate") or it.get("cost_date_assessment") or it.get("costAssessment")), since=_v(it.get("owningDate")))
             elif step == "step_6":
