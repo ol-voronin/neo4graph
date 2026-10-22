@@ -5,7 +5,7 @@ summaries, alerts, Air Force waves, RU MoD claims), ask the model for a verdict,
 Modes (pick one):
   (default)  forecasts / threats / promises whose horizon has passed
   --facts    claims of fact and denials, window -3..+5 days around the statement
-  --retry    'unresolvable' ones checked < 3 times, last check > 7 days ago: news follow-ups may exist now (window +30 days)
+  --retry    'unresolvable' ones checked < 3 times, last check > 7 days ago (self-confirmed ones at once): news follow-ups may exist now (window +30 days)
   --redo     re-check already resolved ones (oldest check first)
 
   python src/resolve_statements.py [--limit 40] [--provider gemini|anthropic] [--facts|--retry|--redo] [--dry-run]
@@ -101,7 +101,7 @@ def due(cur, mode, limit, exclude=()):
     elif mode == "retry":
         cond = "AND n_checks < 3 " if nc else ""
         cur.execute(f"SELECT {COLS} FROM statements WHERE status = 'unresolvable' AND id <> ALL(%s) {cond}"
-                    "AND resolved_at < now() - interval '7 days' AND ts_published > now() - interval '180 days' "
+                    "AND (resolved_at < now() - interval '7 days' OR resolver_note LIKE 'лише джерело мовця:%%') AND ts_published > now() - interval '180 days' "
                     f"AND (resolvable OR stype IN ('claim_fact','denial')) ORDER BY {tf}resolved_at LIMIT %s", (ex, limit))
     elif mode == "redo":
         cur.execute(f"SELECT {COLS} FROM statements WHERE status <> 'pending' AND id <> ALL(%s) ORDER BY resolved_at NULLS FIRST LIMIT %s", (ex, limit))

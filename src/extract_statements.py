@@ -24,7 +24,6 @@ PROMPT_VERSION = "st-v2"  # v2: statement topic, prisoner_exchange / ceasefire e
 # officials. Source ids are case-sensitive and must match sources.id (tg:<channel as in channels.json>, rss:<feed>).
 ACTOR_SOURCES = ["tg:MID_Russia", "tg:news_kremlin", "tg:medvedev_telegram", "tg:mod_russia",                   # RU official
                  "tg:V_Zelenskiy_official", "tg:GeneralStaffZSU", "tg:kpszsu",                                    # UA official
-                 "tg:synegubov", "tg:kharkivoda", "tg:kyivoda", "tg:mykolaiv_ova", "tg:vinnytsiaoda",              # regional
                  "tg:sap_gov_ua", "tg:NAZK_gov_ua",                                                                # UA anti-corruption
                  "rss:whitehouse", "rss:state_dept", "rss:uk_mod", "rss:un_news"]                                  # US / UK / UN
 MEDIA_SOURCES = ["tg:SolovievLive", "tg:rian_ru", "tg:tass_agency", "tg:golosameriki",                            # RU state media, VOA
@@ -34,7 +33,10 @@ MEDIA_SOURCES = ["tg:SolovievLive", "tg:rian_ru", "tg:tass_agency", "tg:golosame
                  "rss:dw", "rss:euronews", "rss:aljazeera", "tg:BihusInfo", "tg:fightcorruptor", "tg:fuckcorruption"]
 # Milbloggers only through the topic quota (prisoners, exchanges, ceasefire, mobilisation): too noisy otherwise.
 TOPIC_ONLY_SOURCES = ["tg:rybar", "tg:boris_rozhin", "tg:dva_majors", "tg:RVvoenkor", "tg:sashakots", "tg:voenkorKotenok"]
-SOURCES = ACTOR_SOURCES + MEDIA_SOURCES
+# Regional administrations: official, so every long post qualifies, but not first in line (they filled 288 of 800 slots on
+# 2026-10-22 with local news); they still feed strikes ground truth through extracted events.
+REGIONAL_SOURCES = ["tg:synegubov", "tg:kharkivoda", "tg:kyivoda", "tg:mykolaiv_ova", "tg:vinnytsiaoda"]
+SOURCES = ACTOR_SOURCES + MEDIA_SOURCES + REGIONAL_SOURCES
 TOPIC_SHARE = 0.35  # of each extraction run reserved for topic posts, so the key actors' backlog cannot starve them
 # Media posts are candidates only if they look like statements/actions/strikes or quote a named official (saves tokens).
 MEDIA_RE = (r"(заяви|заявил|заявля|погроз|пригроз|угрож|обіця|пообещ|обещ|попередив|предупред|ультимат|"
