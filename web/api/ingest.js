@@ -2,7 +2,7 @@ import { sql, json } from "./_db.js";
 
 // POST /api/ingest  (header x-ingest-token) — results from the local registry worker (local/ua_worker.py), which runs on a
 // machine with a Ukrainian IP because reyestr.court.gov.ua and the NAZK declarations API are not reachable from the cloud.
-// body: {kind: "decisions"|"hits"|"links"|"queue", rows: [...]} or {kind:"queue", queue_id, status, note}
+// body: {kind: "decisions"|"hits"|"links"|"decl_items"|"queue", rows: [...]} or {kind:"queue", queue_id, status, note}
 export async function ensure() {
   await sql`CREATE TABLE IF NOT EXISTS registry_hits (id bigserial PRIMARY KEY, query text NOT NULL, qkind text, source text NOT NULL, ref text NOT NULL,
             title text, snippet text, url text, payload jsonb, created_at timestamptz DEFAULT now(), UNIQUE (query, source, ref))`;
@@ -46,6 +46,17 @@ export default async function handler(req, res) {
       for (const r of rows) {
         await sql`INSERT INTO analyst_links(src_kind, src_name, dst_kind, dst_name, relation, note) VALUES (${r.src_kind}, ${r.src_name}, ${r.dst_kind}, ${r.dst_name}, ${r.relation}, ${r.note || null})
                   ON CONFLICT (src_kind, src_name, dst_kind, dst_name, relation) DO UPDATE SET note = EXCLUDED.note`;
+        n++;
+      }
+    } else if (kind === "decl_items") {
+      // contents of NAZK declarations (migration 023); a submitted declaration does not change (a correction is a new document)
+      for (const r of rows) {
+        await sql`INSERT INTO decl_items(decl_id, idx, query, declarant, year, decl_type, step, kind, label, owner, rel_name, rel_code, rel_kind, value, currency, since, region, details)
+                  VALUES (${String(r.decl_id)}, ${r.idx}, ${r.query || null}, ${r.declarant}, ${r.year || null}, ${r.decl_type || null}, ${r.step}, ${r.kind}, ${r.label},
+                          ${r.owner || null}, ${r.rel_name || null}, ${r.rel_code || null}, ${r.rel_kind || null}, ${r.value ?? null}, ${r.currency || null}, ${r.since || null},
+                          ${r.region || null}, ${JSON.stringify(r.details || {})})
+                  ON CONFLICT (decl_id, idx) DO UPDATE SET label = EXCLUDED.label, owner = EXCLUDED.owner, rel_name = EXCLUDED.rel_name, rel_code = EXCLUDED.rel_code,
+                          rel_kind = EXCLUDED.rel_kind, value = EXCLUDED.value, currency = EXCLUDED.currency, since = EXCLUDED.since, region = EXCLUDED.region, details = EXCLUDED.details`;
         n++;
       }
     } else if (kind === "heartbeat") {

@@ -1,5 +1,6 @@
 import { gunzipSync } from "node:zlib";
 import { sql } from "./_db.js";
+import { declGraph } from "./_decl.js";
 
 // Full entity graph (persons, orgs, cases, assets, ЄДР records, evidence posts), kept in memory per warm function instance.
 // /api/graph serves slices of it: a light overview and capped neighbourhoods (see graph.js).
@@ -77,7 +78,12 @@ async function loadRows(q, since = null) {
       SELECT DISTINCT ON (w.id) w.id, w.name_u, w.last_name_u, w.first_name_u, w.middle_name_u, w.birth_date::text b, w.category, w.article_crim, w.article,
              w.restraint, w.ovd, w.agency, w.lost_date::text d, x.m
       FROM x JOIN w USING (id) ORDER BY w.id, x.m`.catch((e) => { console.warn("wanted rows:", e.message); return []; });
-  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted };
+  // contents of NAZK declarations fetched by the registry chain (migration 023): assets, companies, income sources, family
+  const decl = await (S ? q`SELECT decl_id, year, declarant, step, kind, label, owner, rel_name, rel_code, rel_kind, value::float value, currency, since, region
+                            FROM decl_items WHERE created_at > ${S}`
+                        : q`SELECT decl_id, year, declarant, step, kind, label, owner, rel_name, rel_code, rel_kind, value::float value, currency, since, region
+                            FROM decl_items`).catch((e) => { console.warn("decl rows:", e.message); return []; });
+  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted, decl };
 }
 
 // ---- assemble rows into a graph; with `base` the rows are merged into an existing graph (its node/edge objects are reused) ----
@@ -225,6 +231,10 @@ export function assemble(R, base = null) {
     if (w.ovd) edge(node("org:" + norm(w.ovd).toLowerCase(), "org", norm(w.ovd), { kind: w.agency }), wid, "searches", null);
     if (w.article) edge(wid, node("article:" + w.article, "article", `ст. ${w.article} КК`), "article", null, { detail: w.article_crim });
   }
+  // declarations' contents: real estate, vehicles, valuables as asset nodes; companies, income sources, lenders, family
+  const D = declGraph(R.decl || []);
+  for (const n of D.nodes) { const { id, type, label, ...attrs } = n; node(id, type, label, attrs); }
+  for (const e of D.edges) edge(e.source, e.target, e.rel, null, { detail: e.detail, src: e.src });
   // analyst-supplied links (the researcher's own knowledge): kept apart from registry facts and labelled as such
   for (const l of R.alinks) {
     const a = node(l.src_kind + ":" + norm(l.src_name).toLowerCase(), l.src_kind, norm(l.src_name));
