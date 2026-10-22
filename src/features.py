@@ -22,6 +22,16 @@ ENVOY_RE = r"(віткоф|уиткоф|уіткоф|witkoff|кушнер|kushne
 IRAN_RE = r"(іран|иран|iran|пакистан|pakistan|ісламабад|исламабад|islamabad)"
 PEACE_RE = r"(переговор|перемир|мирн\w* (угод|план|процес|соглаш)|peace (talks|deal|plan)|ceasefire)"
 PANEL_START = "2026-03-31"
+# Target classes named in threat posts (model ua_oblast_massive2_*): what the threat is about, not where
+TC_RE = {
+    "energy": r"(енерг|энерг|тец|тэц|тес\M|тэс\M|підстанц|подстанц|електростанц|электростанц|енергосистем|энергосистем|укренерго|укрэнерго)",
+    "dc": r"(дата-?центр|датацентр|\mцод|центр\w* обробки даних|центр\w* обработки данных|серверн)",
+    "rail": r"(залізн|железнодор|депо\M|локомотив|укрзалізн|укрзализн|тягов\w* підстанц|тягов\w* подстанц)",
+    "vpk": r"(\mвпк\M|оборонн\w* (підприєм|предприят|завод)|військов\w* завод|военн\w* завод|завод)",
+}
+INFRA_RE = "(" + "|".join(TC_RE[k][1:-1] for k in ("energy", "dc", "rail")) + ")"
+# Oblasts where the absence of an air-raid alert says nothing (occupied: alerts do not sound there)
+NO_ALERT_NEG = {"luhanska", "crimea"}
 
 
 def connect():
@@ -50,10 +60,15 @@ def rhetoric(conn, cutoff_hour: int) -> pd.DataFrame:
       avg((rule_threat_level >= 2)::int) FILTER (WHERE panel AND country = 'UA')::float AS l2_ua,
       count(*) FILTER (WHERE x ~ %(envoy)s) AS dip,
       count(*) FILTER (WHERE x ~ %(envoy)s AND x !~ %(iran)s) AS dip_ua,
-      count(*) FILTER (WHERE x ~ %(peace)s) AS peace
+      count(*) FILTER (WHERE x ~ %(peace)s) AS peace,
+      avg((r_threat AND x ~ %(tc_energy)s)::int) FILTER (WHERE panel AND country = 'RU')::float AS tc_energy_ru,
+      avg((r_threat AND x ~ %(tc_dc)s)::int) FILTER (WHERE panel AND country = 'RU')::float AS tc_dc_ru,
+      avg((r_threat AND x ~ %(tc_rail)s)::int) FILTER (WHERE panel AND country = 'RU')::float AS tc_rail_ru,
+      avg((r_threat AND x ~ %(tc_vpk)s)::int) FILTER (WHERE panel AND country = 'RU')::float AS tc_vpk_ru
     FROM m GROUP BY d ORDER BY d"""
     with conn.cursor() as cur:
-        cur.execute(q, {"panel": PANEL, "start": PANEL_START, "envoy": ENVOY_RE, "iran": IRAN_RE, "peace": PEACE_RE})
+        cur.execute(q, {"panel": PANEL, "start": PANEL_START, "envoy": ENVOY_RE, "iran": IRAN_RE, "peace": PEACE_RE,
+                        **{"tc_" + k: v for k, v in TC_RE.items()}})
         cols = [c.name for c in cur.description]
         df = pd.DataFrame(cur.fetchall(), columns=cols)
     df["d"] = pd.to_datetime(df["d"])
@@ -111,8 +126,12 @@ def oblast_gt(conn) -> pd.DataFrame:
         cur.execute("""SELECT region_id, date, missiles, drones, kab, attacked, complete, ee_reports, alert_n, alert_min
                        FROM oblast_daily_gt WHERE date >= %s::date - 30""", (PANEL_START,))
         gt = pd.DataFrame(cur.fetchall(), columns=["region_id", "d", "missiles", "drones", "kab", "attacked", "complete", "ee_reports", "alert_n", "alert_min"])
-        cur.execute("SELECT date, n_extracted FROM extraction_coverage_daily WHERE date >= %s::date - 30", (PANEL_START,))
-        cov = pd.DataFrame(cur.fetchall(), columns=["d", "n_extracted"])
+        # n_alert_regions: oblasts with an air-raid alert that day; >= 3 means the alert feed was alive (a day with no
+        # rows at all is a data gap, not a quiet day) -- used for the honest negatives of ob_massive2
+        cur.execute("""SELECT coalesce(e.date, a.date), e.n_extracted, a.n FROM (SELECT date, n_extracted FROM extraction_coverage_daily
+                       WHERE date >= %s::date - 30) e FULL JOIN (SELECT date, count(*)::int n FROM oblast_alerts_daily WHERE date >= %s::date - 30
+                       GROUP BY 1) a ON a.date = e.date""", (PANEL_START, PANEL_START))
+        cov = pd.DataFrame(cur.fetchall(), columns=["d", "n_extracted", "n_alert_regions"])
     for f in (gt, cov):
         f["d"] = pd.to_datetime(f["d"])
     return gt, cov
@@ -123,19 +142,20 @@ def rhetoric_geo(conn, cutoff_hour: int) -> pd.DataFrame:
     same 24-hour window as rhetoric(). Empty frame (-> NaN -> no forecast) if migration 016 is not applied."""
     shift = f"{24 - cutoff_hour} hours"
     q = f"""
-    SELECT ((m.ts_published AT TIME ZONE 'Europe/Kyiv') + interval '{shift}')::date + 1 AS d, g.region_id, count(*) AS n_thr_geo_ru
+    SELECT ((m.ts_published AT TIME ZONE 'Europe/Kyiv') + interval '{shift}')::date + 1 AS d, g.region_id, count(*) AS n_thr_geo_ru,
+           count(*) FILTER (WHERE lower(m.text) ~ %(infra)s) AS n_tcg_ru
     FROM messages m JOIN sources s ON s.id = m.source_id JOIN rule_labels r ON r.message_id = m.id
     CROSS JOIN LATERAL unnest(geo_regions(m.text)) AS g(region_id)
     WHERE m.ts_published >= %(start)s::date - 2 AND s.id = ANY(%(panel)s) AND s.country = 'RU' AND length(m.text) >= 40 AND r.r_threat
     GROUP BY 1, 2"""
     try:
         with conn.cursor() as cur:
-            cur.execute(q, {"panel": PANEL, "start": PANEL_START})
-            df = pd.DataFrame(cur.fetchall(), columns=["d", "region_id", "n_thr_geo_ru"])
+            cur.execute(q, {"panel": PANEL, "start": PANEL_START, "infra": INFRA_RE})
+            df = pd.DataFrame(cur.fetchall(), columns=["d", "region_id", "n_thr_geo_ru", "n_tcg_ru"])
     except Exception as e:  # noqa: BLE001
         conn.rollback()
         print(f"rhetoric_geo unavailable ({str(e).splitlines()[0][:120]}): region signals will be missing")
-        df = pd.DataFrame(columns=["d", "region_id", "n_thr_geo_ru"])
+        df = pd.DataFrame(columns=["d", "region_id", "n_thr_geo_ru", "n_tcg_ru"])
     df["d"] = pd.to_datetime(df["d"])
     return df
 
@@ -156,7 +176,32 @@ def label_oblast(gt: pd.DataFrame, cov: pd.DataFrame, ee_min_extracted: int) -> 
     known_neg = t["complete"].fillna(False).astype(bool) | (t["n_extracted"].fillna(0) >= ee_min_extracted)
     for name, hit in (("ob_massive", (mis >= 7) | (dr >= 20)), ("ob_missile_day", mis > 0)):
         t[name] = np.where(hit, 1.0, np.where(known_neg, 0.0, np.nan))
-    return t.drop(columns=["n_extracted"])
+    return t.drop(columns=[c for c in ("n_extracted", "n_alert_regions") if c in t])
+
+
+def label_oblast2(df: pd.DataFrame, cov: pd.DataFrame) -> pd.DataFrame:
+    """ob_massive2 on the regions x days grid (model ua_oblast_massive2_*): same positive rule as ob_massive, honest
+    negatives. A day is a known NEGATIVE for an oblast when a complete OVA summary says so, or when the oblast had no
+    oblast-level air-raid alert that Kyiv day while the alert feed was alive (>= 3 oblasts alerted that day): a massed
+    strike (>= 7 missiles or >= 20 strike drones) without an alert did not occur outside occupied oblasts (checked on
+    2026-03-31..10-21: no positive without an alert except Luhansk, where alerts do not sound). The LLM extractor's
+    reading volume no longer makes negatives (it says nothing about a given oblast). Otherwise NaN (unknown).
+    >>> g = pd.DataFrame({"region_id": ["a", "a", "a", "luhanska"], "d": pd.to_datetime(["2026-05-01", "2026-05-02", "2026-05-03", "2026-05-02"]),
+    ...                   "missiles": [8, None, None, None], "drones": [0, None, None, None], "complete": [False, None, None, None],
+    ...                   "alert_n": [3, None, 2, None]})
+    >>> cov = pd.DataFrame({"d": pd.to_datetime(["2026-05-01", "2026-05-02", "2026-05-03"]), "n_alert_regions": [10, 9, 1]})
+    >>> label_oblast2(g, cov)["ob_massive2"].tolist()
+    [1.0, 0.0, nan, nan]
+    """
+    alive = (cov.set_index("d")["n_alert_regions"].fillna(0) >= 3) if "n_alert_regions" in cov else pd.Series(dtype=bool)
+    live = df["d"].map(alive).eq(True)
+    mis, dr = df["missiles"].fillna(0), df["drones"].fillna(0)
+    hit = (mis >= 7) | (dr >= 20)
+    no_alert = df["alert_n"].isna() if "alert_n" in df else pd.Series(False, index=df.index)
+    neg = df["complete"].fillna(False).astype(bool) | (live & no_alert & ~df["region_id"].isin(NO_ALERT_NEG))
+    df = df.copy()
+    df["ob_massive2"] = np.where(hit, 1.0, np.where(neg, 0.0, np.nan))
+    return df
 
 
 def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.DataFrame, start, end, regions,
@@ -167,12 +212,17 @@ def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.D
     grid = pd.MultiIndex.from_product([sorted(regions), days], names=["region_id", "d"]).to_frame(index=False)
     lab = label_oblast(gt, cov, ee_min_extracted) if len(gt) else gt.assign(ob_massive=np.nan, ob_missile_day=np.nan)
     df = grid.merge(lab, on=["region_id", "d"], how="left").merge(nat, on="d", how="left")
+    df = label_oblast2(df, cov)
     df = df.merge(geo, on=["region_id", "d"], how="left")
     have_geo = df.d.isin(set(geo.d)) if len(geo) else pd.Series(False, index=df.index)
     # a region with no threat post naming it on a day the query ran has 0, not NaN; days outside the query stay NaN
-    df["n_thr_geo_ru"] = df["n_thr_geo_ru"].where(df["n_thr_geo_ru"].notna() | ~have_geo, 0)
+    for c in ("n_thr_geo_ru", "n_tcg_ru"):
+        if c not in df:
+            df[c] = np.nan
+        df[c] = df[c].where(df[c].notna() | ~have_geo, 0)
     if "posts_ru" in df:
         df["thr_geo_ru"] = df["n_thr_geo_ru"] / df["posts_ru"].where(df["posts_ru"] > 0)
+        df["tcg_ru"] = df["n_tcg_ru"] / df["posts_ru"].where(df["posts_ru"] > 0)
     return df.sort_values(["region_id", "d"]).reset_index(drop=True)
 
 
