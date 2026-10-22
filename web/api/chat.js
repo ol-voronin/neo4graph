@@ -228,7 +228,9 @@ async function claudeLoop(messages, key, trace) {
     const t = Date.now();
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST", signal: AbortSignal.timeout(Math.max(5000, 45000 - (t - t0))),
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01",
+        // keys not scoped to a workspace must name one
+        ...(process.env.ANTHROPIC_WORKSPACE_ID ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID } : {}) },
       body: JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 4000, system: SYSTEM, tools: TOOLS, messages, output_config: { effort: "low" } }),
     });
     const data = await r.json();
