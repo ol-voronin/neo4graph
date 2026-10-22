@@ -1,7 +1,12 @@
 import { sql, json } from "./_db.js";
 import { lookup } from "./_lake.js";
+import { peopleOf } from "./registry.js";
+import { expand } from "./_expand.js";
+import { postMentions, webFound } from "./_mentions.js";
 
 // GET /api/node?id=<graph node id>&q=<name to highlight>
+// GET /api/node?id=<id>&expand=1&label=<name>[&judge=1] -> an on-the-fly neighbourhood for an object not in the graph yet
+//     (registry hit, ФОП, person, org, topic:<words>), in /api/graph?around= format plus `posts` (see _expand.js)
 // Details for the selected object, on demand: full registry records, decision text fragments, counts across sources,
 // and a dated timeline, so the side panel can say what the thing is and where it came from.
 const sentencesWith = (text, needles, max = 6) => {
@@ -25,6 +30,13 @@ export default async function handler(req, res) {
   const i = id.indexOf(":");
   const kind = id.slice(0, i), key = id.slice(i + 1);
   try {
+    if (url.searchParams.get("expand")) return json(res, 200, await expand(id, url.searchParams.get("label") || "", { judge: url.searchParams.get("judge") === "1" }));
+    if (kind === "topic") {
+      const [posts, web] = await Promise.all([postMentions(key, { limit: 30, ms: 3000 }), webFound(key).catch(() => ({ items: [] }))]);
+      return json(res, 200, { kind, posts, web: web.items,
+        explain: posts.total ? `Згадки «${key}» у постах: ${posts.total}${posts.capped ? "+" : ""}${posts.all && posts.all !== posts.total ? ` (усі слова разом — у ${posts.all})` : ""}. Нижче — найновіші; на графі тема повʼязана з каналами та обʼєктами, які ці пости вже згадують.`
+          : posts.skipped || `У постах «${key}» не згадується.` });
+    }
     if (kind === "decision") {
       const r = (await sql`SELECT doc_id, cause_num, court, judgment_form, justice_kind, category, adjudication_date, receipt_date, date_publ, judge, doc_url, status, year,
                            length(text) AS text_len, left(text, 1200) AS head, text FROM court_decisions WHERE doc_id = ${key}`)[0];
@@ -44,13 +56,15 @@ export default async function handler(req, res) {
       if (!r) {  // not in the graph yet: the card from the lake's registry index (found via /api/registry)
         const hit = /^\d{8}$/.test(key) ? (await lookup("ids", key, { exact: true }).catch(() => ({ rows: [] }))).rows[0] : null;
         if (!hit) return json(res, 404, { error: "no such record" });
-        return json(res, 200, { kind, record: { edrpou: hit.code, name: hit.full_name || hit.name, short_name: hit.name, stan: hit.stan, registration: hit.since,
+        const people = await peopleOf(key).catch(() => []);
+        const pick = (role) => people.filter((p) => p.role === role).map((p) => p.detail || p.name);
+        return json(res, 200, { kind, record: { founders: pick("founder"), beneficiaries: pick("beneficiary"), signers: pick("signer"), edrpou: hit.code, name: hit.full_name || hit.name, short_name: hit.name, stan: hit.stan, registration: hit.since,
           region: hit.region, address: hit.address, contracts_won: hit.n_won, contracts_placed: hit.n_bought, debts: hit.debts, src: hit.src }, in_graph: false,
           explain: `Запис ЄДР ${hit.code}: ${hit.full_name || hit.name}${hit.stan ? " · стан: " + hit.stan : ""}${hit.since ? " · з " + hit.since : ""}.` +
             (hit.address ? ` Адреса за даними ProZorro: ${hit.address}.` : "") + (hit.n_won || hit.n_bought ? ` Договорів у ProZorro: постачальник ${hit.n_won}, замовник ${hit.n_bought}.` : "") +
-            (hit.debts ? ` Виконавчих проваджень у реєстрі боржників: ${hit.debts}.` : "") + " Засновники й підписанти з'являться після додавання компанії в граф." });
+            (hit.debts ? ` Виконавчих проваджень у реєстрі боржників: ${hit.debts}.` : "") + (people.length ? ` Засновників, бенефіціарів і підписантів у відкритому ЄДР: ${people.length}.` : " Засновники й підписанти — у наступній збірці індексу реєстрів.") });
       }
-      const decisions = await sql`SELECT count(*)::int n FROM court_decisions WHERE text ILIKE ${"%" + (r.short_name || r.name) + "%"}`.catch(() => [{ n: null }]);
+      const decisions = await sql`SELECT count(*)::int n FROM court_decisions WHERE text IS NOT NULL AND text ILIKE ${"%" + (r.short_name || r.name) + "%"}`.catch(() => [{ n: null }]);
       return json(res, 200, { kind, record: r, decisions_mentioning: decisions[0].n,
         explain: `Запис ЄДР ${r.edrpou}: ${r.name}${r.stan ? " · стан: " + r.stan : ""}. Засновників: ${(r.founders || []).length}, підписантів: ${(r.signers || []).length}, бенефіціарів: ${(r.beneficiaries || []).length}.` +
           (r.matched_queries?.length ? ` Знайдено за запитами: ${r.matched_queries.map((x) => "«" + x.replace(/^person:/, "") + "»").join(", ")}.` : "") });
@@ -87,7 +101,7 @@ export default async function handler(req, res) {
         sql`SELECT edrpou, short_name, stan FROM edr_orgs WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(founders) f WHERE lower(f) LIKE ${like})
              OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(signers) f WHERE lower(f) LIKE ${like}) LIMIT 30`.catch(() => []),
         sql`SELECT count(*)::int n, min(mm.ts_published)::date d0, max(mm.ts_published)::date d1 FROM query_hits h JOIN messages mm ON mm.id = h.message_id WHERE lower(h.query) = ${name}`.catch(() => [{ n: 0 }]),
-        sql`SELECT doc_id, cause_num, judgment_form f, adjudication_date d, court FROM court_decisions WHERE text ILIKE ${like} ORDER BY adjudication_date DESC LIMIT 15`.catch(() => []),
+        sql`SELECT doc_id, cause_num, judgment_form f, adjudication_date d, court FROM court_decisions WHERE text IS NOT NULL AND text ILIKE ${like} ORDER BY adjudication_date DESC LIMIT 15`.catch(() => []),
       ]);
       const parts = [];
       if (roles.length) parts.push("ролі у справах за текстами: " + roles.map((r) => `${r.role} ×${r.n}`).join(", "));

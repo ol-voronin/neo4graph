@@ -24,10 +24,15 @@ h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
 .sbar{display:flex;gap:6px}.sbar select{flex:none;max-width:42%;font-size:13px;padding:0 6px;border-radius:8px}
 .search input{flex:1;min-width:0;width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
 .search input:focus{outline:2px solid var(--accent);outline-offset:1px}
-.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:8px;max-height:300px;overflow:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:8px;max-height:min(70vh,640px);overflow:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.12)}
 .sugg button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;padding:8px 10px;border:0;background:none;color:var(--fg);font:inherit;cursor:pointer}
-.sugg button:hover,.sugg button:focus{background:var(--accent-soft);outline:none}
+.sugg button:hover,.sugg button:focus{background:var(--accent-soft);outline:none}.sugg button:focus-visible{box-shadow:inset 3px 0 0 var(--accent)}
 .dot{width:9px;height:9px;border-radius:50%;flex:none}
+/* grouped search results: one section per source, a footer with web / registry search */
+.sugg .sg+.sg{border-top:1px solid var(--line)}.sugg .gh{display:flex;justify-content:space-between;gap:8px;padding:7px 10px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);position:sticky;top:0;background:var(--panel);z-index:1}
+.sugg button.si{align-items:flex-start}.sugg button.si .dot{margin-top:5px}.sugg .si .sl{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.sugg .si .sm{display:block;margin-top:1px}.sugg .sp .sl{font-size:13px}
+.sugg button.lnk{color:var(--accent);font-size:12px;padding:4px 10px 6px 27px}.sugg .sload{display:flex;gap:6px;align-items:center;padding:4px 10px 8px}
+.sugg .sfoot{padding:8px 10px 10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px}.sugg .sfoot .chip{width:auto;display:inline-flex;border:1px solid var(--line);padding:4px 12px;border-radius:999px}.sugg .sfoot .chip:disabled{opacity:.6;cursor:default}
 .meta{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.02em}
 .filters{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
 .group{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
@@ -254,9 +259,9 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 (async function(){
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 const G=window.__API__?await (await fetch('/api/graph')).json():JSON.parse(document.getElementById('data').textContent);if(G.error){document.getElementById('panel').innerHTML='<p class="empty">База недоступна: '+esc(G.error)+'</p>';return}
-const TYPES={person:'Особи',org:'Організації',case:'Справи',asset:'Активи',post:'Пости',registry:'ЄДР',decision:'Рішення судів',court:'Суди',web:'Згадки в інтернеті',declaration:'Декларації НАЗК',place:'Місця',channel:'Канали'};
-const COLORS={person:'var(--c-person)',org:'var(--c-org)',case:'var(--c-case)',asset:'var(--c-asset)',post:'var(--c-post)',registry:'var(--c-registry)',decision:'var(--c-decision)',court:'var(--c-court)',web:'var(--c-web)',declaration:'var(--c-registry)',place:'var(--c-place)',channel:'var(--c-channel)'};
-const REL={affiliated:'пов\'язаний з',reports:'повідомляє про',suspect:'підозрюваний',defendant:'обвинувачений',convicted:'засуджений',acquitted:'виправданий',official_commenting:'коментує як посадовець',investigator:'слідчий',prosecutor:'прокурор',judge:'суддя',lawyer:'адвокат',journalist:'журналіст',politician_mentioned:'згаданий політик',owner:'власник',other:'інше',involved:'фігурує',seized_or_named:'актив у справі',owns_or_linked:'актив пов\'язано з особою',registry_record:'запис у ЄДР',decision_of:'рішення у справі',judge_of:'суддя',heard_in:'розглядалось у',mentioned_in:'згадується в',web_mention:'згадка в інтернеті',court_register_mention:'згадка в реєстрі рішень',named_by_media:'названий у ЗМІ у звʼязку зі справою',accountant:'бухгалтер',notary:'нотаріус',expert:'експерт',director:'керівник',witness:'свідок',victim:'потерпілий',founder:'засновник',beneficiary:'бенефіціар',signer:'підписант / керівник',investigation:'розслідує',prosecution:'обвинувачення',court:'суд',victim:'потерпілий',declaration:'декларація НАЗК',fop_record:'запис ФОП у ЄДР',debtor_record:'запис у реєстрі боржників',paid_public_money:'платив з бюджету (spending.gov.ua)',namesake:'збіг імені (однофамілець?)',located_in:'згадує місце',published_in:'опубліковано в каналі',брат:'брат',сестра:'сестра',родич:'родич',партнер:'партнер',колега:'колега'};
+const TYPES={person:'Особи',org:'Організації',case:'Справи',asset:'Активи',post:'Пости',registry:'ЄДР',decision:'Рішення судів',court:'Суди',web:'Згадки в інтернеті',declaration:'Декларації НАЗК',place:'Місця',channel:'Канали',topic:'Тема (згадки в постах)'};
+const COLORS={person:'var(--c-person)',org:'var(--c-org)',case:'var(--c-case)',asset:'var(--c-asset)',post:'var(--c-post)',registry:'var(--c-registry)',decision:'var(--c-decision)',court:'var(--c-court)',web:'var(--c-web)',declaration:'var(--c-registry)',place:'var(--c-place)',channel:'var(--c-channel)',topic:'var(--accent)'};
+const REL={affiliated:'пов\'язаний з',reports:'повідомляє про',suspect:'підозрюваний',defendant:'обвинувачений',convicted:'засуджений',acquitted:'виправданий',official_commenting:'коментує як посадовець',investigator:'слідчий',prosecutor:'прокурор',judge:'суддя',lawyer:'адвокат',journalist:'журналіст',politician_mentioned:'згаданий політик',owner:'власник',other:'інше',involved:'фігурує',seized_or_named:'актив у справі',owns_or_linked:'актив пов\'язано з особою',registry_record:'запис у ЄДР',decision_of:'рішення у справі',judge_of:'суддя',heard_in:'розглядалось у',mentioned_in:'згадується в',web_mention:'згадка в інтернеті',court_register_mention:'згадка в реєстрі рішень',named_by_media:'названий у ЗМІ у звʼязку зі справою',accountant:'бухгалтер',notary:'нотаріус',expert:'експерт',director:'керівник',witness:'свідок',victim:'потерпілий',founder:'засновник',beneficiary:'бенефіціар',signer:'підписант / керівник',investigation:'розслідує',prosecution:'обвинувачення',court:'суд',victim:'потерпілий',declaration:'декларація НАЗК',fop_record:'запис ФОП у ЄДР',debtor_record:'запис у реєстрі боржників',paid_public_money:'платив з бюджету (spending.gov.ua)',namesake:'збіг імені (однофамілець?)',located_in:'згадує місце',published_in:'опубліковано в каналі',co_mentioned:'згадується разом',брат:'брат',сестра:'сестра',родич:'родич',партнер:'партнер',колега:'колега'};
 const SRC={'tg:sap_gov_ua':'САП','tg:NAZK_gov_ua':'НАЗК','tg:PressCourt':'Суди','tg:fuckcorruption':'ЦПК','tg:fightcorruptor':'TI Ukraine','tg:BihusInfo':'Bihus.Info','tg:slidstvo_info':'Слідство.Інфо','tg:ukrpravda_news':'УП'};
 const byId=new Map(G.nodes.map(n=>[n.id,n]));
 const CAUSE_RE=/^\d{1,4}\/\d{1,6}\/\d{2}(?:-[\w\/]+)?$/;const CAN_QUEUE=!!window.__API__;let DEC={cases:{},courts:{},scope:''};
@@ -374,27 +379,94 @@ function pollQuery(t,k){clearInterval(pollTimer);let n=0;const tick=async()=>{co
     document.getElementById('sc-note').textContent=it.status==='done'?'Готово — відкриваю результат…':'Хмарна частина впала; показую те, що є.';setTimeout(()=>showQueued(t,k),1200)}
   if(++n>90)clearInterval(pollTimer)};tick();pollTimer=setInterval(tick,20000);}
 let pollTimer=null;function pollCase(t){clearInterval(pollTimer);pollTimer=setInterval(async()=>{const r=await fetchCase(t);if(r.decisions&&r.decisions.length){clearInterval(pollTimer);const cid=mergeCase(t);select(cid);sugg.hidden=true;q.value='Справа '+t;}else if(r.queue&&['done','failed'].includes(r.queue.status)){clearInterval(pollTimer);sugg.innerHTML=`<div style="padding:10px 12px">${r.queue.status==='done'?'Пошук виконано: у реєстрі рішень за цим номером не знайдено.':'Пошук завершився з помилкою; спробуйте пізніше.'}</div>`;sugg.hidden=false;}},60000);}
-let sTimer=null,sCtl=null,sLast=null;
-async function runSearch(t,kind){
+// search over everything (api/search.js): part=main (graph, registries, courts, places, channels) after the 250 ms debounce,
+// part=mentions (the post scan) 350 ms later if the text is still the same; each group renders as soon as its part arrives
+let sTimer=null,sCtl=null,sCtlM=null,sMTimer=null,sLast=null,sOpen=new Set(),webTimer=null;
+const SGROUPS=[['graph','Граф'],['registry','Реєстри'],['courts','Суди'],['mentions','Згадки в постах'],['places','Місця'],['channels','Канали']];
+const SSCOPE={all:['graph','registry','courts','mentions','places','channels'],person:['graph','registry','courts','mentions'],org:['graph','registry','courts','mentions'],fop:['graph','registry','mentions'],code:['graph','registry','mentions'],case:['courts','graph','mentions'],place:['places','registry','mentions'],channel:['channels','mentions'],post:['mentions']};
+const scopeOf=(t,kind)=>kind!=='all'?kind:/^\d{1,4}\/\d*(?:\/[\w/-]*)?$/.test(t)?'case':/^\d{8}$|^\d{10}$/.test(t)?'code':'all';
+async function runSearch(t,kind,part,bust){
   if(!CAN_QUEUE){if(/^\d{1,4}\/\d/.test(t))return {results:(await casePrefix(t)).map(c=>({id:'case:'+c.cause_num.toLowerCase(),type:'case',label:'Справа '+c.cause_num,cause_num:c.cause_num,sub:c.n+' рішень',strong:c.cause_num===t}))};
     return {results:search(t).map(n=>({id:n.id,type:n.type,label:n.label,sub:n.position||'',strong:n.label.toLowerCase()===t.toLowerCase()}))}}
-  sCtl?.abort();sCtl=new AbortController();
-  return (await fetch(`/api/search?q=${encodeURIComponent(t)}&kind=${kind}`,{signal:sCtl.signal})).json()}
-async function doSearch(t){const kind=scope.value;if(sugg.hidden){sugg.innerHTML='<div class="meta" style="padding:10px 12px">Шукаю…</div>';sugg.hidden=false}
-  try{const r=await runSearch(t,kind);if(q.value.trim()!==t||scope.value!==kind)return null;sLast={t,kind,r};showResults(t,r);return r}
-  catch(e){if(e.name!=='AbortError'){sugg.innerHTML=`<div class="meta" style="padding:10px 12px">Пошук недоступний: ${esc(e.message)}</div>`;sugg.hidden=false}return null}}
-function showResults(t,r){sugg.innerHTML='';sugg.hidden=false;if(r.error){sugg.innerHTML=`<div class="meta" style="padding:10px 12px">Пошук недоступний: ${esc(r.error)}</div>`;return}
-  const res=r.results||[];if(!res.length)sugg.innerHTML=`<div style="padding:10px 12px">У базі нічого немає за запитом «${esc(t)}»${scope.value!=='all'?` (${esc(scope.selectedOptions[0].textContent)})`:''}.</div>`;
-  res.forEach(x=>{const b=document.createElement('button');b.type='button';b.innerHTML=`<span class="dot" style="background:${COLORS[x.type]||'var(--c-post)'}"></span><span>${esc(x.label)}</span><span class="meta">${esc(TYPES[x.type]||x.type)}${x.sub?' · '+esc(x.sub):''}${x.strong?' · точний збіг':''}</span>`;b.onclick=()=>pick(x);sugg.appendChild(b)});
-  const qs=r.queue,c=chainBox(t),d=document.createElement('div');d.style.cssText='padding:6px 10px 10px;border-top:1px solid var(--line)';
-  d.innerHTML=(qs&&['queued','running'].includes(qs.status)?`<div class="meta">Пошук у реєстрах за «${esc(t)}» уже ${qs.status==='running'?'виконується':'у черзі'}.</div>`:'')+c.html;sugg.appendChild(d);c.bind()}
-async function pick(x){sugg.hidden=true;q.value=x.label;if(x.cause_num){await fetchCase(x.cause_num);mergeCase(x.cause_num)}select(x.id,{placeholder:{id:x.id,type:x.type,label:x.label}})}
-q.oninput=()=>{clearTimeout(sTimer);const t=q.value.trim();if(t.length<2){sCtl?.abort();sugg.hidden=true;return}
-  if(/^https?:\/\//i.test(t)){sCtl?.abort();const c=chainBox(t,'url');sugg.innerHTML=`<div style="padding:10px 12px"><div>Посилання як джерело.</div>${c.html}</div>`;sugg.hidden=false;c.bind();return}
+  const ctl=new AbortController();if(part==='mentions'){sCtlM?.abort();sCtlM=ctl}else{sCtl?.abort();sCtl=ctl}
+  return (await fetch(`/api/search?q=${encodeURIComponent(t)}&kind=${kind}&part=${part}${bust?'&fresh='+bust:''}`,{signal:ctl.signal})).json()}
+async function doSearch(t,o={}){const kind=scope.value;clearTimeout(sMTimer);
+  if(!sLast||sLast.t!==t||sLast.kind!==kind){sLast={t,kind,main:null,mentions:null,err:{}};sOpen=new Set()}
+  const cur=sLast;if(sugg.hidden||!sugg.querySelector('.sg'))showResults();
+  const one=async part=>{try{const r=await runSearch(t,kind,part,o.bust);if(sLast!==cur||q.value.trim()!==t||scope.value!==kind)return null;
+      if(r.error)cur.err[part]=r.error;else cur[part]=r;showResults();return r}
+    catch(e){if(e.name!=='AbortError'&&sLast===cur){cur.err[part]=e.message;showResults()}return null}};
+  const main=one('main');
+  if(CAN_QUEUE&&(SSCOPE[scopeOf(t,kind)]||[]).includes('mentions'))sMTimer=setTimeout(()=>one('mentions'),o.now?0:350);
+  return main}
+const SKEL='<div class="meta sload"><span class="spinner"></span> шукаю…</div>';
+function sItem(x,g){const b=document.createElement('button');b.type='button';b.className='si';b.dataset.k='1';b.dataset.key=x.id+'|'+(x.label||'');
+  const tag=x.type==='topic'?'усі згадки → граф':(TYPES[x.type]||x.type);
+  b.innerHTML=`<span class="dot" style="background:${COLORS[x.type]||'var(--c-post)'}"></span><span class="sl">${esc(x.label)}<span class="meta sm">${esc(tag)}${x.sub?' · '+esc(x.sub):''}${x.strong||x.exact?' · точний збіг':''}${x.lake&&!x.in_graph?' · ще не в графі':''}</span></span>`;
+  b.onclick=()=>pick(x);return b}
+function sPost(p){const b=document.createElement('button');b.type='button';b.className='si sp';b.dataset.k='1';b.dataset.key=p.id;
+  b.innerHTML=`<span class="dot" style="background:var(--c-post)"></span><span class="sl"><span class="meta">${esc(p.date||'')} · ${esc(p.src||p.source||'')}</span><br>${esc((p.snippet||p.label||'').slice(0,220))}</span>`;
+  b.onclick=()=>pick({id:p.id,type:'post',label:(p.snippet||'').slice(0,70)+'…'});return b}
+function showResults(){const cur=sLast;if(!cur)return;const t=cur.t;
+  // a re-render (the mentions part arriving) keeps keyboard focus on the same result
+  const fk=sugg.contains(document.activeElement)?document.activeElement.dataset.key:null;
+  sugg.innerHTML='';sugg.hidden=false;
+  // static copy: one flat list
+  if(!CAN_QUEUE){const res=(cur.main&&cur.main.results)||[];if(!res.length)sugg.innerHTML=`<div style="padding:10px 12px">${cur.main?`Нічого за «${esc(t)}».`:SKEL}</div>`;res.forEach(x=>sugg.appendChild(sItem(x)));return}
+  const sc=scopeOf(t,cur.kind),want=SSCOPE[sc]||SSCOPE.all,by={};
+  for(const part of ['main','mentions'])for(const g of (cur[part]&&cur[part].groups)||[])by[g.key]=g;
+  let any=0;const empty=[];
+  for(const [key,label] of SGROUPS){if(!want.includes(key))continue;const g=by[key],part=key==='mentions'?'mentions':'main';
+    if(g&&g.status==='ok'&&!g.items.length&&!g.topic&&!(g.web||[]).length&&!g.note){empty.push(label);continue}
+    const sec=document.createElement('div');sec.className='sg';sec.dataset.g=key;sec.setAttribute('role','group');sec.setAttribute('aria-label',label);
+    const n=g?g.count:null;
+    sec.innerHTML=`<div class="gh"><span>${label}</span><span>${g?(g.status==='ok'?n+(g.capped?'+':''):g.status==='unavailable'?'недоступно':g.status==='timeout'?'не встигло':'помилка'):cur.err[part]?'помилка':'…'}</span></div>`;
+    if(!g){sec.insertAdjacentHTML('beforeend',cur.err[part]?`<div class="meta sload">${esc(cur.err[part])}</div>`:SKEL);sugg.appendChild(sec);continue}
+    if(g.note&&(g.status!=='ok'||!g.items.length))sec.insertAdjacentHTML('beforeend',`<div class="meta sload">${esc(g.note)}</div>`);
+    const open=sOpen.has(key),lim=open?50:(key==='mentions'?5:4);
+    if(key==='mentions'){if(g.topic){sec.appendChild(sItem(g.topic,g));any++}
+      g.items.slice(0,lim).forEach(p=>{sec.appendChild(sPost(p));any++});
+      (g.web||[]).slice(0,open?10:2).forEach(w=>{sec.appendChild(sItem(w,g));any++});
+}
+    else g.items.slice(0,lim).forEach(x=>{sec.appendChild(sItem(x,g));any++});
+    const total=key==='mentions'?g.count:g.items.length;
+    if(key==='mentions'&&g.topic&&g.count>lim){const m=document.createElement('button');m.type='button';m.className='lnk';m.dataset.k='1';m.textContent=`показати всі ${g.count}${g.capped?'+':''} згадок у панелі`;m.onclick=()=>pick(g.topic);sec.appendChild(m)}
+    else if(key!=='mentions'&&total>lim){const m=document.createElement('button');m.type='button';m.className='lnk';m.dataset.k='1';m.textContent=`показати всі (${g.count>total?g.count:total})`;m.onclick=e=>{e.stopPropagation();sOpen.add(key);showResults();sugg.querySelectorAll('.sg[data-g="'+key+'"] .si')[lim]?.focus()};sec.appendChild(m)}
+    sugg.appendChild(sec)}
+  if(empty.length)sugg.insertAdjacentHTML('beforeend',`<div class="meta sload" style="border-top:1px solid var(--line);padding-top:8px">Нічого: ${esc(empty.join(' · '))}</div>`);
+  const done=cur.main&&(!want.includes('mentions')||cur.mentions||cur.err.mentions);
+  if(done&&!any)sugg.insertAdjacentHTML('afterbegin',`<div style="padding:10px 12px">Ніде нічого за «${esc(t)}»${cur.kind!=='all'?` (${esc(scope.selectedOptions[0].textContent)})`:''}. Спробуйте інтернет або реєстри нижче.</div>`);
+  // footer: web search (queued, src/web_mentions.py) + registry chain
+  const qs=cur.main&&cur.main.queue,c=chainBox(t),d=document.createElement('div');d.className='sfoot';
+  d.innerHTML=`<div class="group"><button type="button" class="chip" id="webq" data-k="1">Шукати в інтернеті</button><span class="meta" id="webst"></span></div>`+(qs&&['queued','running'].includes(qs.status)?`<div class="meta">Пошук «${esc(t)}» уже ${qs.status==='running'?'виконується':'у черзі'}${qs.kind?' ('+esc(qs.kind)+')':''}.</div>`:'')+c.html;
+  sugg.appendChild(d);c.bind();if(fk)[...sugg.querySelectorAll('[data-k]')].find(x=>x.dataset.key===fk)?.focus();const wb=document.getElementById('webq');if(wb){wb.onclick=()=>webSearch(t);if(webTimer&&webTimer.t===t)webState(webTimer.st)}}
+// «Шукати в інтернеті»: queue kind=web, poll the queue, then refetch the mentions part past the CDN cache
+function webState(st){const el=document.getElementById('webst'),b=document.getElementById('webq');if(!el)return;el.textContent=st;if(b)b.disabled=/у черзі|виконується|ставлю/.test(st)}
+async function webSearch(t){webState('ставлю в чергу…');let r;try{r=await enqueue(t,'web')}catch(e){webState('не вдалося: '+e.message);return}
+  if(!r.queued){webState('не вдалося: '+(r.error||''));return}
+  clearInterval(webTimer?.id);const W={t,st:r.existing?'вже у черзі; перевіряю щохвилини':'у черзі; перевіряю щохвилини'};webTimer=W;webState(W.st);let n=0;
+  const tick=async()=>{const st=await queueStatus(t);if(!st||webTimer!==W)return;const it=st.item;
+    W.st=({queued:'у черзі (хмара бере раз на кілька хвилин)',running:'виконується…',done:'готово — оновлюю згадки',failed:'помилка у хмарі'})[it.status]||it.status;webState(W.st);
+    if(['done','failed'].includes(it.status)||++n>45){clearInterval(W.id);if(it.status==='done'&&q.value.trim()===t){sLast=null;doSearch(t,{bust:Date.now(),now:true})}}};
+  W.id=setInterval(tick,30000);tick()}
+async function pick(x){sugg.hidden=true;q.value=x.type==='topic'?x.label:x.type==='post'?q.value:x.label;if(x.cause_num&&x.type==='case'){await fetchCase(x.cause_num);mergeCase(x.cause_num)}
+  const type=TYPES[x.type]?x.type:'registry';
+  const ex=x.type==='topic'||x.lake||x.judge||(['registry','person','org'].includes(x.type)&&x.in_graph===false)?{label:x.role_of&&x.type==='person'?x.role_of:x.label,judge:!!x.judge}:null;
+  select(x.id,{placeholder:{id:x.id,type,label:x.type==='registry'&&/^registry:\d{8}$/.test(x.id)?`ЄДР ${x.id.slice(9)} · ${x.label}`:x.label},expand:ex})}
+q.oninput=()=>{clearTimeout(sTimer);clearTimeout(sMTimer);const t=q.value.trim();if(t.length<2){sCtl?.abort();sCtlM?.abort();sugg.hidden=true;return}
+  if(/^https?:\/\//i.test(t)){sCtl?.abort();sCtlM?.abort();const c=chainBox(t,'url');sugg.innerHTML=`<div style="padding:10px 12px"><div>Посилання як джерело.</div>${c.html}</div>`;sugg.hidden=false;c.bind();return}
   sTimer=setTimeout(()=>doSearch(t),250)};
-// Enter opens a result only when exactly one is an exact match; otherwise it just shows the list. Registry runs are explicit (button).
-q.onkeydown=async e=>{if(e.key==='Escape'){sugg.hidden=true;return}if(e.key!=='Enter')return;e.preventDefault();clearTimeout(sTimer);const t=q.value.trim();if(t.length<2||/^https?:\/\//i.test(t))return;
-  const r=sLast&&sLast.t===t&&sLast.kind===scope.value?sLast.r:await doSearch(t);if(!r)return;const strong=(r.results||[]).filter(x=>x.strong);if(strong.length===1)pick(strong[0]);else showResults(t,r)};
+// keyboard: ↓/↑ walk the results (all groups, then the footer buttons), Enter opens, Esc closes. Enter in the box opens the
+// single exact match, otherwise focuses the first result.
+const sKeys=()=>[...sugg.querySelectorAll('[data-k]')].filter(b=>!b.disabled&&b.offsetParent!==null);
+q.onkeydown=async e=>{if(e.key==='Escape'){sugg.hidden=true;return}
+  if(e.key==='ArrowDown'&&!sugg.hidden){e.preventDefault();sKeys()[0]?.focus();return}
+  if(e.key!=='Enter')return;e.preventDefault();clearTimeout(sTimer);const t=q.value.trim();if(t.length<2||/^https?:\/\//i.test(t))return;
+  if(!(sLast&&sLast.t===t&&sLast.kind===scope.value&&sLast.main))await doSearch(t,{now:true});const r=sLast&&sLast.main;if(!r)return;
+  const strong=(r.results||[]).filter(x=>x.strong);if(strong.length===1)pick(strong[0]);else{showResults();sKeys()[0]?.focus()}};
+sugg.addEventListener('keydown',e=>{const ks=sKeys(),i=ks.indexOf(document.activeElement);if(i<0)return;
+  if(e.key==='ArrowDown'){e.preventDefault();(ks[i+1]||ks[0]).focus()}else if(e.key==='ArrowUp'){e.preventDefault();i?ks[i-1].focus():q.focus()}
+  else if(e.key==='Escape'){e.preventDefault();sugg.hidden=true;q.focus()}else if(e.key==='Home'){e.preventDefault();ks[0].focus()}else if(e.key==='End'){e.preventDefault();ks.at(-1).focus()}});
 scope.onchange=()=>{try{localStorage.setItem('graph-scope',scope.value)}catch(_){}sLast=null;const t=q.value.trim();if(t.length>=2&&!/^https?:\/\//i.test(t))doSearch(t);q.focus()};
 document.addEventListener('click',e=>{if(!e.target.closest('.search'))sugg.hidden=true});
 
@@ -498,7 +570,9 @@ function panel(nodes,edges){
 }
 const DETAIL=new Map();  // /api/node answers per id: a re-render after a neighbourhood merge does not refetch
 async function loadDetail(n){const box=document.getElementById('ndetail'),ex=document.getElementById('nexplain');try{
-  let pr=DETAIL.get(n.id);if(!pr){pr=fetch('/api/node?id='+encodeURIComponent(n.id)+'&q='+encodeURIComponent(q.value||'')).then(r=>r.json());DETAIL.set(n.id,pr)}
+  let pr=DETAIL.get(n.id);const tp=n.id.startsWith('topic:')&&DETAIL_POSTS.get(n.id);
+  if(!pr&&tp)pr=Promise.resolve({kind:'topic',posts:tp,explain:`Згадки «${n.label}» у постах: ${tp.total}${tp.capped?'+':''}. Нижче — найновіші; на графі тема повʼязана з постами, їхніми каналами та обʼєктами, які ці пости вже згадують.`});
+  if(!pr){pr=fetch('/api/node?id='+encodeURIComponent(n.id)+'&q='+encodeURIComponent(q.value||'')).then(r=>r.json());DETAIL.set(n.id,pr)}
   const r=await pr.catch(e=>{DETAIL.delete(n.id);throw e});if(r.error)DETAIL.delete(n.id);
   if(state.center!==n.id)return;if(r.error){ex.innerHTML=`<span class="meta">${esc(r.error)}</span>`;return}
   ex.innerHTML=`<b>Що це.</b> ${esc(r.explain||'')}`;let h='';
@@ -509,15 +583,30 @@ async function loadDetail(n){const box=document.getElementById('ndetail'),ex=doc
   if(r.kind==='person'||r.kind==='org'){if(r.orgs&&r.orgs.length)h+=`<h3>У ЄДР як засновник / підписант (${r.orgs.length})</h3><ul class="plain">${r.orgs.map(o=>`<li><button type="button" data-id="registry:${esc(o.edrpou)}">${esc(o.short_name||o.edrpou)}</button> <span class="meta">${esc(o.stan||'')}</span></li>`).join('')}</ul>`;if(r.texts&&r.texts.length)h+=`<h3>Тексти рішень з цим імʼям (${r.texts.length})</h3><ul class="tl">${r.texts.map(t=>`<li><span class="meta">${fmtDate(t.d)}</span> <button type="button" data-id="decision:${esc(t.doc_id)}">${esc(t.f||'рішення')}</button> <span class="meta">${esc(t.cause_num||'')} · ${esc(t.court||'')}</span></li>`).join('')}</ul>`}
   if(r.kind==='post'&&r.record)h+=`<h3>Повний текст</h3><p class="frag">${esc(r.record.text||'')}</p>`;
   if(r.kind==='web'){h+=`<h3>Поглибити</h3><div class="group">${r.ingested?'':`<button type="button" class="chip" data-ingest="${esc(n.url)}">Взяти сторінку в базу → люди, посади, організації</button>`}${(r.names||[]).map(nm=>`<button type="button" class="chip" data-person="${esc(nm)}">Шукати саме «${esc(nm)}» по всіх джерелах</button>`).join('')}</div><p class="meta" id="webact"></p>`}
+  // posts that mention the object (topic card, or an on-the-fly neighbourhood); the newest first, with source, date, link
+  const ps=r.kind==='topic'?r.posts:DETAIL_POSTS.get(n.id);
+  if(ps&&ps.items&&ps.items.length)h+=`<h3>Згадки в постах (${ps.total}${ps.capped?'+':''})</h3><ul class="ev">${ps.items.map(p=>`<li><span class="meta">${esc(p.date||'')} · ${esc(p.src||p.source||'')}</span> <button type="button" class="crumb" data-id="${esc(p.id)}">пост</button><br>${esc(p.snippet||'')}${p.url?` <a href="${esc(p.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`;
+  else if(r.kind==='topic')h+=`<p class="empty">${esc(r.explain||'Згадок не знайдено.')}</p>`;
+  if(r.kind==='topic'&&r.web&&r.web.length)h+=`<h3>В інтернеті</h3><ul class="ev">${r.web.map(w=>`<li><a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.label)}</a> <span class="meta">${esc(w.sub||'')}</span></li>`).join('')}</ul>`;
   box.innerHTML=h;box.querySelectorAll('button[data-ingest]').forEach(b=>b.onclick=async()=>{b.disabled=true;const qr=await enqueue(b.dataset.ingest,'url');document.getElementById('webact').textContent=qr.queued?'У черзі: сторінка буде забрана й розібрана хмарою (5–15 хв), потім зʼявиться у графі як джерело.':'Не вдалося: '+(qr.error||'')});
   box.querySelectorAll('button[data-person]').forEach(b=>b.onclick=async()=>{b.disabled=true;const nm=b.dataset.person;const qr=await enqueue(nm,'person');document.getElementById('webact').textContent=qr.queued?`У черзі: «${nm}» — усі джерела. Сторінка оновиться, коли буде результат.`:'Не вдалося: '+(qr.error||'');if(qr.queued){q.value=nm;pollQuery(nm,'person')}});
   box.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>{const id=b.dataset.id,t=id.slice(0,id.indexOf(':'));select(id,{placeholder:{id,type:TYPES[t]?t:'registry',label:b.textContent.trim()}})});box.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid)select(cid)});
 }catch(e){ex.innerHTML='<span class="meta">Подробиці недоступні.</span>'}}
+// on-the-fly neighbourhood (api/node.js?expand=1 -> _expand.js), merged into the drawn graph like /api/graph?around= slices
+const EXPANDED=new Map();
+async function expandAround(id,ex){if(!CAN_QUEUE)return null;let pr=EXPANDED.get(id);
+  if(!pr){document.getElementById('panel').innerHTML='<p class="empty"><span class="spinner" style="display:inline-block;vertical-align:middle"></span> Будую оточення з реєстрів, судів і постів…</p>';
+    pr=fetch(`/api/node?id=${encodeURIComponent(id)}&expand=1&label=${encodeURIComponent(ex.label||'')}${ex.judge?'&judge=1':''}`).then(r=>r.json()).catch(()=>null);EXPANDED.set(id,pr)}
+  const r=await pr;if(!r||r.error){EXPANDED.delete(id);return null}
+  mergeSlice(r);const k=id+'|'+state.depth;if(!AROUND.get(k)?.total)AROUND.set(k,{limit:600,total:r.total,shown:r.shown});if(r.posts)DETAIL_POSTS.set(id,r.posts);return r}
+const DETAIL_POSTS=new Map();
 // select: draw what is known at once, then fetch the capped neighbourhood and merge it in (same SVG, positions kept)
 let selSeq=0;
 async function select(id,o={}){const seq=++selSeq;if(id!==state.center)state.cap=CAP;state.center=id;if(window.matchMedia('(max-width:760px)').matches)document.getElementById('todetails').hidden=false;
   if(byId.has(id)){drawF();render()}else document.getElementById('panel').innerHTML='<p class="empty">Завантажую оточення…</p>';
-  const had=byId.has(id),n0=G.nodes.length,e0=G.edges.length;await loadAround(id,o);if(seq!==selSeq)return byId.has(id);
+  const had=byId.has(id),n0=G.nodes.length,e0=G.edges.length;const a=await loadAround(id,o);if(seq!==selSeq)return byId.has(id);
+  // not in the server graph (a registry hit, a judge, a topic of post mentions): build its neighbourhood on the fly and merge it
+  if(o.expand&&(!a||!a.total||id.startsWith('topic:'))){const x=await expandAround(id,o.expand);if(seq!==selSeq)return byId.has(id)}
   if(!byId.has(id)&&o.placeholder)addNode({...o.placeholder});
   if(!byId.has(id)){state.center=null;save();document.getElementById('panel').innerHTML=`<p class="empty">Обʼєкта «${esc(id.slice(id.indexOf(':')+1))}» ще немає в графі.</p>`;render();return false}
   if(!had||G.nodes.length!==n0||G.edges.length!==e0){drawF();render()}return true}

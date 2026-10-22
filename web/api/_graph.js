@@ -283,6 +283,8 @@ async function load(fresh, q) {
   if (fresh) return { ...index(await applyDelta(base, q), "snapshot+delta"), file: s.file };
   return base === cache ? { ...cache, at: Date.now() } : { ...index(base, "snapshot"), file: s.file };
 }
+// the graph this warm instance already holds, or null; never triggers a load (search uses it to mark hits already in the graph)
+export const peekGraph = () => cache;
 export function getGraph(fresh = false, q = sql) {  // q: query function (tests pass a stub)
   if (cache && Date.now() - cache.at < (fresh ? 20e3 : MANIFEST_TTL) && (!fresh || cache.origin !== "snapshot")) return Promise.resolve(cache);
   const i = fresh ? 1 : 0;  // a fresh request never rides on a plain load already in flight
