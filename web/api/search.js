@@ -126,6 +126,20 @@ const rank = (a, b) => a.tier - b.tier || (b.sim || 0) - (a.sim || 0) || (b.n ||
 const dedupe = (list) => { const seen = new Set(); return list.filter((r) => r?.id && !seen.has(r.id) && seen.add(r.id)); };
 
 // graph names (search_names), ЄДР records and worker cards already in Neon; Ukrainian spellings of Russian input too
+// A person query of 2–3 words («Прізвище Імʼя [По батькові]», either order) matches a person name only when every word of
+// the shorter of the two has the same stem in the other: «Олійник Володимир Миколайович» keeps «Олійник Володимир» (no
+// patronymic: marked as a possible namesake) but drops «Сінельник Володимир Миколайович» (word similarity alone ranked
+// first name + patronymic above the surname) and «Олійник Володимир Петрович» (another person).
+const STEM = (w) => w.replace(/[’ʼ`']/g, "").slice(0, Math.max(4, Math.min(6, w.length - 1)));
+const WORDS = (s) => norm(s).toLowerCase().replace(/\s+-\s+.*$/, "").split(/[\s,]+/).filter((w) => w.length >= 2);
+export function personMatch(query, name) {
+  const a = WORDS(query), b = WORDS(name);
+  if (a.length < 2 || b.length < 2) return { ok: true };
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+  const ok = s.every((w) => l.some((x) => STEM(x) === STEM(w) || (w.length <= 3 && x.startsWith(w))));
+  return { ok, partial: ok && b.length < a.length };
+}
+
 async function graphGroup(q, kind, C) {
   const S = (v) => sources(v, C);
   const variants = /^(all|person|org|fop)$/.test(kind) ? ukVariants(q) : [q];
@@ -140,7 +154,14 @@ async function graphGroup(q, kind, C) {
     else if (kind === "code" && /^\d{8}$|^\d{10}$/.test(v)) jobs.push(s.code());
   }
   const lists = await Promise.all(jobs.map((p) => p.catch(() => [])));
-  return { items: dedupe(lists.flat().sort(rank)).map((r) => ({ ...r, in_graph: true })) };
+  const multi = WORDS(q).length >= 2 && /^(all|person)$/.test(kind);
+  const items = lists.flat().flatMap((r) => {
+    if (!multi || r.type !== "person") return [r];
+    const m = personMatch(q, r.label);
+    if (!m.ok) return [];
+    return [m.partial ? { ...r, tier: Math.max(r.tier ?? 2, 2), sub: [r.sub, "без по батькові — можливо, тезка"].filter(Boolean).join(" · ") } : r];
+  });
+  return { items: dedupe(items.sort(rank)).map((r) => ({ ...r, in_graph: true })) };
 }
 
 // the lake index: names (legal entities + ФОП), codes, addresses, a person's roles in companies. Not in Neon, not in the graph yet.
