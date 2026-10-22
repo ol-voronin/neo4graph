@@ -33,14 +33,18 @@ def clients():
     return [claude(api_key=k.strip()) for k in dict.fromkeys(keys) if k.strip()]
 
 
+WHY = {}  # batch_id -> why each key failed (printed by status)
+
+
 def locate(cs, batch_id):
     """(client, batch) for the first key that can see the batch, or (None, None)."""
     import anthropic
-    for c in cs:
+    WHY[batch_id] = []
+    for i, c in enumerate(cs):
         try:
             return c, c.messages.batches.retrieve(batch_id)
-        except (anthropic.NotFoundError, anthropic.AuthenticationError, anthropic.PermissionDeniedError):
-            continue
+        except (anthropic.NotFoundError, anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.BadRequestError) as e:
+            WHY[batch_id].append(f"key{i}: {type(e).__name__} {str(e)[:160]}")
     return None, None
 
 
@@ -186,6 +190,11 @@ def fetch(a):
 
 def status(a):
     cs = clients()
+    for i, c in enumerate(cs):  # which workspace each key reaches: its most recent batches
+        try:
+            print(f"key{i}: recent batches", [b.id for b in c.messages.batches.list(limit=5)])
+        except Exception as e:  # noqa: BLE001
+            print(f"key{i}: {type(e).__name__} {str(e)[:200]}")
     for p in sorted(BATCH_DIR.glob("*.json")):
         meta = json.loads(p.read_text())
         if meta.get("lost"):
@@ -193,7 +202,7 @@ def status(a):
             continue
         _, b = locate(cs, meta["batch_id"])
         if b is None:
-            print(meta["batch_id"], meta["n"], "not visible to any configured key", "(expired)" if expired(meta) else "")
+            print(meta["batch_id"], meta["n"], "not visible to any configured key", "(expired)" if expired(meta) else "", WHY.get(meta["batch_id"]))
             continue
         print(meta["batch_id"], meta["n"], b.processing_status, dict(b.request_counts), "written" if meta.get("written") else "")
 
