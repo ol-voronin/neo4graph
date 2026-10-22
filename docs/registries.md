@@ -129,3 +129,28 @@ release (`back: null` = history done).
   they founded. `/api/search` and `src/lake.py find` still cover that.
 - НАЗК corruption register: legal entities with ЄДРПОУ could be added as a flag once it is reachable from the runner.
 - Losing bidders (tender `bids`) also carry public codes; only signed contracts are ingested now.
+
+## Національна поліція: розшук і зниклі безвісти (migration 021)
+
+| Dataset | URL | Update | Stored | Size |
+|---|---|---|---|---|
+| Особи, які переховуються від органів влади | [data.gov.ua 5f3dbea6…](https://data.gov.ua/dataset/5f3dbea6-9c56-4c69-ae62-e2eba13f01f8) `PersonsWanted.json` | daily | every record: names (uk / ru / en), birth date, category, article, restraint, searching body, date, place → `wanted_persons` | 67 MB JSON, 75 491 records on 2026-10-22 |
+| Особи, зниклі безвісти | [data.gov.ua 206741b9…](https://data.gov.ua/dataset/206741b9-2dc1-4aff-bbfa-c0a3fd254447) `BezvistiWanted.json` | daily | **counts only** (month of disappearance × oblast × sex × age band) → `missing_monthly` | 109 MB JSON, 126 305 records |
+
+`src/police_wanted.py`, daily in `.github/workflows/opendata.yml`. Photos (≈ 5 GB for the wanted list, 4 GB for the missing)
+and the police contact phones are not downloaded. A wanted record that disappears from the file gets `removed` = that day
+(found, detained or withdrawn: the file does not say which); `wanted_daily` keeps per-day totals.
+
+Derived fields: `art_group` from the first Criminal Code article (`military_evasion` ст. 335–336, 402–410; `war_collab`
+ст. 109–114-2, 258, 260, 436–438; `border` 332; `corruption` 191, 209, 210, 354, 364–369-2; `violent`; `property`;
+`other`; `no_article` = civil cases such as alimony); `agency` (police, sbu, dbr, nabu, border_guard) and `region` (oblast
+slug, `crimea`, `russia`, `unknown` ≈ 4 %) from the searching body's name, else from the place.
+
+Privacy: the wanted list is published by the police for public search, and the site shows only its published fields.
+The person page and the chat dossier show a wanted record only on a **full-name** match (surname + first name, Ukrainian
+or Russian spelling) and always with the birth date, labelled as a possible namesake. Missing persons are victims: no
+names are stored.
+
+On 2026-10-22: 19 554 records for evading service, AWOL or desertion (ст. 408 alone 11 404, ст. 407 7 604), 16 350 for
+treason, collaboration and war crimes (ст. 111 9 124), 2 033 corruption; searching bodies: police 58 201, SBU 11 407,
+DBR 5 300. Missing persons who disappeared since February 2022: 119 213.
