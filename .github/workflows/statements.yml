@@ -37,7 +37,7 @@ concurrency:
 jobs:
   statements:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180   # a 29 k-post batch takes > 45 min to write row by row; the fetch is idempotent if cut
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
