@@ -47,6 +47,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}   # needed when the key is not scoped to a workspace
           # keys of other workspaces whose batches are still pending (batches are visible only to their own workspace)
           ANTHROPIC_API_KEY_LEGACY: ${{ secrets.ANTHROPIC_API_KEY_LEGACY }},${{ secrets.ANTHROPIC_API_KEY }}
         run: |

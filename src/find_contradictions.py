@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import anthropic_text, gemini_call, parse_json  # noqa: E402
+from label_messages import anthropic_text, gemini_call, parse_json, claude  # noqa: E402
 
 SYSTEM = """Ти аналізуєш заяви ОДНОГО актора (та його дії) у хронологічному порядку й шукаєш суперечності: обіцянка, яку пізніше заперечили або зробили протилежне; твердження, яке той самий актор згодом спростував; слова, що розходяться з діями.
 Поверни ТІЛЬКИ JSON: {"pairs":[{"a_id":<id раннього>,"b_id":<id пізнішого>,"kind":"reversal|contradiction|say_vs_do","topic":"<=80 символів","explanation":"<=200 символів, українською, що саме суперечить","confidence":0.0}]}
@@ -66,7 +66,7 @@ def main():
         try:
             if a.provider == "anthropic":
                 import anthropic
-                txt = anthropic_text(anthropic.Anthropic().messages.create(model="claude-haiku-5-5", max_tokens=3000, output_config={"effort": "low"},
+                txt = anthropic_text(claude().messages.create(model="claude-haiku-5-5", max_tokens=3000, output_config={"effort": "low"},
                                                                          system=SYSTEM, messages=[{"role": "user", "content": user}]))
             else:
                 txt = gemini_call("gemini-3.5-flash-lite", SYSTEM, user, os.environ["GEMINI_API_KEY"], max_tokens=3000)
