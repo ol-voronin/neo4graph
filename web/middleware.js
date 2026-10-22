@@ -1,5 +1,6 @@
 // Private site: every page and API answers 401 unless the browser holds the site key.
 // Unlock a device once with /unlock?key=<SITE_KEY> (cookie for a year). /api/ingest keeps its own token.
+// SITE_KEY_AGENT (optional) works only as the x-site-key header, never as a cookie.
 // Runs before the CDN cache, so cached API responses are not served to locked browsers either.
 const COOKIE = "site_key";
 const YEAR = 365 * 24 * 3600;
@@ -31,6 +32,9 @@ export default async function middleware(request) {
 
   const got = (request.headers.get("cookie") || "").split(/;\s*/).find((c) => c.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1);
   if (got === want || request.headers.get("x-site-key") === key) return pass();
+  // separate key for scripted checks (the assistant), revocable without re-unlocking the owner's devices; header only
+  const agent = process.env.SITE_KEY_AGENT;
+  if (agent && request.headers.get("x-site-key") === agent) return pass();
   const api = url.pathname.startsWith("/api/");
   return new Response(api ? JSON.stringify({ error: "доступ закрито" }) : LOCKED, { status: 401, headers: {
     "content-type": api ? "application/json; charset=utf-8" : "text/html; charset=utf-8",
