@@ -4,7 +4,7 @@ name: queue
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "5,35 * * * *"   # every 30 min (each run wakes Neon; free plan = 100 CU-h/month)
   workflow_dispatch: {}
 
 concurrency:

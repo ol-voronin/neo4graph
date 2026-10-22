@@ -50,14 +50,24 @@ def expired(meta):
     return datetime.now(timezone.utc) > sub + timedelta(days=RESULTS_TTL_DAYS)
 
 
+def pending_ids():
+    """Message ids already sent in a batch whose results are not written yet: still labeled_at IS NULL, must not be paid twice."""
+    ids = set()
+    for p in BATCH_DIR.glob("*.json"):
+        meta = json.loads(p.read_text())
+        if not meta.get("written"):
+            ids.update(v["id"] for v in meta["ids"].values())
+    return list(ids)
+
+
 def candidates(cur, a):
     cur.execute(
         "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
         "WHERE m.labeled_at IS NULL "
         + ("AND s.id = ANY(%s) AND m.ts_published >= '2026-03-31' AND m.id IN (SELECT message_id FROM rule_features WHERE r_threat) " % PANEL_SQL if a.panel else "")
-        + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
+        + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) AND m.id <> ALL(%s) "
         "AND NOT (length(m.text) < 300 AND m.text ~* '(повітряна тривога|відбій повітряної|воздушная тревога|отбой воздушной)') "
-        "ORDER BY m.ts_published " + ("DESC " if a.newest else "") + "LIMIT %s", (list(SKIP_SOURCES), list(SKIP_TYPES), a.limit))
+        "ORDER BY m.ts_published " + ("DESC " if a.newest else "") + "LIMIT %s", (list(SKIP_SOURCES), list(SKIP_TYPES), pending_ids(), a.limit))
     return cur.fetchall()
 
 
