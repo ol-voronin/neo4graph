@@ -146,12 +146,12 @@ const nameOf = (id, node) => {
 };
 const core = (s) => norm(s).replace(/[«»"“”„]/g, " ").replace(/^(тов|пат|прат|ат|тдв|дп|кп|пп|фоп|державне підприємство|приватне підприємство|товариство з обмеженою відповідальністю)\s+/i, "").replace(/\s+/g, " ").trim();
 
-export async function dossier(id, { enqueue } = {}) {
+export async function dossier(id, { enqueue, graph = true } = {}) {
   id = norm(id);
   const i = id.indexOf(":"), kind = id.slice(0, i), key = id.slice(i + 1);
   if (i < 1 || !key) return { error: "id має вигляд person:…, org:…, case:…, registry:<ЄДРПОУ>, place:<slug>, channel:<id>" };
   // the in-memory graph (cold build: seconds) loads alongside the queries; names come from the id, not from the graph
-  const gp = soft(getGraph(), 8000, null);
+  const gp = graph ? soft(getGraph(), 8000, null) : Promise.resolve(null);  // graph:false — the person page needs no neighbourhood
   const out = { id, kind, label: (kind === "place" && oblastOf(key)?.[1]) || key };
   const P = {};
   if (kind === "case" && CASE_FULL.test(key)) {
@@ -231,7 +231,7 @@ export async function dossier(id, { enqueue } = {}) {
       top: nb.nodes.slice(1, 25).map((n) => ({ id: n.id, type: n.type, label: clip(n.label, 90) })) };
     // for the page only (chat.js strips it before the model sees the result)
     out._graph = { nodes: nb.nodes.map(({ summary, ...n }) => (summary ? { ...n, summary: clip(summary, 160) } : n)), edges: nb.edges.map((e) => (e.msgs?.length > 5 ? { ...e, msgs: e.msgs.slice(0, 5) } : e)) };
-  } else if (!g) out.graph_note = "граф ще будується на цьому інстансі; сусідство не показане";
+  } else if (!g && graph) out.graph_note = "граф ще будується на цьому інстансі; сусідство не показане";
   keys.forEach((k, j) => { if (vals[j] != null) out[k] = vals[j]; });
   if (out.source?.name && !gn) out.label = out.source.name;
   if (out.posts?.items) out.posts.items = out.posts.items.map(({ ts, ...x }) => x);

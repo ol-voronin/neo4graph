@@ -69,6 +69,9 @@ and asks the model: happened / did not happen / partially / cannot tell from thi
 stored with the verdict. Verdicts are reversible (a later pass with more evidence can overwrite). Track record =
 true / (true + false), with partial counted as 0.5, over resolved statements only; `n_resolved` is shown next to the
 percentage because 3/4 is not 75%.
+The resolver ranks evidence by keyword stems matched and adds structured ground truth; `unresolvable` verdicts are
+retried later (`resolve_statements.py --retry`). Per-person / group / country trust scores with shrinkage and
+intervals replaced the plain percentage in the UI: see docs/factcheck.md.
 
 ## What the layer gives the model
 

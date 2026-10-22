@@ -1,74 +1,86 @@
 name: statements
 
-# Statements / actions / regional strike events layer (docs/statements_layer.md): extract from official, regional,
-# US and media sources, then resolve statements whose horizon has passed. Shares the Gemini quota with label/extract.
+# Statements layer (docs/statements_layer.md, docs/factcheck.md) on Haiku 5.5 through the Message Batches API.
+# One run per Neon wake window (minute 35 of 00/06/12/18 UTC):
+#   every run  fetch finished batches (extraction + verdicts) and write them
+#   06 UTC     submit the day's extraction (key actors' channels first, cap 800 posts) and resolution (cap 400:
+#              due forecasts, claims of fact, retries of 'unresolvable')        ~ $0.2/day together, see docs/factcheck.md
+#   12 UTC     position changes (find_contradictions.py, interactive, actors with new statements only, cap 25)
+# Manual: cmd = fetch | submit | contradictions | status | sync (old interactive path, provider gemini|anthropic).
 
 on:
   schedule:
-    - cron: "35 */6 * * *"   # same window as label-batch: one Neon wake
+    - cron: "35 */6 * * *"
   workflow_dispatch:
     inputs:
+      cmd:
+        description: "fetch | submit | contradictions | status | sync"
+        default: "status"
       limit:
-        description: "Max messages to extract"
-        default: "60"
+        description: "submit: max posts to extract (daily cap)"
+        default: "800"
       resolve_limit:
-        description: "Max statements to resolve"
-        default: "30"
+        description: "submit: max statements to resolve"
+        default: "400"
       provider:
-        description: "gemini or anthropic"
-        default: "gemini"
+        description: "sync / contradictions: gemini or anthropic"
+        default: "anthropic"
       dry_run:
-        description: "Print only, no writes"
+        description: "sync / contradictions: print only, no writes; submit: estimate only"
         type: boolean
         default: false
 
 concurrency:
-  group: label
+  group: statements
   cancel-in-progress: false
 
 jobs:
   statements:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
+      ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}   # needed when the key is not scoped to a workspace
+      ANTHROPIC_API_KEY_LEGACY: ${{ secrets.ANTHROPIC_API_KEY_LEGACY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install "psycopg[binary]" python-dotenv anthropic
-      - name: Extract statements and events
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}   # needed when the key is not scoped to a workspace
-          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
+      - name: Restore batch metadata
+        uses: actions/cache@v4
+        with:
+          path: data/batches_st
+          key: batches-st-${{ github.run_id }}
+          restore-keys: batches-st-
+      - name: Run
         run: |
-          python src/extract_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.limit || '60' }}" --random ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
-      - name: Resolve due statements
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}   # needed when the key is not scoped to a workspace
-          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
-        run: |
-          python src/resolve_statements.py --provider "$PROVIDER" --limit "${{ github.event.inputs.resolve_limit || '30' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
-      - name: Fact-check claims
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}   # needed when the key is not scoped to a workspace
-          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
-        run: |
-          python src/resolve_statements.py --facts --provider "$PROVIDER" --limit "${{ github.event.inputs.resolve_limit || '30' }}" ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
-      - name: Position changes (contradictions)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-          ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}   # needed when the key is not scoped to a workspace
-          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
-        run: |
-          python src/find_contradictions.py --provider "$PROVIDER" --max-actors 20 ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          CMD="${{ github.event.inputs.cmd }}"; H=$(date -u +%H)
+          DRY="${{ github.event.inputs.dry_run == 'true' && '1' || '' }}"
+          if [ -z "$CMD" ]; then                       # scheduled
+            python src/statements_batch.py fetch
+            case "$H" in 06|07) python src/statements_batch.py submit-extract --limit 800
+                                python src/statements_batch.py submit-resolve --limit 400;;
+                         12|13) python src/find_contradictions.py --provider anthropic --max-actors 25;; esac
+          elif [ "$CMD" = "submit" ]; then
+            python src/statements_batch.py submit-extract --limit "${{ github.event.inputs.limit }}" ${DRY:+--estimate}
+            python src/statements_batch.py submit-resolve --limit "${{ github.event.inputs.resolve_limit }}" ${DRY:+--estimate}
+          elif [ "$CMD" = "contradictions" ]; then
+            python src/find_contradictions.py --provider "${{ github.event.inputs.provider }}" --max-actors 25 ${DRY:+--dry-run}
+          elif [ "$CMD" = "sync" ]; then
+            P="${{ github.event.inputs.provider }}"
+            python src/extract_statements.py --provider "$P" --limit "${{ github.event.inputs.limit }}" ${DRY:+--dry-run}
+            python src/resolve_statements.py --provider "$P" --limit "${{ github.event.inputs.resolve_limit }}" ${DRY:+--dry-run}
+            python src/resolve_statements.py --facts --provider "$P" --limit "${{ github.event.inputs.resolve_limit }}" ${DRY:+--dry-run}
+          else
+            python src/statements_batch.py "$CMD"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: batches-st-${{ github.run_id }}
+          path: data/batches_st
+          if-no-files-found: ignore
