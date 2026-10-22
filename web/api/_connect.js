@@ -68,6 +68,14 @@ function sentences(text, re, max = 4) {
   return out;
 }
 
+// a company's own name: the quoted part if any («Платінум Еко»), else the name without legal form and generic words
+const GENERIC = /^(пожеж|держав|україн|област|управлін|товарист|підприєм|банк|служб|публічн|акціонер|національн|компан|головн|район|міськ|приватн|відповідальн|обмежен|спільн|фермер|благодійн|організац|фонд|центр|загін|рятувальн|страхов|ощадн|житлов|ремонтн|експлуатацій|орендн|адвокат|бюро|об.єднан|спілк|асоціац|комунальн)/i;
+function ownName(org) {
+  const q = String(org).match(/[«"“„]([^«»"“”„]{3,})[»"”]/g);
+  const base = q ? q.map((x) => x.slice(1, -1)).join(" ") : String(org);
+  return base.split(/[\s,.«»"“”„]+/).filter((w) => w.length >= 4 && !GENERIC.test(w) && !LEGAL.test(w)).slice(0, 3);
+}
+
 // a side as a text condition on `text`: a case by its number, a person by surname AND first name stems, an organisation by
 // its most distinctive word; params numbered from `from`
 const LEGAL = /^(тов|пат|прат|ат|дп|кп|пп|фоп|товариство|компанія|корпорація|державне|підприємство|обмеженою|відповідальністю|акціонерне|приватне)$/i;
@@ -143,9 +151,18 @@ export async function connect({ a, b }) {
     const allText = dec.map((d) => d.text || "").join("\n");
     const decl = await soft(query(`SELECT DISTINCT rel_name org, rel_code edrpou, 'декларація НАЗК' src FROM decl_items WHERE declarant ~* $1 AND rel_kind = 'org' AND rel_name IS NOT NULL LIMIT 40`,
       [wordRe(stem(sur))]), 4000, []);
-    out.via_companies = [...companies, ...decl].filter((c) => c.org && ((c.edrpou && allText.includes(c.edrpou)) ||
-      (String(c.org).replace(/[«»"']/g, "").split(/\s+/).filter((w) => w.length >= 5).slice(-2).some((w) => new RegExp(wordRe(stem(w)), "i").test(allText)))))
-      .slice(0, 10).map((c) => ({ ...c, link: "компанія особи згадується в рішеннях справи" }));
+    // a company counts only by its ЄДРПОУ or by its own name (the quoted part, without generic words) found in the texts
+    const seenC = new Set();
+    out.via_companies = [...companies, ...decl].filter((c) => {
+      if (!c.org || seenC.has(c.edrpou || c.org)) return false;
+      seenC.add(c.edrpou || c.org);
+      if (c.edrpou && allText.includes(c.edrpou)) return (c.how = "ЄДРПОУ в тексті рішення");
+      // the person's own name inside a company name («Адвокатське бюро Дмитра Соляник») proves nothing: drop those words
+      const own = ownName(c.org).filter((w) => !words.some((pw) => stem(pw.toLowerCase()) === stem(w.toLowerCase())));
+      if (own.length && own.every((w) => new RegExp(wordRe(stem(w)), "i").test(allText))) return (c.how = "назва в тексті рішення");
+      return false;
+    }).slice(0, 10).map((c) => ({ ...c, link: `компанія особи (${c.src}) згадується в рішеннях справи: ${c.how}`,
+      caution: words.length < 2 ? "особу знайдено лише за прізвищем — компанія може належати однофамільцю" : undefined }));
     out.person_companies_checked = companies.length + decl.length;
     out.co_posts = posts.map((p) => ({ ...p, t: sentences(p.t, rx, 2).join(" … ") || p.t.slice(0, 300) }));
     out.media = media;
