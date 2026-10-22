@@ -2,6 +2,7 @@
 validation and write path as label_messages.py, so batch labels are interchangeable with the interactive ones.
 
   python src/label_batch.py submit [--panel] [--newest] [--limit 30000]   # build requests, submit, save batch id to data/batches/
+  python src/label_batch.py submit --topics-since 2026-07-01 --limit 5000  # re-label topic posts labeled before prompt v3 (mood)
   python src/label_batch.py fetch                            # fetch every submitted-but-unwritten batch, write labels
   python src/label_batch.py status
 
@@ -12,11 +13,13 @@ import json
 import re
 import sys
 import time
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 from label_messages import PANEL_SQL, PROMPT_VERSION, SKIP_SOURCES, SKIP_TYPES, anthropic_text, clean, parse_json, system_prompt, claude  # noqa: E402
+from topics import TOPIC_RX  # noqa: E402
 
 BATCH_DIR = ROOT / "data" / "batches"
 MODEL = "claude-haiku-5-5"
@@ -67,16 +70,18 @@ def pending_ids():
 # Ukrainian sources only when the rules see a threat, target or timeframe. Measured on 19,963 unfiltered batch labels
 # (2026-10-22): keeps 80% of posts and 96.8% of threat_level>=2 (510/527), 96.3% of >=1, 93.6% of rhetoric; the misses
 # are mostly UA media retelling threats already labeled at their Russian source. Plain rule filtering kept only 82% of >=2.
+# Topic posts (ТЦК, laws, corruption, prisoners, exchanges, ceasefire) always pass: they feed the mood view (~13/day, 30 days to 2026-10-22).
 UA_FILTER = ("AND (s.country <> 'UA' OR EXISTS (SELECT 1 FROM rule_labels r WHERE r.message_id = m.id "
-             "AND (r.r_threat OR r.r_target OR r.r_time))) ")
+             "AND (r.r_threat OR r.r_target OR r.r_time)) OR m.text ~* '" + TOPIC_RX.replace("'", "''") + "') ")
 
 
 def candidates(cur, a):
     cur.execute(
         "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
-        "WHERE m.labeled_at IS NULL "
+        + ("WHERE m.labeled_at IS NOT NULL AND coalesce(m.prompt_version, '') NOT LIKE '%s%%%%' AND m.ts_published >= '%s' AND m.text ~* '%s' "
+           % (PROMPT_VERSION, date.fromisoformat(a.topics_since), TOPIC_RX.replace("'", "''")) if a.topics_since else "WHERE m.labeled_at IS NULL ")
         + ("AND s.id = ANY(%s) AND m.ts_published >= '2026-03-31' AND m.id IN (SELECT message_id FROM rule_features WHERE r_threat) " % PANEL_SQL if a.panel else "")
-        + ("" if a.all_ua else UA_FILTER)
+        + ("" if a.all_ua or a.topics_since else UA_FILTER)
         + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) AND m.id <> ALL(%s) "
         "AND NOT (length(m.text) < 300 AND m.text ~* '(повітряна тривога|відбій повітряної|воздушная тревога|отбой воздушной)') "
         "ORDER BY m.ts_published " + ("DESC " if a.newest else "") + "LIMIT %s", (list(SKIP_SOURCES), list(SKIP_TYPES), pending_ids(), a.limit))
@@ -246,5 +251,7 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=30000)
     ap.add_argument("--all-ua", action="store_true", help="submit: label every Ukrainian post too (default: UA only with rule signals)")
     ap.add_argument("--newest", action="store_true", help="submit: newest unlabeled first (default: oldest first)")
+    ap.add_argument("--topics-since", default=None, help="submit: re-label posts with topic words (ТЦК, laws, corruption, prisoners, "
+                    "exchanges, ceasefire) labeled before the current prompt, published since this date")
     a = ap.parse_args()
     {"submit": submit, "fetch": fetch, "status": status, "drop": drop}[a.cmd](a)

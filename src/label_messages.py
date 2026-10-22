@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"  # v3: topics [{topic, object, stance}] for the mood view (migration 020)
 SKIP_SOURCES = ("tg:tlknewsua", "tg:monitor1654", "tg:kpszsu")  # source ids carry the "tg:" prefix
 SKIP_TYPES = ("osint",)  # alert/monitoring feeds: operational data, handled by rules / Mode B, not by the rhetoric prompt
 KINDS = {"rhetoric", "operational", "anticorruption", "decision", "other"}

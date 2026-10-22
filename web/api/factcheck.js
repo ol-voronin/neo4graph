@@ -1,22 +1,30 @@
 import { sql, query, json } from "./_db.js";
 import { dossier, withTimeout } from "./_intent.js";
-import { hierarchy, trend, SCORED, MIN_N, K } from "./_trust.js";
+import { hierarchy, trend, score, SCORED, MIN_N, K } from "./_trust.js";
 
 // GET /api/factcheck?side=RU_official&status=false&limit=50          -> checked statements + per-actor summary (list view)
 // GET /api/factcheck?level=country|group[&id=RU|ru_officials]           -> trust scores by country / group (+ detail with id)
 // GET /api/factcheck?level=person&id=ru:lavrov                         -> person page: said, did, refuted, self-contradictions, trust
 // GET /api/factcheck?level=find&name=Зеленський Володимир Олександрович -> {id, label, n} for the graph «Профіль» link
+// GET /api/factcheck?level=overview                                    -> dashboard: totals, topic × country, types, months, refuted
+// &topic=pow|exchange|ceasefire|tcc|law|corruption (statements.topic, migration 020) or promise (stype) narrows every level.
 // Levels need migration 019 (actors, actor_aliases, actor_groups, statements_x). Trust formula: _trust.js, docs/factcheck.md.
+export const TOPICS = ["pow", "exchange", "ceasefire", "tcc", "law", "corruption"];
+const topicOf = (t) => (TOPICS.includes(t) || t === "promise" ? t : "");
+// '' = all statements; 'promise' is a statement type, the rest are statements.topic
+const TOPIC_SQL = (p) => `(${p} = '' OR (${p} = 'promise' AND stype = 'promise') OR topic = ${p})`;
+const VERD = `count(*)::int n, count(*) FILTER (WHERE status = 'true')::int t, count(*) FILTER (WHERE status = 'false')::int f,
+    count(*) FILTER (WHERE status = 'partial')::int p, count(*) FILTER (WHERE status = 'unresolvable')::int u, count(*) FILTER (WHERE status = 'pending')::int q`;
 const COUNTS = `SELECT country, grp, actor_id, mode() WITHIN GROUP (ORDER BY actor_name) label, count(*)::int "all",
     count(*) FILTER (WHERE status = 'true' AND stype = ANY($1))::int t, count(*) FILTER (WHERE status = 'false' AND stype = ANY($1))::int f,
     count(*) FILTER (WHERE status = 'partial' AND stype = ANY($1))::int p, count(*) FILTER (WHERE status = 'unresolvable')::int u,
     count(*) FILTER (WHERE status = 'pending')::int q
-  FROM statements_x GROUP BY 1, 2, 3`;
+  FROM statements_x WHERE ${TOPIC_SQL("$2")} GROUP BY 1, 2, 3`;
 const COL = { country: "country", group: "grp", person: "actor_id" };
 const soft = (p, ms, d = null) => withTimeout(Promise.resolve(p), ms).catch(() => d);
 
-async function tree() {
-  const [rows, groups, actors] = await Promise.all([query(COUNTS, [SCORED]), sql`SELECT id, name_uk, country, ord FROM actor_groups ORDER BY ord`,
+async function tree(topic = "") {
+  const [rows, groups, actors] = await Promise.all([query(COUNTS, [SCORED, topic]), sql`SELECT id, name_uk, country, ord FROM actor_groups ORDER BY ord`,
     sql`SELECT id, name_uk, name_en, kind, role_uk, grp, graph_name FROM actors`]);
   const h = hierarchy(rows);
   const A = new Map(actors.map((a) => [a.id, a])), Gm = new Map(groups.map((g) => [g.id, g]));
@@ -28,11 +36,11 @@ async function tree() {
 }
 
 // monthly counts for one country / group / actor -> cumulative trust after each month
-async function monthly(level, id, prior) {
+async function monthly(level, id, prior, topic = "") {
   const r = await query(`SELECT to_char(date_trunc('month', ts_published), 'YYYY-MM') m,
       count(*) FILTER (WHERE status = 'true' AND stype = ANY($2))::int t, count(*) FILTER (WHERE status = 'false' AND stype = ANY($2))::int f,
       count(*) FILTER (WHERE status = 'partial' AND stype = ANY($2))::int p, count(*)::int said
-    FROM statements_x WHERE ${COL[level]} = $1 GROUP BY 1 ORDER BY 1`, [id, SCORED]);
+    FROM statements_x WHERE ${COL[level]} = $1 AND ${TOPIC_SQL("$3")} GROUP BY 1 ORDER BY 1`, [id, SCORED, topic]);
   const tr = trend(r, prior);
   return tr.map((x, i) => ({ ...x, said: r[i].said }));
 }
@@ -43,15 +51,15 @@ async function evidence(items) {
   return ids.length ? sql`SELECT id, source_id, ts_published, url, left(regexp_replace(text, '[[:space:]]+', ' ', 'g'), 260) snippet FROM messages WHERE id = ANY(${ids})` : [];
 }
 
-async function level(lv, id) {
-  const h = await tree();
-  if (!id) return { level: lv, min_n: MIN_N, k: K, all: h.all, countries: h.countries.sort((a, b) => b.all - a.all), groups: h.groups, people: h.people.slice(0, 400) };
+async function level(lv, id, topic = "") {
+  const h = await tree(topic);
+  if (!id) return { level: lv, topic, min_n: MIN_N, k: K, all: h.all, countries: h.countries.sort((a, b) => b.all - a.all), groups: h.groups, people: h.people.slice(0, 400) };
   const node = (lv === "country" ? h.countries : h.groups).find((x) => x.id === id);
   if (!node) return { level: lv, id, error: "немає заяв" };
   const inside = (p) => (lv === "country" ? p.country === id : p.grp === id);
-  const [tr, refuted] = await Promise.all([monthly(lv, id, lv === "country" ? h.all.mean : h.countries.find((c) => c.id === node.country)?.score.mean ?? h.all.mean),
-    query(`SELECT ${ST} FROM statements_x WHERE ${COL[lv]} = $1 AND status IN ('false', 'partial') ORDER BY resolved_at DESC NULLS LAST LIMIT 15`, [id])]);
-  return { level: lv, id, min_n: MIN_N, k: K, node, all: h.all, groups: lv === "country" ? h.groups.filter((g) => g.country === id) : undefined,
+  const [tr, refuted] = await Promise.all([monthly(lv, id, lv === "country" ? h.all.mean : h.countries.find((c) => c.id === node.country)?.score.mean ?? h.all.mean, topic),
+    query(`SELECT ${ST} FROM statements_x WHERE ${COL[lv]} = $1 AND status IN ('false', 'partial') AND ${TOPIC_SQL("$2")} ORDER BY resolved_at DESC NULLS LAST LIMIT 15`, [id, topic])]);
+  return { level: lv, id, topic, min_n: MIN_N, k: K, node, all: h.all, groups: lv === "country" ? h.groups.filter((g) => g.country === id) : undefined,
     people: h.people.filter(inside).slice(0, 60), trend: tr, refuted, evidence: await evidence(refuted) };
 }
 
@@ -89,6 +97,31 @@ async function person(id) {
     score: p?.score || null, types, trend: tr, said, refuted, evidence: await evidence(refuted), contradictions: contra, events, did };
 }
 
+// dashboard: verdict counts overall, by topic, topic × country, statement type and month; trust per topic and per cell with
+// the same shrinkage as the levels (prior = all statements' mean); latest refuted statements
+async function overview(topic) {
+  const T = TOPIC_SQL("$1");
+  // scored counts (demands excluded, as in the levels): st / sf / sp
+  const SC = `count(*) FILTER (WHERE status = 'true' AND stype = ANY($2))::int st, count(*) FILTER (WHERE status = 'false' AND stype = ANY($2))::int sf,
+    count(*) FILTER (WHERE status = 'partial' AND stype = ANY($2))::int sp`;
+  const [totals, byTopic, matrix, stypes, months, refuted] = await Promise.all([
+    query(`SELECT ${VERD}, ${SC} FROM statements_x WHERE ${T}`, [topic, SCORED]),
+    query(`SELECT topic, ${VERD}, ${SC} FROM statements_x WHERE $1::text IS NOT NULL GROUP BY 1`, [topic, SCORED]),
+    query(`SELECT country, topic, ${VERD}, ${SC} FROM statements_x WHERE ${T} GROUP BY 1, 2`, [topic, SCORED]),
+    query(`SELECT stype, ${VERD} FROM statements_x WHERE ${T} GROUP BY 1 ORDER BY n DESC`, [topic]),
+    query(`SELECT to_char(date_trunc('month', ts_published), 'YYYY-MM') m, country, ${VERD} FROM statements_x
+      WHERE ${T} AND ts_published >= now() - interval '18 months' GROUP BY 1, 2 ORDER BY 1`, [topic]),
+    query(`SELECT id, ts_published, actor_name, actor_id, country, topic, stype, quote, predicted_event, resolver_note, url, status
+      FROM statements_x WHERE status IN ('false', 'partial') AND ${T} ORDER BY resolved_at DESC NULLS LAST LIMIT 15`, [topic]),
+  ]);
+  // prior for every cell: all statements pooled under a flat Beta(1,1), as at the top of hierarchy()
+  const pool = byTopic.reduce((a, r) => ({ t: a.t + r.st, f: a.f + r.sf, p: a.p + r.sp }), { t: 0, f: 0, p: 0 });
+  const m0 = score(pool, 0.5, 2).mean;
+  const out = ({ st, sf, sp, ...r }) => ({ ...r, score: score({ t: st, f: sf, p: sp, u: r.u, q: r.q }, m0) });
+  const { st, sf, sp, ...tot } = totals[0];
+  return { topic, min_n: MIN_N, totals: tot, topics: byTopic.map(out), matrix: matrix.map(out), stypes, monthly: months, recent_refuted: refuted };
+}
+
 // graph label / any spelling -> canonical actor with statements
 async function find(name) {
   name = (name || "").trim();
@@ -111,8 +144,10 @@ export default async function handler(req, res) {
   const u = new URL(req.url, "http://x");
   const lv = u.searchParams.get("level") || "";
   const id = u.searchParams.get("id") || "";
+  const topic = topicOf(u.searchParams.get("topic") || "");
   try {
-    if (lv === "country" || lv === "group") return json(res, 200, await level(lv, id));
+    if (lv === "overview") return json(res, 200, await overview(topic));
+    if (lv === "country" || lv === "group") return json(res, 200, await level(lv, id, topic));
     if (lv === "person") return json(res, 200, await person(id));
     if (lv === "find") return json(res, 200, await find(u.searchParams.get("name")));
     const side = u.searchParams.get("side") || "";
@@ -123,6 +158,7 @@ export default async function handler(req, res) {
         s.status, s.resolved_at, s.resolver_note, s.evidence_ids, m.url, m.source_id
       FROM statements s JOIN messages m ON m.id = s.message_id
       WHERE (${side} = '' OR s.actor_side = ${side}) AND (${status} = '' OR s.status = ${status})
+        AND (${topic} = '' OR (${topic} = 'promise' AND s.stype = 'promise') OR s.topic = ${topic})
         AND (${q} = '' OR s.quote ILIKE ${"%" + q + "%"} OR s.actor_name ILIKE ${"%" + q + "%"} OR s.predicted_event ILIKE ${"%" + q + "%"})
       ORDER BY (s.status <> 'pending') DESC, s.resolved_at DESC NULLS LAST, s.ts_published DESC LIMIT ${lim}`;
     const ev = await evidence(items);

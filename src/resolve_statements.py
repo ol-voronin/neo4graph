@@ -31,7 +31,7 @@ EVIDENCE_SOURCES = ["tg:kpszsu", "tg:GeneralStaffZSU", "tg:V_Zelenskiy_official"
                     "tg:suspilnenews", "tg:censor_net", "tg:hromadske_ua", "tg:rian_ru", "tg:tass_agency", "tg:meduzalive",
                     "tg:kommersant", "tg:rbc_news", "tg:synegubov", "tg:kharkivoda", "tg:kyivoda", "tg:mykolaiv_ova", "tg:vinnytsiaoda",
                     "rss:bbc", "rss:guardian", "rss:nytimes", "rss:ft", "rss:wsj", "rss:economist", "rss:politico_eu", "rss:dw",
-                    "rss:euronews", "rss:aljazeera"]
+                    "rss:euronews", "rss:aljazeera", "tg:sap_gov_ua", "tg:NAZK_gov_ua", "tg:BihusInfo", "tg:rybar", "tg:boris_rozhin"]
 STOP = set("the and for with that this from will was were are has have been not said says would could should about after before "
            "they their there into over under also than then when what which while ukraine russia ukrainian russian "
            "они что это как для при или его её их про над под без від для або та що як при буде було були має мають "
@@ -41,8 +41,11 @@ SYSTEM = """Ти — перевіряльник фактів. Тобі дают�
 Визнач лише за цими доказами: підтверджується (true), спростовується (false), частково (partial), чи доказів недостатньо (unresolvable). Заява однієї сторони не є підтвердженням її ж твердження (докази з поміткою same_source — це той самий мовець); шукай незалежні джерела або структуровані дані.
 Структуровані дані (id з префіксом gt:) — щоденні зведення: по області (complete=true означає повне зведення: нуль у ньому — справжній нуль), хвилі Повітряних сил по Україні, тривоги. Якщо заява обіцяла/погрожувала подією, яка мала б потрапити в ці зведення (удар по області, масований обстріл), а повні зведення за весь строк її не показують — це false, а не unresolvable. Якщо подія сталася пізніше строку — partial.
 unresolvable — лише коли докази справді мовчать про предмет заяви.
+true вимагає хоча б одного незалежного доказу (інше джерело або gt:). Якщо заяву підтверджують лише повідомлення самого мовця (same_source) чи переказ його ж слів у медіа — це unresolvable.
+Теми. Обмін полоненими або тілами (gt:exchange): обмін, про який повідомили обидві сторони (UA і RU джерела), — незалежне підтвердження; названа кількість, що не збігається з повідомленнями іншої сторони, — partial. Обмін, обіцяний до дати, але не зафіксований до дедлайну, коли повідомлення про обміни за період є, — false. Перемир'я / мораторій (gt:ceasefire, зведення ударів gt:ua і gt:waves, заяви МО РФ gt:ru): твердження «дотримується» спростовують удари відповідного типу (по енергетиці — якщо вказано) у вікні дії; обіцянку перемир'я, яке не почалося, — false. Закони (gt:legal_act): «ухвалить/підпише до дати» підтверджує лише повідомлення про ухвалення чи підпис, не про реєстрацію чи розгляд. Корупція: підозра, затримання, обвинувачення підтверджуються повідомленнями НАБУ/САП/НАЗК/суду; обіцянки покарати — лише процесуальним кроком у строк.
 Нічого не додавай зі своїх знань. Не оцінюй намір (брехня чи помилка) — лише відповідність доказам. Поверни ТІЛЬКИ JSON: {"verdict":"true|false|partial|unresolvable","evidence_ids":["..."],"note":"<=200 символів, українською: що саме підтверджує або спростовує"}"""
 COLS = "id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, horizon_days, message_id"
+TOPIC_FIRST = "(topic IS NOT NULL) DESC, "  # migration 020; dropped by due() before it is applied
 _HAS = {}
 
 
@@ -90,20 +93,21 @@ def stem_rx(k: str) -> str:
 
 def due(cur, mode, limit, exclude=()):
     nc = has_col(cur, "statements", "n_checks")
+    tf = TOPIC_FIRST if has_col(cur, "statements", "topic") else ""
     ex = list(exclude)
     if mode == "facts":
         cur.execute(f"SELECT {COLS} FROM statements WHERE stype IN ('claim_fact','denial') AND status = 'pending' AND id <> ALL(%s) "
-                    "AND ts_published < now() - interval '3 days' ORDER BY ts_published DESC LIMIT %s", (ex, limit))
+                    f"AND ts_published < now() - interval '3 days' ORDER BY {tf}ts_published DESC LIMIT %s", (ex, limit))
     elif mode == "retry":
         cond = "AND n_checks < 3 " if nc else ""
         cur.execute(f"SELECT {COLS} FROM statements WHERE status = 'unresolvable' AND id <> ALL(%s) {cond}"
                     "AND resolved_at < now() - interval '7 days' AND ts_published > now() - interval '180 days' "
-                    "AND (resolvable OR stype IN ('claim_fact','denial')) ORDER BY resolved_at LIMIT %s", (ex, limit))
+                    f"AND (resolvable OR stype IN ('claim_fact','denial')) ORDER BY {tf}resolved_at LIMIT %s", (ex, limit))
     elif mode == "redo":
         cur.execute(f"SELECT {COLS} FROM statements WHERE status <> 'pending' AND id <> ALL(%s) ORDER BY resolved_at NULLS FIRST LIMIT %s", (ex, limit))
     else:
         cur.execute(f"SELECT {COLS} FROM statements WHERE resolvable AND status = 'pending' AND id <> ALL(%s) "
-                    "AND ts_published + (horizon_days || ' days')::interval < now() - interval '2 days' ORDER BY ts_published LIMIT %s", (ex, limit))
+                    f"AND ts_published + (horizon_days || ' days')::interval < now() - interval '2 days' ORDER BY {tf}ts_published LIMIT %s", (ex, limit))
     return cur.fetchall()
 
 
@@ -117,6 +121,32 @@ def window(row, mode):
 
 def _gt(d, ts):
     return ts.__class__.fromisoformat(f"{d}T12:00:00+03:00")
+
+
+def topic_gt(cur, topic, region, t0, t1, ts):
+    """Structured evidence for the tracked topics: extracted exchange / ceasefire / legal-act events in the window, with the
+    reporting side (an exchange reported by both UA and RU sources is confirmed independently), and for ceasefires the
+    nationwide strike sums even when the statement names no region."""
+    out = []
+    etype = {"pow": "prisoner_exchange", "exchange": "prisoner_exchange", "ceasefire": "ceasefire", "law": "legal_act"}.get(topic)
+    if etype:
+        cur.execute("SELECT e.id, e.event_date, e.details, e.people, s.country, m.source_id FROM extracted_events e JOIN messages m ON m.id = e.message_id "
+                    "JOIN sources s ON s.id = m.source_id WHERE e.event_type = %s AND coalesce(e.event_date, m.ts_published::date) BETWEEN %s AND %s "
+                    "ORDER BY coalesce(e.event_date, m.ts_published::date) LIMIT 30", (etype, t0.date(), t1.date()))
+        for i, d, det, ppl, ctry, src in cur.fetchall():
+            out.append((f"gt:{'exchange' if etype == 'prisoner_exchange' else etype}:{i}", f"ground_truth:{etype}", _gt(d or t0.date(), ts),
+                        f"{etype} {d or ''}: {det or ''}{f' · людей {ppl}' if ppl else ''} (повідомлення сторони {ctry}, {src})"))
+        if not out:
+            out.append((f"gt:{etype}:none", f"ground_truth:{etype}", _gt(t0.date(), ts),
+                        f"За {t0.date()}…{t1.date()} у витягнутих подіях немає жодного запису типу {etype} (збір міг бути неповним)."))
+    if topic == "ceasefire" and region != "ukraine":
+        cur.execute("SELECT to_regclass('oblast_daily_gt') IS NOT NULL")
+        if cur.fetchone()[0]:
+            cur.execute("SELECT date, count(*) FILTER (WHERE attacked), sum(coalesce(missiles,0)), sum(coalesce(drones,0)) FROM oblast_daily_gt "
+                        "WHERE date BETWEEN %s AND %s GROUP BY 1 ORDER BY 1", (t0.date(), t1.date()))
+            for d, n_att, mi, dr in cur.fetchall()[:45]:
+                out.append((f"gt:ua:{d}", "ground_truth:oblast_daily", _gt(d, ts), f"По Україні за {d}: атаковано областей {n_att}, ракет {mi}, дронів {dr} (сума обласних зведень)"))
+    return out
 
 
 def gather(cur, conn, row, mode):
@@ -162,7 +192,12 @@ def gather(cur, conn, row, mode):
         cur.execute("SELECT date, max(launched_missiles), max(launched_drones) FROM waves WHERE date BETWEEN %s AND %s GROUP BY 1 ORDER BY 1", (t0.date(), t1.date()))
         for d, lm, ld in cur.fetchall()[:45]:
             ev.append((f"gt:waves:{d}", "ground_truth:air_force_summary", _gt(d, ts), f"Повітряні сили за {d}: запущено ракет {lm}, дронів {ld}"))
-        if (region or "").startswith("russia") or side.startswith("RU"):
+        topic = None
+        if has_col(cur, "statements", "topic"):
+            cur.execute("SELECT topic FROM statements WHERE id = %s", (sid,))
+            topic = (cur.fetchone() or [None])[0]
+        ev += topic_gt(cur, topic, region, t0, t1, ts)
+        if (region or "").startswith("russia") or side.startswith("RU") or topic == "ceasefire":
             cur.execute("SELECT date, drones FROM ru_attacks_daily WHERE date BETWEEN %s AND %s ORDER BY date", (t0.date(), t1.date()))
             for d, dr in cur.fetchall()[:45]:
                 ev.append((f"gt:ru:{d}", "ground_truth:ru_mod_claims", _gt(d, ts), f"МО РФ заявило про {dr} перехоплених українських дронів за {d} (заява сторони, не підтвердження)"))
@@ -181,10 +216,24 @@ def payload(row, ev):
 def apply(cur, sid, r, ev_ids):
     verdict = r.get("verdict") if r.get("verdict") in ("true", "false", "partial", "unresolvable") else "unresolvable"
     ids = [str(i) for i in (r.get("evidence_ids") or []) if str(i) in set(ev_ids)]
+    note = (r.get("note") or "")[:300]
+    if verdict in ("true", "partial") and not independent(cur, sid, ids):
+        # the speaker confirming themselves is not evidence (most early 'true' verdicts were the actor's own channel)
+        verdict, note = "unresolvable", ("лише джерело мовця: " + note)[:300]
     nc = ", n_checks = n_checks + 1" if has_col(cur, "statements", "n_checks") else ""
     cur.execute(f"UPDATE statements SET status=%s, resolved_at=now(), evidence_ids=%s, resolver_note=%s{nc} WHERE id=%s",
-                (verdict, ids, (r.get("note") or "")[:300], sid))
+                (verdict, ids, note, sid))
     return verdict
+
+
+def independent(cur, sid, ids) -> bool:
+    """At least one cited evidence item from outside the statement's own channel: structured ground truth (gt:) or a post
+    from another source. Mirrors the backfill in db/migrations/020_topics_mood.sql."""
+    if any(i.startswith("gt:") for i in ids):
+        return True
+    cur.execute("SELECT EXISTS (SELECT 1 FROM messages e, statements s JOIN messages m ON m.id = s.message_id "
+                "WHERE s.id = %s AND e.id = ANY(%s) AND e.source_id <> m.source_id)", (sid, ids))
+    return cur.fetchone()[0]
 
 
 def main():
