@@ -4,6 +4,7 @@ import { getManifest, searchKey } from "./_lake.js";
 import { byCode, byName, peopleOf, rolesOf, card } from "./registry.js";
 import { postMentions, decisionTexts, webFound } from "./_mentions.js";
 import { OBLASTS } from "./_text.js";
+import { declGraph, DECL_COLS } from "./_decl.js";
 
 // On-the-fly neighbourhood for an object the graph does not hold yet (a registry hit from /api/search, a judge, a «topic:»
 // of post mentions). Same wire format as /api/graph?around=, so the page merges it into what it already draws:
@@ -105,6 +106,15 @@ export async function expand(id, label = "", { judge = false } = {}) {
       if (dec.length) nodes.get(id).position = "суддя" + (dec[0].court ? ", " + dec[0].court : "");
     }
   } else return { error: "expand: тип " + kind + " не підтримується", center: id, nodes: [], edges: [] };
+
+  // ---- declarations' contents for a person (decl_items, migration 023): assets, companies, income sources, family ----
+  if (["person", "fop", "wanted"].includes(kind) && name.split(" ").length >= 2) {
+    const rows = await soft(query(`SELECT ${DECL_COLS} FROM decl_items WHERE declarant = $1 ORDER BY year DESC LIMIT 400`, [name.toLowerCase()]), 2500, []);
+    const D = declGraph(rows);
+    for (const n of D.nodes) node(n);
+    for (const e of D.edges) edge(e.source, e.target, e.rel, { detail: e.detail, src: e.src });
+    out.declared = rows.length;
+  }
 
   // ---- what the texts say: posts and decision texts naming it ----
   const isTopic = kind === "topic";

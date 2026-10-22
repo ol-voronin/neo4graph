@@ -43,11 +43,19 @@ export default async function handler(req, res) {
                            FROM wanted_persons WHERE id = ${key}`)[0];
       if (!r) return json(res, 404, { error: "no such wanted record" });
       const who = [r.last_name_u, r.first_name_u, r.middle_name_u].filter(Boolean).join(" ");
-      return json(res, 200, { kind, record: r,
+      // first look at a wanted person: queue the registry chain (court register, NAZK declarations with assets, ФОП, companies,
+      // debtors) once per 30 days; the cloud drains 3 items per 10 min and the Ukrainian-IP worker polls every 2 min
+      const full = who.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
+      const [q] = await sql`SELECT status, ua_status, created_at FROM query_queue WHERE lower(query) = lower(${full}) AND created_at > now() - interval '30 days' ORDER BY created_at DESC LIMIT 1`.catch(() => []);
+      let chain = q ? (q.ua_status || q.status) : null;
+      if (!q && full.split(" ").length >= 2) { await sql`INSERT INTO query_queue(query, kind) VALUES (${full}, 'person')`.catch(() => null); chain = "queued"; }
+      const chainNote = chain === "queued" || chain === "running" ? " Запущено збір: судові рішення, декларації НАЗК (нерухомість, авто, компанії, доходи, родина), ФОП, ролі в компаніях, боржники — результати зʼявляться в графі за 10–30 хв."
+        : chain ? " Збір по реєстрах уже виконано — результати в графі поруч з особою." : "";
+      return json(res, 200, { kind, record: r, chain,
         explain: `${who}${r.birth_date ? ", нар. " + r.birth_date : ""} — ${(r.category || "у розшуку").toLowerCase()}${r.article_crim ? ", " + r.article_crim : ""}${r.restraint ? "; запобіжний захід: " + r.restraint.toLowerCase() : ""}.` +
           ` Шукає: ${r.ovd || "?"}. Переховується з ${r.lost_date || "?"}${r.lost_place ? ", " + r.lost_place.toLowerCase() : ""}.` +
           (r.removed ? ` Запис зник із відкритих даних ${r.removed} (затримано, знайдено або знято з розшуку — у даних не сказано).` : "") +
-          " Джерело: відкриті дані Нацполіції (data.gov.ua). Збіг за ПІБ з іншими вузлами графа не означає, що це та сама людина." });
+          " Джерело: відкриті дані Нацполіції (data.gov.ua). Збіг за ПІБ з іншими вузлами графа не означає, що це та сама людина." + chainNote });
     }
     if (kind === "article") {
       const [w, ytd] = await Promise.all([

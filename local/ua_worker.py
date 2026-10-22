@@ -165,6 +165,167 @@ def nazk_declarations(name, max_pages=5):
     return total, out
 
 
+NAZK_DOC = "https://public-api.nazk.gov.ua/v2/documents/{id}"
+HIDDEN = re.compile(r"^\[(Конфіденційна інформація|Не застосовується|Не відомо|Член сім'ї не надав інформацію)\]$|^$")
+# KATOTTG oblast code (2 digits after "UA") -> alert-map slug used across the project
+KATOTTG = {"01": "crimea", "05": "vinnytska", "07": "volynska", "12": "dnipropetrovska", "14": "donetska", "18": "zhytomyrska", "21": "zakarpatska",
+           "23": "zaporizka", "26": "ivano-frankivska", "32": "kyivska", "35": "kirovohradska", "44": "luhanska", "46": "lvivska", "48": "mykolaivska",
+           "51": "odeska", "53": "poltavska", "56": "rivnenska", "59": "sumska", "61": "ternopilska", "63": "kharkivska", "65": "khersonska",
+           "68": "khmelnytska", "71": "cherkaska", "73": "chernivetska", "74": "chernihivska", "80": "kyiv-city", "85": "crimea"}
+STEP_KIND = {"step_2": "family", "step_3": "real_estate", "step_4": "unfinished", "step_5": "movable", "step_6": "vehicle", "step_7": "securities",
+             "step_8": "corporate", "step_9": "beneficial", "step_10": "intangible", "step_11": "income", "step_12": "money", "step_13": "liability",
+             "step_14": "expense", "step_16": "membership", "step_17": "account"}
+
+
+def _v(x):
+    x = "" if x is None else str(x).strip()
+    return "" if HIDDEN.match(x) else x
+
+
+def _people(o):
+    """every «<prefix>lastname / firstname / middlename» triple in a dict, nested lists and dicts included"""
+    out = []
+    if isinstance(o, dict):
+        for k in o:
+            if k.endswith("lastname"):
+                p = k[:-len("lastname")]
+                full = " ".join(x for x in (_v(o.get(k)), _v(o.get(p + "firstname")), _v(o.get(p + "middlename"))) if x)
+                if len(full.split()) >= 2:
+                    out.append(full)
+        for v in o.values():
+            if isinstance(v, (dict, list)):
+                out += _people(v)
+    elif isinstance(o, list):
+        for v in o:
+            out += _people(v)
+    return out
+
+
+def _orgs(o):
+    """(name, ЄДРПОУ) pairs: «…company_name» + «…company_code», «name» + «…company_code» / «reestrCode», «objectName» + «reestrCode»"""
+    out = []
+    if isinstance(o, dict):
+        for k in o:
+            if k.endswith("company_name") or k in ("name", "objectName", "emitent_ua_company_name"):
+                p = k[:-len("company_name")] if k.endswith("company_name") else ""
+                code = _v(o.get(p + "company_code")) or _v(o.get("corporate_rights_company_code")) or _v(o.get("beneficial_owner_company_code")) or _v(o.get("reestrCode"))
+                if _v(o.get(k)):
+                    out.append((_v(o.get(k)), code if re.fullmatch(r"\d{8}", code or "") else None))
+        for v in o.values():
+            if isinstance(v, (dict, list)):
+                out += _orgs(v)
+    elif isinstance(o, list):
+        for v in o:
+            out += _orgs(v)
+    return out
+
+
+def _region(it):
+    m = re.search(r"UA(\d{2})", str(it.get("regionPath") or it.get("cityPath") or ""))
+    return KATOTTG.get(m.group(1)) if m else None
+
+
+def _num(x):
+    x = _v(x).replace(" ", "").replace(",", ".")
+    try:
+        return float(x)
+    except ValueError:
+        return None
+
+
+def decl_items(doc, query):
+    """A full NAZK document -> rows for decl_items (migration 023). Owners: rightBelongs "1" = declarant, a family member's
+    iteration id = that member, "j" = a third person named in the right itself."""
+    D = doc.get("data") or {}
+    s1 = (D.get("step_1") or {}).get("data") or {}
+    declarant = " ".join(x for x in (_v(s1.get("lastname")), _v(s1.get("firstname")), _v(s1.get("middlename"))) if x).lower()
+    fam = {}
+    for m in (D.get("step_2") or {}).get("data") or []:
+        if isinstance(m, dict):
+            nm = " ".join(x for x in (_v(m.get("lastname")), _v(m.get("firstname")), _v(m.get("middlename"))) if x)
+            if nm:
+                fam[str(m.get("iteration") or m.get("id") or "")] = (nm.lower(), _v(m.get("subjectRelation")))
+    rows, idx = [], 0
+
+    def add(step, it, label, **kw):
+        nonlocal idx
+        idx += 1
+        rows.append({"decl_id": doc.get("id"), "idx": idx, "query": query.lower(), "declarant": declarant, "year": doc.get("declaration_year"),
+                     "decl_type": doc.get("declaration_type"), "step": step, "kind": STEP_KIND.get(step, step), "label": label[:300],
+                     "owner": kw.get("owner"), "rel_name": (kw.get("rel_name") or None) and kw["rel_name"][:300], "rel_code": kw.get("rel_code"),
+                     "rel_kind": kw.get("rel_kind"), "value": kw.get("value"), "currency": kw.get("currency"), "since": kw.get("since"),
+                     "region": kw.get("region"), "details": {k: v for k, v in it.items() if isinstance(v, (str, int, float)) and _v(v) and not k.endswith("extendedstatus")
+                                                             and k != "iteration"} if isinstance(it, dict) else {}})
+
+    def owner_of(it):
+        for r in (it.get("rights") or []) if isinstance(it, dict) else []:
+            b = str(r.get("rightBelongs") or "")
+            if b == "1":
+                return declarant
+            if b in fam:
+                return fam[b][0]
+        return declarant
+
+    for iid, (nm, rel) in fam.items():
+        add("step_2", {}, f"{rel or 'член сімʼї'}: {nm.title()}", owner=declarant, rel_name=nm, rel_kind="person")
+    for step in sorted(D, key=lambda x: int(x.split("_")[1]) if x.split("_")[1].isdigit() else 0):
+        if step in ("step_0", "step_1", "step_2", "step_15"):
+            continue
+        data = (D.get(step) or {}).get("data")
+        items = data if isinstance(data, list) else [x for v in (data or {}).values() if isinstance(v, list) for x in v] if isinstance(data, dict) else []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            ot = _v(it.get("objectType")) or _v(it.get("specExpensesSubject")) or ""
+            own = owner_of(it)
+            if step in ("step_3", "step_4"):
+                area = _v(it.get("totalArea"))
+                city = _v(it.get("city")) or _v(it.get("ua_cityName"))
+                add(step, it, " ".join(x for x in (ot or "Нерухомість", f"{area} м²" if area else "", city) if x), owner=own, region=_region(it),
+                    value=_num(it.get("costDate") or it.get("cost_date_assessment") or it.get("costAssessment")), since=_v(it.get("owningDate")))
+            elif step == "step_6":
+                add(step, it, " ".join(x for x in (_v(it.get("brand")), _v(it.get("model")), _v(it.get("graduationYear"))) if x) or ot or "Транспортний засіб",
+                    owner=own, value=_num(it.get("costDate")), since=_v(it.get("owningDate")), rel_name=ot)
+            elif step in ("step_5", "step_10"):
+                add(step, it, " ".join(x for x in (ot, _v(it.get("propertyDescr")) or _v(it.get("descriptionObject")), _v(it.get("trademark"))) if x)[:300] or "Майно",
+                    owner=own, since=_v(it.get("owningDate")))
+            elif step in ("step_7", "step_8", "step_9"):
+                for nm, code in (_orgs(it) or [(ot, None)]):
+                    add(step, it, nm, owner=own, rel_name=nm, rel_code=code, rel_kind="org", value=_num(it.get("cost") or it.get("amount")), since=_v(it.get("owningDate")))
+            elif step in ("step_11", "step_12", "step_13", "step_17"):
+                size = _num(it.get("sizeIncome") or it.get("sizeAssets") or it.get("sizeObligation"))
+                cur = _v(it.get("assetsCurrency") or it.get("currency"))
+                parties = [(n, c, "org") for n, c in _orgs(it)] + [(p, None, "person") for p in _people(it) if p.lower() != declarant]
+                for nm, code, rk in (parties or [(None, None, None)]):
+                    add(step, it, ot or STEP_KIND[step], owner=own, rel_name=nm, rel_code=code, rel_kind=rk, value=size, currency=cur or None)
+            elif step == "step_14":
+                add(step, it, " ".join(x for x in (_v(it.get("specExpenses")), _v(it.get("specExpensesSubject"))) if x) or "Видаток", owner=own,
+                    since=_v(it.get("transactionDate")), value=_num(it.get("costAmount") or it.get("cost")))
+            elif step == "step_16":
+                for nm, code in _orgs(it):
+                    add(step, it, f"{_v(it.get('unitName')) or 'член'}: {nm}", owner=own, rel_name=nm, rel_code=code, rel_kind="org")
+    return rows
+
+
+def nazk_document(doc_id):
+    return json.loads(get(NAZK_DOC.format(id=doc_id)))
+
+
+def pick_declarations(q, decl, max_docs=5):
+    """Declarations of this very person: the full name must match a 3-word query; a 2-word query only when every hit carries
+    the same full name (otherwise namesakes would be merged). Latest per year, annual first; at most max_docs."""
+    ql = q.lower().strip()
+    names = {(d.get("name") or "").lower() for d in decl}
+    if len(ql.split()) >= 3:
+        mine = [d for d in decl if (d.get("name") or "").lower() == ql]
+    else:
+        mine = decl if len(names) == 1 and next(iter(names)).startswith(ql) else []
+    by_year = {}
+    for d in sorted(mine, key=lambda d: (d.get("type") != 1, -(d.get("year") or 0))):
+        by_year.setdefault(d.get("year"), d)
+    return [by_year[y] for y in sorted(by_year, key=lambda y: -(y or 0))][:max_docs]
+
+
 # ---------------------------------------------------------------- ЄДР ФОП dump (optional)
 
 # ---------------------------------------------------------------- data lake (Parquet + DuckDB), replaces per-query grep
@@ -495,6 +656,19 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
             for d in decl[:60]:
                 hits.append({"query": q, "qkind": kind, "source": "nazk_decl", "ref": d["id"], "url": d["url"],
                              "title": f"Декларація {d['year'] or ''} · {d['name']}", "snippet": f"{d['work_place'] or ''} — {d['work_post'] or ''}", "payload": d})
+            # contents of the person's own declarations: real estate, vehicles, companies, income sources, loans, family
+            items = []
+            for d in pick_declarations(q, decl):
+                if not tleft():
+                    break
+                try:
+                    items += decl_items(nazk_document(d["id"]), q)
+                except Exception as e:  # noqa: BLE001
+                    print("nazk doc:", d["id"], e)
+                time.sleep(1)
+            for i in range(0, len(items), 100):
+                ingest(env, {"kind": "decl_items", "rows": items[i:i + 100]})
+            notes.append(f"вміст декларацій: {len(items)} записів")
             ftotal, fops = fop_search(q, deadline=deadline) if (not NO_FOP or lake_has("fop")) else (None, [])
             if ftotal is not None:
                 notes.append(f"ЄДР ФОП: {ftotal}" if ftotal >= 0 else f"ЄДР ФОП: {-ftotal - 1}+ (скан не завершено, повторіть)")
