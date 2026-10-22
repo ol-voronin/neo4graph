@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json  # noqa: E402
+from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json, claude  # noqa: E402
 
 PROMPT_VERSION = "ee-v1"
 ANTICORR_SOURCES = ["tg:sap_gov_ua", "tg:NAZK_gov_ua", "tg:PressCourt", "tg:fuckcorruption", "tg:fightcorruptor",
@@ -118,7 +118,7 @@ def main():
     client = None
     if a.provider == "anthropic":
         import anthropic
-        client = anthropic.Anthropic()
+        client = claude()
         a.delay = 0.0
     from load_to_db import connect
     sysmsg = system_prompt()

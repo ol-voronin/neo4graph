@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import anthropic_text, gemini_call, parse_json  # noqa: E402
+from label_messages import anthropic_text, gemini_call, parse_json, claude  # noqa: E402
 
 UA = {"User-Agent": "Mozilla/5.0 (research; rhetoric-strikes)"}
 SYSTEM = """Ти збираєш, кого ЗМІ називають у звʼязку з конкретною судовою справою (за її номером або описом), і в якій ролі.
@@ -61,7 +61,7 @@ def main():
     user = json.dumps({"cause_num": a.cause, "sources": sources}, ensure_ascii=False)[:60000]
     if a.provider == "anthropic":
         import anthropic
-        txt = anthropic_text(anthropic.Anthropic().messages.create(model="claude-haiku-5-5", max_tokens=4000, output_config={"effort": "low"},
+        txt = anthropic_text(claude().messages.create(model="claude-haiku-5-5", max_tokens=4000, output_config={"effort": "low"},
                                                                  system=SYSTEM, messages=[{"role": "user", "content": user}]))
     else:
         txt = gemini_call("gemini-3.5-flash-lite", SYSTEM, user, os.environ["GEMINI_API_KEY"], max_tokens=4000)

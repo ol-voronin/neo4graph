@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json  # noqa: E402
+from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json, claude  # noqa: E402
 
 PROMPT_VERSION = "st-v1"
 SOURCES = ["tg:MID_Russia", "tg:news_kremlin", "tg:medvedev_telegram", "tg:mod_russia",            # RU official
@@ -111,7 +111,7 @@ def main():
     client = None
     if a.provider == "anthropic":
         import anthropic
-        client = anthropic.Anthropic()
+        client = claude()
     from load_to_db import connect
     sysmsg = system_prompt()
     pv = f"{PROMPT_VERSION}-{a.provider}"

@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import PANEL_SQL, PROMPT_VERSION, SKIP_SOURCES, SKIP_TYPES, anthropic_text, clean, parse_json, system_prompt  # noqa: E402
+from label_messages import PANEL_SQL, PROMPT_VERSION, SKIP_SOURCES, SKIP_TYPES, anthropic_text, clean, parse_json, system_prompt, claude  # noqa: E402
 
 BATCH_DIR = ROOT / "data" / "batches"
 MODEL = "claude-haiku-5-5"
@@ -30,7 +30,7 @@ def clients():
     import os
     import anthropic
     keys = [os.environ.get("ANTHROPIC_API_KEY", "")] + os.environ.get("ANTHROPIC_API_KEY_LEGACY", "").split(",")
-    return [anthropic.Anthropic(api_key=k.strip()) for k in dict.fromkeys(keys) if k.strip()]
+    return [claude(api_key=k.strip()) for k in dict.fromkeys(keys) if k.strip()]
 
 
 def locate(cs, batch_id):
@@ -74,7 +74,7 @@ def candidates(cur, a):
 def submit(a):
     import anthropic
     from load_to_db import connect
-    client = anthropic.Anthropic()
+    client = claude()
     conn = connect()
     cur = conn.cursor()
     rows = candidates(cur, a)

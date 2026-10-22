@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json  # noqa: E402
+from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json, claude  # noqa: E402
 
 EVIDENCE_SOURCES = ["tg:kpszsu", "tg:GeneralStaffZSU", "tg:V_Zelenskiy_official", "tg:MID_Russia", "tg:mod_russia", "tg:news_kremlin",
                     "rss:whitehouse", "tg:golosameriki", "tg:ukrpravda_news", "tg:kyivindependent", "tg:bbcukrainian", "tg:bbcrussian",
@@ -48,7 +48,7 @@ def main():
     client = None
     if a.provider == "anthropic":
         import anthropic
-        client = anthropic.Anthropic()
+        client = claude()
     from load_to_db import connect
     conn = connect()
     cur = conn.cursor()

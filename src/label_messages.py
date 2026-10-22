@@ -44,6 +44,14 @@ def parse_json(s: str):
     return json.loads(s)
 
 
+def claude(api_key=None):
+    """Anthropic client; keys not scoped to a workspace need ANTHROPIC_WORKSPACE_ID (sent as anthropic-workspace-id)."""
+    import os
+    import anthropic
+    ws = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+    return anthropic.Anthropic(api_key=api_key, default_headers={"anthropic-workspace-id": ws} if ws else None)
+
+
 def anthropic_text(resp) -> str:
     """Concatenate text blocks only (responses may carry thinking blocks first)."""
     return "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
@@ -115,7 +123,7 @@ def main():
     client = None
     if a.provider == "anthropic":
         import anthropic
-        client = anthropic.Anthropic()
+        client = claude()
     pv = f"{PROMPT_VERSION}-{a.provider}"
     sysmsg = system_prompt()
     order = "random()" if a.sample else "m.ts_published DESC"
