@@ -32,3 +32,10 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python src/police_wanted.py wanted missing
+      - name: Prosecutor General report forms (weekly on Mondays; forms update ~8th of each month)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.what != 'police' || github.event_name == 'schedule' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%u)" != "1" ]; then echo "not Monday: skipped"; exit 0; fi
+          python src/ogp_reports.py
