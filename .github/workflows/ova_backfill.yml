@@ -1,0 +1,35 @@
+name: ova-backfill
+
+# One-off history of the oblast administration summaries -> oblast_daily (same path as collect.yml, deeper paging).
+# Posts stay on the runner disk (data/ova); only the parsed daily rows reach Neon (a few thousand rows).
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "YYYY-MM-DD: oldest day to fetch (the rhetoric corpus starts 2026-04)"
+        default: "2026-03-25"
+
+concurrency:
+  group: ova-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv
+      - name: Collect and parse
+        run: |
+          python src/collect_telegram.py --channels $(python src/oblasts.py --handles) --out-dir data/ova \
+            --since "${{ github.event.inputs.since }}" --pages 2000 --delay 1.0
+          python src/parse_oblast_daily.py --since "${{ github.event.inputs.since }}"
+          wc -l data/oblast_daily.jsonl
+      - name: Load
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/load_to_db.py oblast
