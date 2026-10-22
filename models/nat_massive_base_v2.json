@@ -1,0 +1,15 @@
+{
+  "name": "nat_massive_base_v2",
+  "role": "baseline",
+  "target": "nat_massive",
+  "target_doc": "national massive day D: Air Force launched missiles >= 20 or drones >= 400 (night into D + day D)",
+  "cutoff_hour": 15,
+  "deadline_hour": 18,
+  "deadline": "D-1 18:00 Europe/Kyiv (the night wave into D starts ~18:00)",
+  "signals": [],
+  "C": 1.0,
+  "min_train": 60,
+  "frozen": "2026-10-22",
+  "start": "2025-01-01",
+  "start_doc": "Air Force summaries backfilled to 2025-01-01"
+}

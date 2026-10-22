@@ -50,7 +50,12 @@ def rhetoric(conn, cutoff_hour: int) -> pd.DataFrame:
       avg((rule_threat_level >= 2)::int) FILTER (WHERE panel AND country = 'UA')::float AS l2_ua,
       count(*) FILTER (WHERE x ~ %(envoy)s) AS dip,
       count(*) FILTER (WHERE x ~ %(envoy)s AND x !~ %(iran)s) AS dip_ua,
-      count(*) FILTER (WHERE x ~ %(peace)s) AS peace
+      count(*) FILTER (WHERE x ~ %(peace)s) AS peace,
+      -- panel-only twins: the same definitions exist for the pre-panel history (rhetoric_daily_hist, src/history.py)
+      count(*) FILTER (WHERE panel) AS posts_p,
+      count(*) FILTER (WHERE panel AND x ~ %(envoy)s) AS dip_p,
+      count(*) FILTER (WHERE panel AND x ~ %(envoy)s AND x !~ %(iran)s) AS dip_ua_p,
+      count(*) FILTER (WHERE panel AND x ~ %(peace)s) AS peace_p
     FROM m GROUP BY d ORDER BY d"""
     with conn.cursor() as cur:
         cur.execute(q, {"panel": PANEL, "start": PANEL_START, "envoy": ENVOY_RE, "iran": IRAN_RE, "peace": PEACE_RE})
@@ -81,11 +86,27 @@ def targets(conn) -> pd.DataFrame:
     return t
 
 
-def frame(conn, cutoff_hour: int, until=None) -> pd.DataFrame:
-    """Continuous daily index from the panel start to `until` (default: tomorrow), rhetoric + targets joined."""
+def history(conn, cutoff_hour: int) -> pd.DataFrame:
+    """Pre-panel days from rhetoric_daily_hist (src/history.py): panel-only columns, same windows and rules as rhetoric().
+    Corpus-wide columns (posts, dip, dip_ua, peace) do not exist before the panel start and stay NaN."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT d, posts_p, posts_ru, thr_ru, l2_ru, tgt_ru, thr_ua, l2_ua, dip_p, dip_ua_p, peace_p "
+                    "FROM rhetoric_daily_hist WHERE cutoff_hour = %s AND d < %s ORDER BY d", (cutoff_hour, PANEL_START))
+        cols = [c.name for c in cur.description]
+        df = pd.DataFrame(cur.fetchall(), columns=cols)
+    df["d"] = pd.to_datetime(df["d"])
+    return df
+
+
+def frame(conn, cutoff_hour: int, until=None, start=None) -> pd.DataFrame:
+    """Continuous daily index from `start` (default: the panel start) to `until` (default: tomorrow), rhetoric + targets.
+    A start before PANEL_START prepends the history aggregates; frozen v1 specs never pass it, so their frame is unchanged."""
     r, t = rhetoric(conn, cutoff_hour), targets(conn)
+    start = pd.Timestamp(start or PANEL_START)
+    if start < pd.Timestamp(PANEL_START):
+        r = pd.concat([history(conn, cutoff_hour), r[r.d >= pd.Timestamp(PANEL_START)]], ignore_index=True)
     end = pd.Timestamp(until) if until is not None else pd.Timestamp.now(tz="Europe/Kyiv").tz_localize(None).normalize() + pd.Timedelta(days=1)
-    idx = pd.DataFrame({"d": pd.date_range(PANEL_START, end, freq="D")})
+    idx = pd.DataFrame({"d": pd.date_range(start, end, freq="D")})
     return idx.merge(r, on="d", how="left").merge(t, on="d", how="left")
 
 
@@ -105,6 +126,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--cutoff", type=int, default=24)
     ap.add_argument("--tail", type=int, default=10)
+    ap.add_argument("--start", help="YYYY-MM-DD; before 2026-03-31 adds the pre-panel history")
     a = ap.parse_args()
     with connect() as c:
-        print(frame(c, a.cutoff).tail(a.tail).to_string())
+        print(frame(c, a.cutoff, start=a.start).tail(a.tail).to_string())

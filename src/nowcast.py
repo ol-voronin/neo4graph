@@ -68,7 +68,7 @@ def cmd_predict(a):
             if not window_open(s, target, now):
                 print(f"{s['name']}: window for {target.date()} not open at {now:%Y-%m-%d %H:%M} (cutoff {s['cutoff_hour']}:00, deadline {s['deadline_hour']}:00 on D-1)")
                 continue
-            df = frame(conn, s["cutoff_hour"], until=target)
+            df = frame(conn, s["cutoff_hour"], until=target, start=s.get("start"))
             F, y = design(df, s), df[s["target"]]
             row = df.index[df.d == target][0]
             # train on days whose outcome is already known and that end before the issue time
@@ -130,7 +130,7 @@ def cmd_backtest(a):
     res = {}
     with connect() as conn:
         for s in specs(a.model):
-            df = frame(conn, s["cutoff_hour"])
+            df = frame(conn, s["cutoff_hour"], start=s.get("start"))
             F, y = design(df, s), df[s["target"]]
             ps = pd.Series(np.nan, index=df.index)
             for row in df.index:

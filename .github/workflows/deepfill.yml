@@ -5,13 +5,14 @@ name: deepfill
 #   mode=history : panel rhetoric before 2026-03-31 WITHOUT Neon raw rows (src/history.py): per-channel collection
 #                  -> Parquet in release `history-latest` -> daily aggregates in `rhetoric_daily_hist` -> equivalence check.
 #   mode=verify  : only the Python-vs-SQL rule equivalence check on the live panel.
+#   mode=test5   : lead-lag tests on the long history (src/test5_history.py) + nowcast backtest of every model spec.
 # TODO: split history/verify into their own workflow file once merged.
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "messages | history | verify"
+        description: "messages | history | verify | test5"
         default: "history"
       channels:
         description: "mode=messages: space-separated channel names"
@@ -146,3 +147,31 @@ jobs:
       - env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python src/history.py verify
+
+  test5:
+    if: github.event.inputs.mode == 'test5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas numpy scipy statsmodels scikit-learn "psycopg[binary]" python-dotenv
+      - name: Test 5 (long history)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: src
+        run: python test5_history.py
+      - name: Nowcast backtest (all specs)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: src
+        run: python nowcast.py backtest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test5-${{ github.run_id }}
+          path: |
+            data/test5_history.json
+            data/backtest_nowcast.json

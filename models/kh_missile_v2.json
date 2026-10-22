@@ -1,0 +1,19 @@
+{
+  "name": "kh_missile_v2",
+  "role": "candidate",
+  "compare_to": "kh_missile_base_v2",
+  "target": "kh_missile_day",
+  "target_doc": "Kharkiv oblast missile day D: governor's daily summary for D reports missiles > 0",
+  "cutoff_hour": 21,
+  "deadline_hour": 24,
+  "deadline": "D 00:00 Europe/Kyiv",
+  "signals": [
+    "l2_ru"
+  ],
+  "signals_doc": "share of RU panel posts with rule threat level >= 2, 24 h window ending 21:00 on D-1 (tests 2/3)",
+  "C": 1.0,
+  "min_train": 60,
+  "frozen": "2026-10-22",
+  "start": "2025-01-01",
+  "start_doc": "Kharkiv summaries parse from 2025-05-02; pre-panel days come from rhetoric_daily_hist (src/history.py): panel-only aggregates, same rules and windows"
+}
