@@ -93,9 +93,9 @@ def load_existing(path: Path):
     return ids
 
 
-def collect(channel: str, pages: int, since: datetime | None, delay: float, query: str | None = None, tag: str = "", start_before: int | None = None, match: str | None = None):
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUT_DIR / f"{channel}{tag}.jsonl"
+def collect(channel: str, pages: int, since: datetime | None, delay: float, query: str | None = None, tag: str = "", start_before: int | None = None, match: str | None = None, out_dir: Path = OUT_DIR):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{channel}{tag}.jsonl"
     seen = load_existing(path)
     match_re = re.compile(match, re.I | re.S) if match else None
     new = 0
@@ -127,7 +127,7 @@ def collect(channel: str, pages: int, since: datetime | None, delay: float, quer
         time.sleep(delay)
     print(f"{channel}: +{new} new, total {len(seen)}" + (f", oldest_id {last_oldest}" if last_oldest else ""))
     if match_re is not None and last_oldest:  # with a content filter the file cannot tell where paging stopped: remember it
-        (OUT_DIR / f"{channel}{tag}.cursor").write_text(str(last_oldest))
+        (out_dir / f"{channel}{tag}.cursor").write_text(str(last_oldest))
 
 
 if __name__ == "__main__":
@@ -141,6 +141,7 @@ if __name__ == "__main__":
     ap.add_argument("--query", help="Telegram channel search text (history backfill of specific posts)")
     ap.add_argument("--tag", default="", help="suffix for output file, e.g. _summaries")
     ap.add_argument("--match", help="regex: store only posts whose text matches (paging still walks every post)")
+    ap.add_argument("--out-dir", help="output directory instead of data/telegram (e.g. data/ova: files there are parsed, not loaded into messages)")
     a = ap.parse_args()
     channels = a.channels or []
     if a.all:
@@ -148,4 +149,4 @@ if __name__ == "__main__":
         channels = [c["name"] for c in cfg["active"]]
     since = datetime.fromisoformat(a.since).replace(tzinfo=timezone.utc) if a.since else None
     for ch in channels:
-        collect(ch, a.pages, since, a.delay, a.query, a.tag, a.before_id, a.match)
+        collect(ch, a.pages, since, a.delay, a.query, a.tag, a.before_id, a.match, Path(a.out_dir) if a.out_dir else OUT_DIR)
