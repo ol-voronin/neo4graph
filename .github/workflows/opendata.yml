@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       what:
-        description: "police | ogp | arma | all"
+        description: "police | ogp | arma | alerts | all"
         default: "all"
 
 concurrency:
@@ -46,3 +46,10 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%u)" != "1" ]; then echo "not Monday: skipped"; exit 0; fi
           python src/arma_assets.py
+      - name: Air-raid alerts (daily; the v2 oblast model's negative labels need fresh alert days)
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.what == 'alerts' || github.event.inputs.what == 'all' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          git clone --depth 1 https://github.com/Vadimkin/ukrainian-air-raid-sirens-dataset.git /tmp/sirens
+          python src/load_to_db.py alerts --dataset /tmp/sirens/datasets --official
