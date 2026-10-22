@@ -207,7 +207,7 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 .hm .c b{font-size:13px}.hm .c small{font-size:10px;opacity:.85}.hm .c.weak{background:repeating-linear-gradient(135deg,var(--d-mid) 0 4px,transparent 4px 8px);color:var(--muted);border:1px solid var(--line)}.hm .c.none{background:none;color:var(--muted)}
 .ramp{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)}.ramp span{display:block;width:16px;height:8px}
 .vchart{width:100%;overflow:hidden}.vchart svg{display:block;max-width:100%}.vchart text{font-family:var(--font);font-size:10px;fill:var(--muted)}
-.fxtip{position:fixed;z-index:60;pointer-events:none;background:var(--tip);color:var(--tipfg);font-size:12px;line-height:1.35;padding:6px 8px;border-radius:6px;max-width:280px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.fxtip{position:fixed;z-index:60;pointer-events:none;background:var(--tip);color:var(--tipfg);font-size:12px;line-height:1.35;padding:6px 8px;border-radius:6px;max-width:340px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
 details.tbl summary{font-size:12px;color:var(--muted);cursor:pointer}details.tbl table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}
 details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6px;text-align:right;font-variant-numeric:tabular-nums}details.tbl th:first-child,details.tbl td:first-child{text-align:left}
 .tbwrap{overflow-x:auto}
@@ -354,15 +354,16 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
     <h3 style="margin-top:6px">Перевірка фактів і прогнозів</h3>
     <div class="fcl" id="fclist"><p class="empty">Завантаження…</p></div>
   </div>
-  <div class="fxtip" id="fxtip" hidden></div>
+
 </section>
+<div class="fxtip" id="fxtip" hidden></div>
 <section class="pg" id="prognoz" hidden>
   <h2 style="margin:4px 0">Проспективна перевірка «риторика → удари»</h2>
   <p class="meta" style="font-family:var(--font);font-size:13px;max-width:760px">Дослідження, <b>не попередження про загрозу</b>. Кожен прогноз записується до початку дня, на який він зроблений, і більше не змінюється. Через 2–3 місяці стане видно, чи кандидатні сигнали стабільно кращі за базову лінію.</p>
   <div class="cards" id="pgcards"><p class="meta">Завантаження…</p></div>
   <h3 class="meta" style="margin:14px 0 6px" id="pgregh">Масований удар по областях</h3>
   <div class="regs" id="pgregs"></div>
-  <div class="wrap" style="margin-top:12px"><table><thead><tr><th>День</th><th>Область</th><th>Модель</th><th>Ймовірність</th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div>
+  <div class="wrap" style="margin-top:12px"><table><thead><tr><th>День</th><th>Область</th><th>Модель</th><th>Ймовірність <span class="meta">(наведіть — що це)</span></th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div>
 </section>
 <script>/* show the right section before the graph data arrives (no flash of the graph on the home page) */
 {const u=new URL(location.href),v=u.searchParams.get('view')||(location.hash.length>1?'graph':'home');if(v!=='graph'){['graphtop','filters','legend'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});const m=document.querySelector('.main');if(m)m.hidden=true}const t=document.getElementById(v==='prognoz'?'prognoz':v==='factcheck'?'factcheck':'home');if(v!=='graph'&&t)t.hidden=false}</script>
@@ -889,12 +890,12 @@ function fxSet(t){fxTopic=t;fxChips();try{const u=new URL(location.href);if(t)u.
 fxChips();
 document.getElementById('fxper').onchange=e=>{fxPer=+e.target.value||6;renderMonthly();loadMood();loadRhet()};
 // one floating tooltip for every [data-tip] mark (pointer and keyboard focus)
-{const tip=document.getElementById('fxtip'),fc=document.getElementById('factcheck');
+{const tip=document.getElementById('fxtip');for(const fc of [document.getElementById('factcheck'),document.getElementById('prognoz')]){
   const place=(x,y)=>{const w=tip.offsetWidth,h=tip.offsetHeight;let a=x+12,b=y+12;if(a+w>innerWidth-8)a=x-w-12;if(b+h>innerHeight-8)b=y-h-12;tip.style.left=Math.max(4,a)+'px';tip.style.top=Math.max(4,b)+'px'};
   fc.addEventListener('pointermove',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(!t){tip.hidden=true;return}tip.innerHTML=t.dataset.tip;tip.hidden=false;place(e.clientX,e.clientY)});
   fc.addEventListener('pointerleave',()=>tip.hidden=true);
   fc.addEventListener('focusin',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(!t){tip.hidden=true;return}const r=t.getBoundingClientRect();tip.innerHTML=t.dataset.tip;tip.hidden=false;place(r.left+r.width/2,r.bottom)});
-  fc.addEventListener('focusout',()=>tip.hidden=true)}
+  fc.addEventListener('focusout',()=>tip.hidden=true)}}
 async function loadOverview(){['fxverdb','fxmatb','fxmonb','fxstb','fxrefb'].forEach(i=>document.getElementById(i).innerHTML='<p class="empty">Завантаження…</p>');
   document.getElementById('fxlgd1').innerHTML=document.getElementById('fxlgd2').innerHTML=lgd();
   try{OV=await getJ('/api/factcheck?level=overview'+fxQ());renderOverview()}
@@ -1078,16 +1079,34 @@ const RN={cherkaska:'Черкаська',chernihivska:'Чернігівська'
 const rn=r=>RN[r]||r||'Україна';
 function aucOf(y,p){const P=[],N=[];y.forEach((v,i)=>(v?P:N).push(p[i]));if(!P.length||!N.length)return null;let s=0;for(const a of P)for(const b of N)s+=a>b?1:a===b?.5:0;return s/(P.length*N.length)}
 const f3=(x,d=3)=>x==null?'—':x.toFixed(d);
-async function loadPG(){try{const {rows=[]}=await (await fetch('/api/predictions')).json();const by={},key=r=>r.d+'|'+(r.region||'');rows.filter(r=>r.outcome!=null).forEach(r=>(by[r.model]??=new Map()).set(key(r),r));
+// ---- explanation of one forecast (hover / focus on its probability) ----
+const pct1=x=>x==null?'—':(100*x).toFixed(x>=0.995||x<=0.005?1:0)+'%';
+const FEAT={base:'базова частота масованих днів в області (згладжена до середньої по всіх областях)',y2:'чи був масований удар за 2 дні до цільового',y2_m7:'частка масованих днів за останній тиждень',
+  l2_ru:'частка постів російських каналів із погрозою рівня ≥2 за добу до 15:00 напередодні',l2_ru_m3:'те саме, середнє за 3 дні',l2_ru_1:'частка постів російських каналів із погрозою рівня ≥2 за добу до 15:00 напередодні',
+  thr_geo_ru:'частка погрозливих російських постів, що згадують цю область',thr_geo_ru_1:'частка погрозливих російських постів, що згадують цю область (доба до 15:00)',thr_geo_ru_m3:'те саме, середнє за 3 дні'};
+function pgTip(r,pair,PG){const f=r.features||{},cov=(PG.coverage||[]).find(c=>c.region===r.region),cand=!!PM[r.model]?.vs;
+  let h=`<b>${pct1(r.p)}</b> — оцінка моделі, що ${r.region&&r.region!=='ukraine'?'в області «'+esc(rn(r.region))+'»':'в Україні'} ${esc(r.d)} буде масований удар`+(r.model.startsWith('ua_oblast')?' (за добу ≥7 ракет або ≥20 ударних дронів, FPV не рахуються)':'')+`. Випущено ${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}, до початку дня, і більше не змінюється.<br><br>`;
+  h+=`<b>Звідки число.</b> Логістична регресія, навчена на ${r.n_train||'?'} відомих ${r.model.startsWith('ua_oblast')?'область-днях':'днях'}: вона зважує ці ознаки й перетворює їх на ймовірність:<br>`;
+  const known=f.y2_known===0?' (невідомо — підставлено базову частоту)':'';
+  h+=Object.entries(f).filter(([k])=>FEAT[k]).map(([k,v])=>`• ${FEAT[k]}: <b>${k==='y2'&&!known?(v?'так':'ні'):pct1(v)}</b>${k==='y2'?known:''}`).join('<br>');
+  if(pair){const d=r.p-pair.p;h+=`<br><br><b>Внесок риторики:</b> ${cand?'ця модель':'кандидатна модель'} ${pct1(cand?r.p:pair.p)} проти бази без риторики ${pct1(cand?pair.p:r.p)} → ${(cand?d:-d)>=0?'+':'−'}${Math.abs(100*d).toFixed(1)} п. п.`}
+  const cal=(PG.calib||[]).filter(c=>c.model===r.model),b=cal.find(c=>c.bin===Math.min(4,Math.floor(r.p*5)));
+  h+=`<br><br><b>Як модель влучала досі:</b> `+(b&&b.n?`коли давала ${20*b.bin}–${20*b.bin+20}%, подія сталася в ${b.hits} з ${b.n} випадків (${pct1(b.hits/b.n)}).`:'для цього діапазону ще немає оцінених днів.');
+  if(cov&&(cov.complete===0||cov.known<cov.days*0.6))h+=`<br><br>⚠ <b>Ненадійно для цієї області:</b> повних щоденних зведень немає (${cov.complete} з ${cov.days} днів), відомі ${cov.known} днів — переважно ті, коли про удари писали. Тому базова частота тут завищена і спирається на середнє по областях (переважно Харківщина). Не читайте це як реальні ${pct1(r.p)}.`;
+  return h+'<br><br><span style="opacity:.8">Дослідження, не попередження про загрозу.</span>'}
+let PGD=null;
+async function loadPG(){try{const PG=await (await fetch('/api/predictions')).json();PGD=PG;const rows=PG.rows||[];const by={},key=r=>r.d+'|'+(r.region||'');rows.filter(r=>r.outcome!=null).forEach(r=>(by[r.model]??=new Map()).set(key(r),r));
   document.getElementById('pgcards').innerHTML=Object.entries(PM).filter(([,v])=>v.vs).map(([k,v])=>{const a=by[k]||new Map(),b=by[v.vs]||new Map(),days=[...a.keys()].filter(d=>b.has(d));const y=days.map(d=>a.get(d).outcome);const A=aucOf(y,days.map(d=>a.get(d).p)),B=aucOf(y,days.map(d=>b.get(d).p));
     return `<div class="card"><div class="meta">${esc(v.t)}</div><b>${A!=null&&B!=null?(A-B>=0?'+':'')+f3(A-B):'—'}</b><div class="meta">різниця AUC кандидат − база · оцінених ${k.startsWith('ua_oblast')?'область-днів':'днів'} ${days.length}, з подією ${y.filter(Boolean).length}</div></div>`}).join('');
   // per-oblast list: the latest day of the pooled model, candidate bar next to the baseline bar, highest first
   const C='ua_oblast_massive_v1',Bm=PM[C].vs,last=rows.filter(r=>r.model===C||r.model===Bm).reduce((m,r)=>r.d>m?r.d:m,'');
+  const pairOf=r=>{const o=PM[r.model]?.vs||Object.keys(PM).find(k=>PM[k].vs===r.model);return o?rows.find(x=>x.model===o&&x.d===r.d&&x.region===r.region):null};
+  const tipA2=r=>esc(pgTip(r,pairOf(r),PG));
   const cur=rows.filter(r=>r.d===last),reg={};cur.forEach(r=>{(reg[r.region]??={})[r.model===C?'c':'b']=r});
   document.getElementById('pgregh').textContent=last?`Масований удар по областях (≥7 ракет або ≥20 ударних дронів), ${last}`:'Масований удар по областях: прогнозів ще немає';
   document.getElementById('pgregs').innerHTML=Object.entries(reg).sort((x,y)=>((y[1].c||y[1].b).p)-((x[1].c||x[1].b).p)).map(([r,v])=>`<div class="reg"><b style="font-size:13px;display:inline">${esc(rn(r))}</b>
-    <div title="кандидат"><span class="bar" style="width:${Math.round((v.c?.p||0)*90)}px"></span>${f3(v.c?.p,2)}</div><div class="meta" title="база"><span class="bar b" style="width:${Math.round((v.b?.p||0)*90)}px"></span>${f3(v.b?.p,2)} база${v.c?.outcome!=null?` · сталося: ${v.c.outcome?'так':'ні'}`:''}</div></div>`).join('');
-  document.getElementById('pgrows').innerHTML=rows.slice(0,150).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(rn(r.region))}</td><td>${esc(PM[r.model]?.t||r.model)}<div class="meta">${esc(PM[r.model]?.k||'')}</div></td><td><span class="bar" style="width:${Math.round(r.p*80)}px"></span>${f3(r.p,2)}</td>
+    <div tabindex="0" ${v.c?`data-tip="${tipA2(v.c)}"`:''}><span class="bar" style="width:${Math.round((v.c?.p||0)*90)}px"></span>${pct1(v.c?.p)}</div><div class="meta" tabindex="0" ${v.b?`data-tip="${tipA2(v.b)}"`:''}><span class="bar b" style="width:${Math.round((v.b?.p||0)*90)}px"></span>${pct1(v.b?.p)} база${v.c?.outcome!=null?` · сталося: ${v.c.outcome?'так':'ні'}`:''}</div></div>`).join('');
+  document.getElementById('pgrows').innerHTML=rows.slice(0,150).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(rn(r.region))}</td><td>${esc(PM[r.model]?.t||r.model)}<div class="meta">${esc(PM[r.model]?.k||'')}</div></td><td tabindex="0" data-tip="${tipA2(r)}"><span class="bar" style="width:${Math.round(r.p*80)}px"></span>${pct1(r.p)}</td>
     <td>${r.outcome==null?'<span class="meta">ще невідомо</span>':r.outcome?'<b>так</b>':'<span class="meta">ні</span>'}</td><td class="meta">${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}</td></tr>`).join('')||'<tr><td colspan="6" class="meta">Ще немає прогнозів.</td></tr>';
 }catch(e){document.getElementById('pgcards').innerHTML='<p class="meta">Помилка: '+esc(e.message)+'</p>'}}
 // first view: ?view=, or the graph when the URL already points at a graph object, otherwise home
