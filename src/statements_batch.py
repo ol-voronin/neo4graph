@@ -132,30 +132,58 @@ def fetch(a):
         use = dict.fromkeys(PRICE, 0)
         verdicts = {}
         pv = f"{X.PROMPT_VERSION}-anthropic-batch"
-        for i, res in enumerate(client.messages.batches.results(meta["batch_id"])):
-            info = meta["ids"].get(res.custom_id)
-            if not info or res.result.type != "succeeded":
-                bad += 1
-                continue
-            u = getattr(res.result.message, "usage", None)
-            for k in use:
-                use[k] += getattr(u, k, 0) or 0
+        # Idempotent: a fetch that died half-way (the results stream broke on 2026-10-22 after part of a 29 k batch) is
+        # re-run; posts already extracted / statements already resolved since submission are skipped, not written twice.
+        ids = [v["id"] for v in meta["ids"].values()]
+        if meta.get("kind") == "resolve":
+            cur.execute("SELECT id FROM statements WHERE id = ANY(%s) AND resolved_at >= %s", ([int(x) for x in ids], meta["submitted_at"]))
+        else:
+            cur.execute("SELECT message_id FROM statement_extractions WHERE message_id = ANY(%s)", ([str(x) for x in ids],))
+        done = {str(r[0]) for r in cur.fetchall()}
+        seen, n = set(), 0
+        for attempt in range(5):
             try:
-                r = parse_json(anthropic_text(res.result.message))
-                if meta.get("kind") == "resolve":
-                    v = R.apply(cur, info["id"], r, info["ev"])
-                    verdicts[v] = verdicts.get(v, 0) + 1
-                else:
-                    sts, evs = X.clean(r)
-                    X.write(cur, info["id"], datetime.fromisoformat(info["ts"]), sts, evs, meta["model"], pv)
-                ok += 1
-            except Exception as e:  # noqa: BLE001
-                conn.rollback()
-                bad += 1
-                if bad <= 5:
-                    print(f"skip {info['id']}: {e}")
-            if i % 200 == 0:
+                for res in client.messages.batches.results(meta["batch_id"]):
+                    if res.custom_id in seen:
+                        continue
+                    seen.add(res.custom_id)
+                    info = meta["ids"].get(res.custom_id)
+                    if not info or res.result.type != "succeeded":
+                        bad += 1
+                        continue
+                    if str(info["id"]) in done:
+                        continue
+                    u = getattr(res.result.message, "usage", None)
+                    for k in use:
+                        use[k] += getattr(u, k, 0) or 0
+                    cur.execute("SAVEPOINT r")  # a bad item rolls back itself only, not the uncommitted good ones
+                    try:
+                        r = parse_json(anthropic_text(res.result.message))
+                        if meta.get("kind") == "resolve":
+                            v = R.apply(cur, info["id"], r, info["ev"])
+                            verdicts[v] = verdicts.get(v, 0) + 1
+                        else:
+                            sts, evs = X.clean(r)
+                            X.write(cur, info["id"], datetime.fromisoformat(info["ts"]), sts, evs, meta["model"], pv)
+                        cur.execute("RELEASE SAVEPOINT r")
+                        ok += 1
+                    except Exception as e:  # noqa: BLE001
+                        cur.execute("ROLLBACK TO SAVEPOINT r")
+                        bad += 1
+                        if bad <= 5:
+                            print(f"skip {info['id']}: {e}")
+                    n += 1
+                    if n % 200 == 0:
+                        conn.commit()
+                break
+            except Exception as e:  # noqa: BLE001  the results stream broke: keep what is written, read again, skip what is seen
                 conn.commit()
+                print(f"results stream broke after {len(seen)} ({type(e).__name__}: {str(e)[:120]}); retry {attempt + 1}")
+                time.sleep(10 * (attempt + 1))
+        else:
+            conn.commit()
+            print(meta["batch_id"], "results stream kept breaking; not marked written, the next fetch resumes")
+            continue
         conn.commit()
         cost = sum(use[k] * PRICE[k] for k in PRICE) / 1e6
         meta.update(written=True, ok=ok, bad=bad, usage=use, usd=round(cost, 4), verdicts=verdicts)
