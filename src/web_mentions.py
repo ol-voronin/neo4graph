@@ -31,12 +31,21 @@ def brave(q, key, n=10):
             for i in (data.get("web") or {}).get("results", [])]
 
 
-def tavily(q, key, n=10):
-    """Tavily search API: TAVILY_API_KEY (1,000 credits/month free, no card)."""
-    body = json.dumps({"api_key": key, "query": q, "max_results": n, "search_depth": "basic", "include_answer": False}).encode()
-    req = urllib.request.Request("https://api.tavily.com/search", data=body, headers={"Content-Type": "application/json", "User-Agent": UA["User-Agent"]})
+SOCIAL = ["t.me", "facebook.com", "instagram.com", "x.com", "twitter.com", "youtube.com", "tiktok.com", "linkedin.com", "threads.net"]
+
+
+def tavily(q, key, n=10, social=False):
+    """Tavily search API: TAVILY_API_KEY (1,000 credits/month free, no card). Dashboard settings do not apply to API calls,
+    so the country is sent here; it only boosts Ukrainian pages (no hard filter). social=True searches only SOCIAL domains,
+    which a general query rarely returns."""
+    p = {"query": q, "max_results": n, "search_depth": "basic", "topic": "general", "country": "ukraine", "include_answer": False}
+    if social:
+        p["include_domains"] = SOCIAL
+    req = urllib.request.Request("https://api.tavily.com/search", data=json.dumps(p).encode(),
+                                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}", "User-Agent": UA["User-Agent"]})
     data = json.loads(urllib.request.urlopen(req, timeout=40).read())
-    return [{"title": i.get("title"), "url": i.get("url"), "snippet": (i.get("content") or "")[:400], "engine": "tavily"} for i in data.get("results", [])]
+    return [{"title": i.get("title"), "url": i.get("url"), "snippet": (i.get("content") or "")[:400], "engine": "tavily-social" if social else "tavily"}
+            for i in data.get("results", [])]
 
 
 def tavily_keyless(q, n=10):
@@ -90,8 +99,9 @@ def main():
     # Google "search the entire web" is gone for engines created after 2026-01-20, so Brave is the whole-web engine and a
     # Google engine (if any) is a curated-sites engine (up to 50 domains); both are used when both keys exist.
     hits, engines = [], []
-    for name, fn in (("brave", lambda: brave(q, bk)), ("tavily", lambda: tavily(q, tk)), ("google", lambda: google(q, key, cx))):
-        if (name == "brave" and not bk) or (name == "tavily" and not tk) or (name == "google" and not (key and cx)):
+    for name, fn in (("brave", lambda: brave(q, bk)), ("tavily", lambda: tavily(q, tk)), ("tavily-social", lambda: tavily(q, tk, social=True)),
+                     ("google", lambda: google(q, key, cx))):
+        if (name == "brave" and not bk) or (name.startswith("tavily") and not tk) or (name == "google" and not (key and cx)):
             continue
         try:
             hits += fn()
