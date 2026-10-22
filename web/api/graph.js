@@ -3,7 +3,8 @@ import { getGraph, overview, around } from "./_graph.js";
 
 // GET /api/graph                                -> overview: the most connected nodes and the edges between them (light)
 // GET /api/graph?around=<id>&depth=2&limit=150  -> that node's neighbourhood, ranked by distance then degree, capped
-//     &fresh=<unique>                           -> rebuild first (a registry run just added data); a unique value misses the CDN
+//     &fresh=<unique>                           -> merge rows written since the graph snapshot first (a registry run just added
+//                                                  data; a few KB from Neon, see _graph.js); a unique value misses the CDN
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
 export default async function handler(req, res) {
