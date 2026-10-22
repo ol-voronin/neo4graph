@@ -37,6 +37,33 @@ export default async function handler(req, res) {
         explain: posts.total ? `Згадки «${key}» у постах: ${posts.total}${posts.capped ? "+" : ""}${posts.all && posts.all !== posts.total ? ` (усі слова разом — у ${posts.all})` : ""}. Нижче — найновіші; на графі тема повʼязана з каналами та обʼєктами, які ці пости вже згадують.`
           : posts.skipped || `У постах «${key}» не згадується.` });
     }
+    if (kind === "wanted") {
+      const r = (await sql`SELECT id, last_name_u, first_name_u, middle_name_u, last_name_r, first_name_r, middle_name_r, birth_date::text birth_date, sex, category,
+                           article_crim, restraint, ovd, agency, region, lost_date::text lost_date, lost_place, first_seen::text first_seen, removed::text removed
+                           FROM wanted_persons WHERE id = ${key}`)[0];
+      if (!r) return json(res, 404, { error: "no such wanted record" });
+      const who = [r.last_name_u, r.first_name_u, r.middle_name_u].filter(Boolean).join(" ");
+      return json(res, 200, { kind, record: r,
+        explain: `${who}${r.birth_date ? ", нар. " + r.birth_date : ""} — ${(r.category || "у розшуку").toLowerCase()}${r.article_crim ? ", " + r.article_crim : ""}${r.restraint ? "; запобіжний захід: " + r.restraint.toLowerCase() : ""}.` +
+          ` Шукає: ${r.ovd || "?"}. Переховується з ${r.lost_date || "?"}${r.lost_place ? ", " + r.lost_place.toLowerCase() : ""}.` +
+          (r.removed ? ` Запис зник із відкритих даних ${r.removed} (затримано, знайдено або знято з розшуку — у даних не сказано).` : "") +
+          " Джерело: відкриті дані Нацполіції (data.gov.ua). Збіг за ПІБ з іншими вузлами графа не означає, що це та сама людина." });
+    }
+    if (kind === "article") {
+      const [w, ytd] = await Promise.all([
+        sql`SELECT count(*) FILTER (WHERE removed IS NULL)::int active, count(*)::int total, mode() WITHIN GROUP (ORDER BY article_crim) example,
+            count(*) FILTER (WHERE agency = 'sbu' AND removed IS NULL)::int sbu, count(*) FILTER (WHERE agency = 'dbr' AND removed IS NULL)::int dbr
+            FROM wanted_persons WHERE article = ${key}`.catch(() => [{}]),
+        sql`WITH l AS (SELECT DISTINCT ON (key) key, period_to, value, derived FROM ogp_ytd WHERE form = 'forma_1' AND measure = 'registered' AND key = ${"art:" + key} ORDER BY key, period_to DESC)
+            SELECT l.period_to::text period_to, l.value, p.value prev, k.label FROM l LEFT JOIN ogp_ytd p ON p.form = 'forma_1' AND p.measure = 'registered' AND p.key = l.key
+            AND p.period_to = l.period_to - interval '1 year' LEFT JOIN ogp_keys k ON k.form = 'forma_1' AND k.key = l.key`.catch(() => []),
+      ]);
+      const a = w[0] || {}, y = ytd[0];
+      return json(res, 200, { kind, wanted: a, ogp: y || null,
+        explain: `Стаття ${key} КК${y?.label ? " — " + y.label : ""}. У розшуку Нацполіції зараз ${a.active || 0} осіб за цією статтею (з них шукає СБУ — ${a.sbu || 0}, ДБР — ${a.dbr || 0}).` +
+          (y ? ` За звітом Офісу Генпрокурора з початку року по ${y.period_to.slice(0, 7)} зареєстровано ${y.value}${y.prev != null ? ` (торік за ті ж місяці — ${y.prev})` : ""}.` : " У звітах ОГП ця стаття окремим рядком не публікується.") +
+          " На графі — найновіші записи розшуку за статтею." });
+    }
     if (kind === "decision") {
       const r = (await sql`SELECT doc_id, cause_num, court, judgment_form, justice_kind, category, adjudication_date, receipt_date, date_publ, judge, doc_url, status, year,
                            length(text) AS text_len, left(text, 1200) AS head, text FROM court_decisions WHERE doc_id = ${key}`)[0];

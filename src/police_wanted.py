@@ -97,11 +97,18 @@ def day(s):
         return None
 
 
+APOS = str.maketrans({"`": "'", "’": "'", "ʼ": "'"})  # the police file writes в`ячеслав; ЄДР and the graph use the ASCII apostrophe
+
+
+def nm(v):
+    return v.translate(APOS).strip() if v else v
+
+
 def rows_wanted(data):
     for x in data:
         a = article_of(x.get("article_crim"))
-        yield (x["id"], x.get("category"), x.get("last_name_u"), x.get("first_name_u"), x.get("middle_name_u"), x.get("last_name_r"),
-               x.get("first_name_r"), x.get("middle_name_r"), x.get("last_name_e"), x.get("first_name_e"), x.get("middle_name_e"),
+        yield (x["id"], x.get("category"), nm(x.get("last_name_u")), nm(x.get("first_name_u")), nm(x.get("middle_name_u")), nm(x.get("last_name_r")),
+               nm(x.get("first_name_r")), nm(x.get("middle_name_r")), x.get("last_name_e"), x.get("first_name_e"), x.get("middle_name_e"),
                day(x.get("birth_date")), x.get("sex"), day(x.get("lost_date")), x.get("lost_place"), x.get("ovd"), agency_of(x.get("ovd")),
                region_of(x.get("ovd"), x.get("lost_place")), x.get("article_crim"), a, ART.get(a, "other" if a else "no_article"), x.get("restraint"))
 

@@ -3,6 +3,7 @@ import { getGraph, peekGraph, norm, isPlaceholder } from "./_graph.js";
 import { getManifest, searchKey } from "./_lake.js";
 import { byCode, byName, peopleOf, rolesOf, card } from "./registry.js";
 import { postMentions, decisionTexts, webFound } from "./_mentions.js";
+import { OBLASTS } from "./_text.js";
 
 // On-the-fly neighbourhood for an object the graph does not hold yet (a registry hit from /api/search, a judge, a «topic:»
 // of post mentions). Same wire format as /api/graph?around=, so the page merges it into what it already draws:
@@ -10,6 +11,9 @@ import { postMentions, decisionTexts, webFound } from "./_mentions.js";
 //   fop:<record>, person:<name>, org:<name> — lake card / companies the person has a role in (registry_roles), judge's
 //                                             decisions, posts and decision texts
 //   topic:<words>     — the posts that mention the words, their channels and the graph entities those posts already link to
+//   wanted:<id>       — a police wanted record: the person, the searching body, the Criminal Code article, the oblast
+//   article:<n>       — a Criminal Code article: the newest active wanted records under it (national stats: /api/node)
+//   person:<name>     — also gets the wanted records that match the full name (migration 021)
 // Every part has its own time cap and fails alone; Neon sees a few indexed lookups and at most one capped post scan.
 const soft = (p, ms, dflt) => Promise.race([Promise.resolve(p), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]).catch(() => dflt);
 const title = (s) => norm(s).toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
@@ -42,6 +46,18 @@ export async function expand(id, label = "", { judge = false } = {}) {
       edge(pid, id, ROLE_REL[p.role] || "related", { detail: p.detail, src: "ЄДР (data lake)" });
     }
     out.people = people.length;
+  } else if (kind === "wanted") {
+    const r = (await soft(query(`SELECT ${WCOLS} FROM wanted_persons WHERE id = $1`, [key]), 2500, []))[0];
+    if (!r) return { error: "немає такого запису розшуку", center: id, nodes: [], edges: [] };
+    wantedNodes(node, edge, r);
+    name = r.name_u;
+    out.person = "person:" + r.name_u;
+  } else if (kind === "article") {
+    node({ id, type: "article", label: `ст. ${key} КК` });
+    const rows = await soft(query(`SELECT ${WCOLS} FROM wanted_persons WHERE article = $1 AND removed IS NULL ORDER BY lost_date DESC NULLS LAST LIMIT 25`, [key]), 2500, []);
+    for (const r of rows) wantedNodes(node, edge, r);
+    out.wanted = rows.length;
+    name = `ст. ${key}`;
   } else if (kind === "fop" || kind === "person" || kind === "org") {
     const m = await soft(getManifest(), 2500, null);
     const type = kind === "org" ? "org" : kind === "fop" ? "registry" : "person";
@@ -65,6 +81,18 @@ export async function expand(id, label = "", { judge = false } = {}) {
         edge(pid, rid, ROLE_REL[r.role] || "related", { src: "ЄДР (data lake)" });
       }
     }
+    // police wanted list: full-name matches (Ukrainian or Russian spelling); a two-word name only names candidates
+    if (kind === "person" && name.split(" ").length >= 2) {
+      const w = await soft(query(`SELECT ${WCOLS} FROM wanted_persons WHERE name_u = $1 OR name_r = $1 OR name_u LIKE $2 ORDER BY removed NULLS FIRST LIMIT 10`,
+        [name.toLowerCase(), name.toLowerCase() + " %"]), 2000, []);
+      for (const r of w) {
+        const same = r.name_u === name.toLowerCase() || r.name_r === name.toLowerCase();
+        const pid = same ? id : node({ id: "person:" + r.name_u, type: "person", label: title(r.name_u) });
+        if (!same) edge(id, pid, "namesake", { detail: "збіг прізвища та імені з записом розшуку; той самий чи інший — визначають по батькові й дата народження" });
+        wantedNodes(node, edge, r, pid);
+      }
+      out.wanted = w.length;
+    }
     // a judge (the search said so): decisions they signed (no index on judge: one capped pass, newest first)
     if (kind === "person" && judge) {
       const dec = await soft(query(`SELECT doc_id, cause_num, judgment_form f, adjudication_date::text d, court, judge, doc_url FROM court_decisions
@@ -81,18 +109,18 @@ export async function expand(id, label = "", { judge = false } = {}) {
   // ---- what the texts say: posts and decision texts naming it ----
   const isTopic = kind === "topic";
   // a person's posts: surname + first name when known (stems), otherwise the whole name
-  const textQ = kind === "person" || kind === "fop" ? name.split(" ").slice(0, 2).join(" ") : name;
+  const textQ = kind === "person" || kind === "fop" || kind === "wanted" ? name.split(" ").slice(0, 2).join(" ") : name;
   const [posts, texts, web] = await Promise.all([
-    soft(postMentions(textQ, { limit: isTopic ? 30 : 12, ms: 2800 }), 3200, { total: 0, items: [] }),
-    isTopic ? { items: [] } : soft(decisionTexts(textQ, { limit: 8 }), 3000, { items: [] }),
-    soft(webFound(label || name), 2000, { items: [] }),
+    kind === "article" ? { total: 0, items: [] } : soft(postMentions(textQ, { limit: isTopic ? 30 : 12, ms: 2800 }), 3200, { total: 0, items: [] }),
+    isTopic || kind === "article" ? { items: [] } : soft(decisionTexts(textQ, { limit: 8 }), 3000, { items: [] }),
+    kind === "article" || kind === "wanted" ? { items: [] } : soft(webFound(label || name), 2000, { items: [] }),
   ]);
   // a named object: only posts that carry every word of the name (surname + first name; «Рошен-Чернігів»), not the surname alone
   if (!isTopic && (posts.words || []).length > 1) { posts.items = (posts.items || []).filter((p) => p.all_words); posts.total = posts.all || posts.items.length; }
   const ev = {};
   for (const p of posts.items || []) {
     const pid = node({ id: p.id, type: "post", label: (p.snippet || "").slice(0, 70) + "…", src: p.source, date: p.date, url: p.url, text: p.snippet });
-    edge(id, pid, "mentioned_in", { msgs: [p.msg], date: p.date, src: p.source });
+    edge(out.person || id, pid, "mentioned_in", { msgs: [p.msg], date: p.date, src: p.source });
     ev[p.msg] = { date: p.date, src: p.source, text: p.snippet, url: p.url };
     if (isTopic) {
       const cid = node({ id: "channel:" + p.source, type: "channel", label: p.src || p.source });
@@ -128,6 +156,24 @@ export async function expand(id, label = "", { judge = false } = {}) {
   out.ev = ev;
   out.total = out.shown = out.nodes.length;
   return out;
+}
+
+// ---- police wanted records (migration 021) ----
+export const WCOLS = `id, name_u, name_r, last_name_u, first_name_u, middle_name_u, birth_date::text birth_date, category, article_crim, article, art_group,
+  restraint, ovd, agency, region, lost_date::text lost_date, lost_place, removed::text removed`;
+const PLACE = Object.fromEntries(OBLASTS.map(([slug, nm]) => [slug, slug === "kyiv-city" ? "place:київ" : "place:" + nm.toLowerCase() + " область"]));
+const PLACE_LABEL = Object.fromEntries(OBLASTS.map(([slug, nm]) => [slug, slug === "kyiv-city" ? "Київ" : nm + " область"]));
+export function wantedNodes(node, edge, r, pid = null) {
+  const who = [r.last_name_u, r.first_name_u, r.middle_name_u].filter(Boolean).join(" ");
+  const wid = node({ id: "wanted:" + r.id, type: "wanted", label: "Розшук · " + title(who), category: r.category, article: r.article_crim, restraint: r.restraint,
+    ovd: r.ovd, birth_date: r.birth_date, date: r.lost_date, region: r.region, removed: r.removed, src: "Нацполіція (data.gov.ua)" });
+  pid = pid || node({ id: "person:" + r.name_u, type: "person", label: title(r.name_u) });
+  edge(pid, wid, "wanted", { detail: [(r.category || "").toLowerCase(), r.article_crim, r.restraint, r.lost_date ? "з " + r.lost_date : "", r.birth_date ? "нар. " + r.birth_date : "",
+    r.removed ? "знято з розшуку " + r.removed : ""].filter(Boolean).join(" · "), date: r.lost_date, src: "Нацполіція" });
+  if (r.ovd) edge(node({ id: "org:" + norm(r.ovd).toLowerCase(), type: "org", label: norm(r.ovd), kind: r.agency }), wid, "searches", { src: "Нацполіція" });
+  if (r.article) edge(wid, node({ id: "article:" + r.article, type: "article", label: `ст. ${r.article} КК` }), "article", { detail: r.article_crim });
+  if (PLACE[r.region]) edge(wid, node({ id: PLACE[r.region], type: "place", label: PLACE_LABEL[r.region] }), "region", { detail: r.lost_place });
+  return wid;
 }
 
 function decisionNode(node, d) {
