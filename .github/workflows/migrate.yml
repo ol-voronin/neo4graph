@@ -1,0 +1,32 @@
+name: migrate
+
+# Apply SQL files from db/ to Neon, each in one transaction (psql -1, stops at the first error). Manual only.
+#   gh workflow run migrate -f files="db/migrations/015_oblast_daily.sql db/backfill/015_kharkiv_to_oblast_daily.sql"
+
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: "space-separated paths under db/, applied in order"
+        required: true
+
+concurrency:
+  group: migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FILES: ${{ github.event.inputs.files }}
+        run: |
+          sudo apt-get install -y -qq postgresql-client >/dev/null
+          for f in $FILES; do
+            case "$f" in db/*.sql) ;; *) echo "refusing $f: only db/**/*.sql"; exit 1;; esac
+            echo "== $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "$f"
+          done
