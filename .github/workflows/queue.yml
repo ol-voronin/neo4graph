@@ -15,6 +15,8 @@ jobs:
   drain:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      processed: ${{ steps.drain.outputs.processed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,6 +32,7 @@ jobs:
           key: dumps-${{ github.run_id }}
           restore-keys: dumps-
       - name: Drain queue
+        id: drain
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_CSE_KEY: ${{ secrets.GOOGLE_CSE_KEY }}
@@ -39,4 +42,19 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}   # needed when the key is not scoped to a workspace
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GNEOJ }}
-        run: python src/drain_queue.py --max 3
+        run: |
+          set +e
+          python -u src/drain_queue.py --max 3 | tee drain.log
+          rc=${PIPESTATUS[0]}
+          # items were picked up (even if one failed, others may have written rows): refresh the graph snapshot
+          grep -qE '^queued: [1-9]' drain.log && echo "processed=true" >> "$GITHUB_OUTPUT"
+          exit $rc
+
+  # registry results reach the site's graph right away (snapshot + delta while Neon is still awake), not at the next 3-hourly run
+  graph:
+    needs: drain
+    if: always() && needs.drain.outputs.processed == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/graph.yml
+    secrets: inherit

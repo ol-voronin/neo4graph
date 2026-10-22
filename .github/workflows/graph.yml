@@ -1,0 +1,63 @@
+name: graph
+
+# Graph snapshot for the site (web/scripts/graph_snapshot.mjs): the Vercel functions read the entity graph from the
+# release "graph-latest" instead of pulling ~16 MB from Neon on every cold instance (free plan: 5 GB egress a month).
+# Most runs are incremental: the published snapshot plus the rows written since it (a few KB from Neon); a full build
+# happens when the last one is ~24 h old (or on dispatch with full=true). An unchanged graph re-stamps only the manifest.
+#
+# Schedule: minute 36 of every third hour, right after the queue drain (5,35) and the label-batch / statements jobs
+# (35 of 0,6,12,18): Neon is usually still awake. queue.yml also calls this workflow after it processed queue items.
+
+on:
+  schedule:
+    - cron: "36 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "full rebuild from Neon (~16 MB egress) instead of snapshot + delta"
+        type: boolean
+        default: false
+  workflow_call: {}
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: graph-snapshot
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --omit=dev
+        working-directory: web
+      - name: Build snapshot
+        id: build
+        working-directory: web
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OUT_DIR: graph-out
+        run: node scripts/graph_snapshot.mjs ${{ github.event.inputs.full == 'true' && '--full' || '' }}
+      - name: Publish
+        working-directory: web
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGED: ${{ steps.build.outputs.changed }}
+          FILE: ${{ steps.build.outputs.file }}
+        run: |
+          gh release view graph-latest >/dev/null 2>&1 || gh release create graph-latest --title "Entity graph snapshot" --notes "Entity graph for the site (gzip JSON), read by web/api/_graph.js. Rebuilt by .github/workflows/graph.yml."
+          # the data file first, the manifest that points at it last
+          [ "$CHANGED" = "true" ] && gh release upload graph-latest "graph-out/$FILE"
+          gh release upload graph-latest graph-out/graph_manifest.json --clobber
+          # keep the current and the previous file (instances may hold the previous manifest for up to 10 minutes)
+          keep=$(gh release view graph-latest --json assets -q '.assets[].name' | grep -E '^graph_[0-9]{14}\.json\.gz$' | sort | tail -2)
+          for a in $(gh release view graph-latest --json assets -q '.assets[].name' | grep -E '^graph_[0-9]{14}\.json\.gz$'); do
+            echo "$keep" | grep -qx "$a" || [ "$a" = "$FILE" ] || gh release delete-asset graph-latest "$a" --yes
+          done
