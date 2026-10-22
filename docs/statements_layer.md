@@ -35,14 +35,15 @@ zhytomyrska; `ukraine` for nationwide; `russia:<region>` for strikes on Russia.
     "predicted_event": "one sentence: what must happen for this to be true, or null if nothing checkable",
     "target_region": "region slug|ukraine|russia|null",
     "horizon_days": 7,
-    "resolvable": true
+    "resolvable": true,
+    "topic": "pow|exchange|ceasefire|tcc|law|corruption|null"
   }],
   "events": [{
-    "event_type": "strike|sanction|aid|weapons_delivery|mobilisation|negotiation|attack_on_russia|legal_act|other",
+    "event_type": "strike|sanction|aid|weapons_delivery|mobilisation|negotiation|attack_on_russia|legal_act|prisoner_exchange|ceasefire|other",
     "event_date": "YYYY-MM-DD (Kyiv) or null",
     "region": "region slug|ukraine|russia:<name>|null",
     "actor": "who did it",
-    "missiles": 0, "drones": 0, "guided_bombs": 0, "killed": 0, "injured": 0,
+    "missiles": 0, "drones": 0, "guided_bombs": 0, "killed": 0, "injured": 0, "people": 0,
     "details": "<=150 chars",
     "confidence": 0.0
   }]
@@ -57,6 +58,10 @@ zhytomyrska; `ukraine` for nationwide; `russia:<region>` for strikes on Russia.
 Заяви: загроза, обіцянка, прогноз, твердження про факт, вимога, спростування, оголошена дія. Для кожної вкажи, хто говорить (actor_name) і його табір (actor_side). Для США: адміністрація (Білий дім, Держдеп, Пентагон) = US_admin; республіканці та їхні союзники = US_right; демократи та їхні союзники = US_left; спільні двопартійні заяви Конгресу = US_congress_bipartisan; інакше US_other. predicted_event — одне речення, що саме має статися, щоб заяву можна було визнати правдивою; якщо заява нічого перевірюваного не обіцяє — null і resolvable=false. horizon_days — у які строки це мало б статися (із тексту; якщо строку немає — 30). target_region — область або "ukraine"/"russia", якщо заява стосується конкретної території.
 
 Події: лише факти, які повідомлення подає як такі, що сталися: удари (ракети/дрони/КАБ по області, загиблі/поранені), санкції, допомога, поставки зброї, мобілізація, переговори, атаки на Росію, правові акти. Для ударів по Україні region — slug області з переліку; кількості — як у тексті, інакше 0. confidence: 1.0 офіційне джерело про свою територію; 0.7 новина з посиланням; 0.4 блогер/без джерела.
+
+Теми (topic заяви): pow — полонені (утримання, умови, страти, повернення, списки); exchange — обміни полоненими або тілами (домовленість, кількість, дата, зрив); ceasefire — перемир'я, мораторій на удари (енергетичний, на свята тощо): оголошено, погоджено, дотримується, порушено; tcc — ТЦК, мобілізація, повістки, відстрочки, демобілізація; law — закони, законопроєкти, постанови, укази (ухвалити, підписати, ветувати, скасувати); corruption — корупція, підозри, справи НАБУ/САП/ВАКС/НАЗК, обіцянки покарати. Інакше null. Для цих тем predicted_event формулюй так, щоб його можна було перевірити: хто, що, скільки, до якої дати («Обмін 300 на 300 відбудеться до 30 жовтня», «Росія не завдає ударів по енергетиці 30 днів від 18 березня», «Рада ухвалить законопроєкт №1234 у другому читанні до кінця місяця»). Твердження «перемир'я дотримується / порушено», «обмін відбувся, повернули N» — це claim_fact.
+
+Події prisoner_exchange — обмін, що відбувся (people — скільки людей повернули, якщо назване; обмін тілами — details починай словом «тіла», people — кількість тіл); ceasefire — перемир'я або мораторій оголошено, почалося чи завершилося (details: що саме і на який строк).
 
 Не додавай нічого зі своїх знань. Не оцінюй правдивість. Повідомлення без заяв і подій → порожні списки.
 ```
