@@ -65,15 +65,18 @@ async function loadRows(q, since = null) {
   // beneficiaries, extracted persons, searched names) -> m = 'full'; two-word names («Прізвище Імʼя») -> m = 'short', drawn
   // as a namesake candidate. ~1 100 rows on 2026-10-22.
   // full builds only (the snapshot is rebuilt daily, the list changes daily); a delta skips it
-  const wanted = S ? [] : await q`WITH nm AS (
+  const wanted = S ? [] : await q`WITH nm AS MATERIALIZED (
         SELECT lower(regexp_replace(btrim(split_part(f, ';', 1)), '\\s+', ' ', 'g')) n FROM edr_orgs,
                jsonb_array_elements_text(coalesce(founders, '[]'::jsonb) || coalesce(signers, '[]'::jsonb) || coalesce(beneficiaries, '[]'::jsonb)) f
         UNION SELECT lower(regexp_replace(btrim(name_norm), '\\s+', ' ', 'g')) FROM ee_persons
         UNION SELECT lower(regexp_replace(btrim(name_norm), '\\s+', ' ', 'g')) FROM media_links
-        UNION SELECT lower(regexp_replace(btrim(query), '\\s+', ' ', 'g')) FROM registry_hits)
-      SELECT w.id, w.name_u, w.last_name_u, w.first_name_u, w.middle_name_u, w.birth_date::text b, w.category, w.article_crim, w.article, w.restraint, w.ovd, w.agency,
-             w.lost_date::text d, CASE WHEN w.name_u IN (SELECT n FROM nm) THEN 'full' ELSE 'short' END m
-      FROM wanted_persons w WHERE w.removed IS NULL AND (w.name_u IN (SELECT n FROM nm) OR lower(w.last_name_u || ' ' || w.first_name_u) IN (SELECT n FROM nm))`.catch(() => []);
+        UNION SELECT lower(regexp_replace(btrim(query), '\\s+', ' ', 'g')) FROM registry_hits),
+      w AS MATERIALIZED (SELECT * FROM wanted_persons WHERE removed IS NULL),
+      x AS (SELECT w.id, 'full' m FROM w JOIN nm ON nm.n = w.name_u
+            UNION ALL SELECT w.id, 'short' m FROM w JOIN nm ON nm.n = lower(w.last_name_u || ' ' || w.first_name_u))
+      SELECT DISTINCT ON (w.id) w.id, w.name_u, w.last_name_u, w.first_name_u, w.middle_name_u, w.birth_date::text b, w.category, w.article_crim, w.article,
+             w.restraint, w.ovd, w.agency, w.lost_date::text d, x.m
+      FROM x JOIN w USING (id) ORDER BY w.id, x.m`.catch((e) => { console.warn("wanted rows:", e.message); return []; });
   return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted };
 }
 
