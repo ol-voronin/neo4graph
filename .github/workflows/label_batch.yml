@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       cmd:
-        description: "submit | fetch | status"
+        description: "submit | fetch | status | drop <batch ids>"
         default: "status"
       limit:
         description: "submit: max messages"
@@ -54,7 +54,7 @@ jobs:
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
           CMD="${{ github.event.inputs.cmd || 'fetch' }}"
           if [ "${{ github.event.schedule }}" = "40 3 * * *" ]; then python src/label_batch.py fetch && python src/label_batch.py submit --newest --limit 4000
-          elif [ "$CMD" = "submit" ]; then python src/label_batch.py submit --limit "${{ github.event.inputs.limit || '30000' }}" ${{ github.event.inputs.scope == 'panel' && '--panel' || '' }} ${{ github.event.inputs.newest == 'true' && '--newest' || '' }}; else python src/label_batch.py "$CMD"; fi
+          elif [ "$CMD" = "submit" ]; then python src/label_batch.py submit --limit "${{ github.event.inputs.limit || '30000' }}" ${{ github.event.inputs.scope == 'panel' && '--panel' || '' }} ${{ github.event.inputs.newest == 'true' && '--newest' || '' }}; else python src/label_batch.py $CMD; fi   # unquoted: "drop <ids>" splits into args
       - uses: actions/upload-artifact@v4
         if: always()
         with:
