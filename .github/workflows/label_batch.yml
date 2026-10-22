@@ -5,7 +5,8 @@ name: label-batch
 
 on:
   schedule:
-    - cron: "35 */2 * * *"   # fetch finished batches
+    - cron: "35 */6 * * *"   # fetch finished batches (batches take hours; one Neon wake per 6 h)
+    - cron: "40 3 * * *"     # submit the day's new posts, newest first, capped (~$0.4/day at Haiku 5.5 batch prices)
   workflow_dispatch:
     inputs:
       cmd:
@@ -51,7 +52,8 @@ jobs:
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
           CMD="${{ github.event.inputs.cmd || 'fetch' }}"
-          if [ "$CMD" = "submit" ]; then python src/label_batch.py submit --limit "${{ github.event.inputs.limit || '30000' }}" ${{ github.event.inputs.scope == 'panel' && '--panel' || '' }} ${{ github.event.inputs.newest == 'true' && '--newest' || '' }}; else python src/label_batch.py "$CMD"; fi
+          if [ "${{ github.event.schedule }}" = "40 3 * * *" ]; then python src/label_batch.py fetch && python src/label_batch.py submit --newest --limit 4000
+          elif [ "$CMD" = "submit" ]; then python src/label_batch.py submit --limit "${{ github.event.inputs.limit || '30000' }}" ${{ github.event.inputs.scope == 'panel' && '--panel' || '' }} ${{ github.event.inputs.newest == 'true' && '--newest' || '' }}; else python src/label_batch.py "$CMD"; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

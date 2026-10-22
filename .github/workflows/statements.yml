@@ -5,7 +5,7 @@ name: statements
 
 on:
   schedule:
-    - cron: "50 */6 * * *"
+    - cron: "35 */6 * * *"   # same window as label-batch: one Neon wake
   workflow_dispatch:
     inputs:
       limit:

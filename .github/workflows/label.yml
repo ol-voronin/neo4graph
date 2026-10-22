@@ -4,10 +4,7 @@ name: label
 # Manual run with dry_run=true prints labels for a random sample WITHOUT writing (use it for the QA pass).
 
 on:
-  # every 3 hours: newest unlabeled posts first. Gemini free tier has a small daily quota; the script stops cleanly on 429 and the next run continues.
-  # To pause labeling, comment these two lines out.
-  schedule:
-    - cron: "20 */3 * * *"
+  # Scheduled labeling moved to label-batch (Claude Batch API, daily submit of new posts); this stays for manual/QA runs.
   workflow_dispatch:
     inputs:
       limit:
