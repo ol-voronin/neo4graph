@@ -113,11 +113,11 @@ export function sources(q, C) {
 // ---- grouped search over every source ----
 const PER_SOURCE_MS = 2500;
 const soft = (p, ms = PER_SOURCE_MS) => Promise.race([Promise.resolve(p), new Promise((_, no) => setTimeout(() => no(new Error(`не встигло за ${ms / 1000} с`)), ms))]);
-export const GROUPS = [["graph", "Граф"], ["registry", "Реєстри"], ["courts", "Суди"], ["mentions", "Згадки в постах"], ["places", "Місця"], ["channels", "Канали"]];
+export const GROUPS = [["graph", "Граф"], ["registry", "Реєстри"], ["wanted", "Розшук"], ["courts", "Суди"], ["mentions", "Згадки в постах"], ["places", "Місця"], ["channels", "Канали"]];
 // scope -> groups that run (detected case numbers / codes narrow «Усе» the same way)
 const SCOPE = {
-  all: ["graph", "registry", "courts", "mentions", "places", "channels"],
-  person: ["graph", "registry", "courts", "mentions"], org: ["graph", "registry", "courts", "mentions"], fop: ["graph", "registry", "mentions"],
+  all: ["graph", "registry", "wanted", "courts", "mentions", "places", "channels"],
+  person: ["graph", "registry", "wanted", "courts", "mentions"], org: ["graph", "registry", "courts", "mentions"], fop: ["graph", "registry", "mentions"],
   code: ["graph", "registry", "mentions"], case: ["courts", "graph", "mentions"], place: ["places", "registry", "mentions"],
   channel: ["channels", "mentions"], post: ["mentions"],
 };
@@ -197,6 +197,27 @@ async function courtsGroup(q, kind, C) {
   return { items: dedupe([...cases.map((c) => ({ ...c, exact: c.tier === 0 })), ...judges, ...t]), texts_total: texts.total || 0 };
 }
 
+// police wanted list (migration 021): surname / full-name prefix in Ukrainian or Russian spelling; «ст. 408» -> the article
+const ARTICLE = /^(?:ст\.?|стаття|статья|article)\s*(\d{2,3}(?:-\d)?)\s*(?:кк)?$/i;
+async function wantedGroup(q) {
+  const art = q.match(ARTICLE);
+  if (art) {
+    const [r] = await query(`SELECT count(*) FILTER (WHERE removed IS NULL)::int n FROM wanted_persons WHERE article = $1`, [art[1]]);
+    return { items: [{ id: "article:" + art[1], type: "article", label: `ст. ${art[1]} КК`, sub: `у розшуку: ${r?.n || 0} · статистика ОГП у картці`, tier: 0, exact: true }] };
+  }
+  const k = norm(q).toLowerCase().replace(/[’ʼ`]/g, "'");
+  if (k.length < 4 || /\d/.test(k)) return { items: [] };
+  const v = [...new Set([k, ...ukVariants(k, 2).map((x) => x.toLowerCase())])].slice(0, 3);
+  const rows = await query(`SELECT id, name_u, last_name_u, first_name_u, middle_name_u, birth_date::text b, article_crim, category, agency, lost_date::text d, removed::text removed
+      FROM wanted_persons WHERE name_u LIKE ANY($1) OR name_r LIKE ANY($1) ORDER BY removed NULLS FIRST, (name_u = ANY($2)) DESC, lost_date DESC NULLS LAST LIMIT 20`,
+    [v.map((x) => x.replace(/[%_]/g, "") + "%"), v]);
+  const AG = { police: "Нацполіція", sbu: "СБУ", dbr: "ДБР", nabu: "НАБУ", border_guard: "ДПСУ" };
+  return { items: rows.map((r) => ({ id: "wanted:" + r.id, type: "wanted", label: [r.last_name_u, r.first_name_u, r.middle_name_u].filter(Boolean).join(" "),
+    sub: [r.removed ? "знято з розшуку " + r.removed : "у розшуку", r.article_crim, AG[r.agency] || r.agency, r.b ? "нар. " + r.b : ""].filter(Boolean).join(" · "),
+    tier: v.includes(r.name_u) ? 1 : 2, person: "person:" + r.name_u })),
+    note: rows.length ? "Збіг за ПІБ не означає, що це та сама людина: звіряйте дату народження." : undefined };
+}
+
 async function placesGroup(q, C) {
   const [gz, ev] = await Promise.all([soft(findPlaces(q, { limit: 12, wait: 1800 }), 2400).catch(() => []), sources(q, C).place().catch(() => [])]);
   return { items: dedupe([...gz, ...ev.map((r) => ({ ...r, tier: Math.max(1, r.tier) }))].sort((a, b) => a.tier - b.tier)) };
@@ -218,7 +239,7 @@ export async function searchAll(q, kind = "all", part = "") {
   const t0 = Date.now();
   const run = {
     graph: () => graphGroup(q, scope, C), registry: () => registryGroup(q, scope), courts: () => courtsGroup(q, scope, C),
-    mentions: () => mentionsGroup(q), places: () => placesGroup(q, C), channels: () => sources(q, C).channel().then((items) => ({ items })),
+    mentions: () => mentionsGroup(q), places: () => placesGroup(q, C), wanted: () => wantedGroup(q), channels: () => sources(q, C).channel().then((items) => ({ items })),
   };
   const groups = await Promise.all(want.map(async (key) => {
     const s = Date.now();
@@ -232,7 +253,7 @@ export async function searchAll(q, kind = "all", part = "") {
     }
   }));
   // flat list: exact identifiers first, then by group priority
-  const PRI = { graph: 1, registry: 2, courts: 3, places: 4, channels: 5, mentions: 6 };
+  const PRI = { graph: 1, registry: 2, wanted: 2, courts: 3, places: 4, channels: 5, mentions: 6 };
   const flat = [];
   for (const g of groups) g.items.forEach((x, i) => flat.push({ ...x, group: g.key, _p: x.exact || (x.tier === 0 && g.key !== "mentions") ? 0 : PRI[g.key], _i: i }));
   for (const g of groups) if (g.topic) flat.push({ ...g.topic, group: "mentions", _p: PRI.mentions, _i: -1 });

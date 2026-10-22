@@ -61,7 +61,20 @@ async function loadRows(q, since = null) {
     q`SELECT recipt_edrpou e, payer_edrpou pe, max(payer_name) pn, count(*)::int n, sum(amount)::float total, min(trans_date)::date d0, max(trans_date)::date d1
                         FROM public_payments GROUP BY 1, 2 ORDER BY total DESC LIMIT 2000`.catch(() => []),
   ]);
-  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay };
+  // police wanted records for people the graph already names (migration 021): full names (ЄДР founders / signers /
+  // beneficiaries, extracted persons, searched names) -> m = 'full'; two-word names («Прізвище Імʼя») -> m = 'short', drawn
+  // as a namesake candidate. ~1 100 rows on 2026-10-22.
+  // full builds only (the snapshot is rebuilt daily, the list changes daily); a delta skips it
+  const wanted = S ? [] : await q`WITH nm AS (
+        SELECT lower(regexp_replace(btrim(split_part(f, ';', 1)), '\\s+', ' ', 'g')) n FROM edr_orgs,
+               jsonb_array_elements_text(coalesce(founders, '[]'::jsonb) || coalesce(signers, '[]'::jsonb) || coalesce(beneficiaries, '[]'::jsonb)) f
+        UNION SELECT lower(regexp_replace(btrim(name_norm), '\\s+', ' ', 'g')) FROM ee_persons
+        UNION SELECT lower(regexp_replace(btrim(name_norm), '\\s+', ' ', 'g')) FROM media_links
+        UNION SELECT lower(regexp_replace(btrim(query), '\\s+', ' ', 'g')) FROM registry_hits)
+      SELECT w.id, w.name_u, w.last_name_u, w.first_name_u, w.middle_name_u, w.birth_date::text b, w.category, w.article_crim, w.article, w.restraint, w.ovd, w.agency,
+             w.lost_date::text d, CASE WHEN w.name_u IN (SELECT n FROM nm) THEN 'full' ELSE 'short' END m
+      FROM wanted_persons w WHERE w.removed IS NULL AND (w.name_u IN (SELECT n FROM nm) OR lower(w.last_name_u || ' ' || w.first_name_u) IN (SELECT n FROM nm))`.catch(() => []);
+  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted };
 }
 
 // ---- assemble rows into a graph; with `base` the rows are merged into an existing graph (its node/edge objects are reused) ----
@@ -192,6 +205,22 @@ export function assemble(R, base = null) {
       const fid = node("fop:" + h.ref, "registry", h.title, { stan: p.stan, text: h.snippet, src: "ЄДР (ФОП)" });
       edge(who, fid, "fop_record", null, { detail: h.snippet, src: "ЄДР" });
     }
+  }
+  // police wanted list: a record per person already in the graph under the same full name; searching body and article as nodes
+  for (const w of R.wanted || []) {
+    const short = "person:" + (w.last_name_u + " " + w.first_name_u).toLowerCase();
+    if (w.m !== "full" && !nodes.has(short)) continue;
+    if (w.m === "full" && !nodes.has("person:" + w.name_u)) continue;
+    const pid = node("person:" + w.name_u, "person", [w.last_name_u, w.first_name_u, w.middle_name_u].filter(Boolean).join(" ").toLowerCase()
+      .replace(/(^|[\s'’-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase()));
+    if (w.m !== "full") edge(short, pid, "namesake", null, { detail: "збіг прізвища та імені з записом розшуку; той самий чи інший — визначають по батькові й дата народження" });
+    const who = [w.last_name_u, w.first_name_u, w.middle_name_u].filter(Boolean).join(" ").toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
+    const wid = node("wanted:" + w.id, "wanted", "Розшук · " + who, { category: w.category, article: w.article_crim, restraint: w.restraint, ovd: w.ovd, birth_date: w.b, date: w.d,
+      src: "Нацполіція (data.gov.ua)" });
+    edge(pid, wid, "wanted", null, { detail: [(w.category || "").toLowerCase(), w.article_crim, w.restraint, w.d ? "з " + w.d : "", w.b ? "нар. " + w.b : "",
+      "збіг за повним ПІБ — звіряйте дату народження"].filter(Boolean).join(" · "), src: "Нацполіція" });
+    if (w.ovd) edge(node("org:" + norm(w.ovd).toLowerCase(), "org", norm(w.ovd), { kind: w.agency }), wid, "searches", null);
+    if (w.article) edge(wid, node("article:" + w.article, "article", `ст. ${w.article} КК`), "article", null, { detail: w.article_crim });
   }
   // analyst-supplied links (the researcher's own knowledge): kept apart from registry facts and labelled as such
   for (const l of R.alinks) {
