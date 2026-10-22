@@ -85,6 +85,11 @@ def cmd_messages(a):
     print(f"parsed {len(rows)} messages")
     if a.dry_run:
         return
+    from collect_rss import SOURCES  # RSS sources register themselves (Telegram ones come from channels.json)
+    with connect() as conn, conn.cursor() as cur:
+        cur.executemany("INSERT INTO sources(id, name, country, lang, type, platform, tier) VALUES (%s,%s,%s,'en',%s,'web','B') ON CONFLICT (id) DO NOTHING",
+                        [(f"rss:{k}", n, c, t) for k, (n, c, t) in SOURCES.items()])
+        conn.commit()
     sql = ("INSERT INTO messages(id, source_id, ts_published, lang, text, url, hash) "
            "VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING")
     with connect() as conn, conn.cursor() as cur:
