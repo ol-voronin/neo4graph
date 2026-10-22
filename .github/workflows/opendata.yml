@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       what:
-        description: "police | ogp | all"
+        description: "police | ogp | arma | all"
         default: "all"
 
 concurrency:
@@ -28,14 +28,21 @@ jobs:
           python-version: "3.12"
       - run: pip install "psycopg[binary]" python-dotenv ijson
       - name: Police (wanted, missing)
-        if: ${{ github.event_name == 'schedule' || github.event.inputs.what != 'ogp' }}
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.what == 'police' || github.event.inputs.what == 'all' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python src/police_wanted.py wanted missing
       - name: Prosecutor General report forms (weekly on Mondays; forms update ~8th of each month)
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.what != 'police' || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.what == 'ogp' || github.event.inputs.what == 'all' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%u)" != "1" ]; then echo "not Monday: skipped"; exit 0; fi
           python src/ogp_reports.py
+      - name: ARMA arrested assets register (weekly on Mondays; ~740 MB JSON, ~118 k assets kept)
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.what == 'arma' || github.event.inputs.what == 'all' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%u)" != "1" ]; then echo "not Monday: skipped"; exit 0; fi
+          python src/arma_assets.py
