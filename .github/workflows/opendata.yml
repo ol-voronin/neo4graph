@@ -1,0 +1,34 @@
+name: opendata
+
+# Daily open data from data.gov.ua: Національна поліція (wanted persons in full, missing persons as counts; src/police_wanted.py,
+# migration 021) and the Prosecutor General's report forms (src/ogp_reports.py, migration 022). Inside the 06:35 Neon wake
+# window used by the statements pipeline.
+
+on:
+  schedule:
+    - cron: "45 6 * * *"
+  workflow_dispatch:
+    inputs:
+      what:
+        description: "police | ogp | all"
+        default: "all"
+
+concurrency:
+  group: opendata
+  cancel-in-progress: false
+
+jobs:
+  opendata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv ijson
+      - name: Police (wanted, missing)
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.what != 'ogp' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/police_wanted.py wanted missing

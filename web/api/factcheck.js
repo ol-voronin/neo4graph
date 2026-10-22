@@ -90,7 +90,7 @@ async function person(id) {
     actor?.kind === "institution" || !dname ? null : soft(dossier("person:" + dname.toLowerCase(), { graph: false }), 9000),
   ]);
   const arr = (x) => (Array.isArray(x) ? x : []);  // a dossier part that failed or timed out comes back as {error}
-  const did = dos ? { roles: arr(dos.roles), cases: arr(dos.cases), media_cases: arr(dos.media_cases), decisions: arr(dos.decisions), edr_roles: arr(dos.edr_roles),
+  const did = dos ? { roles: arr(dos.roles), cases: arr(dos.cases), media_cases: arr(dos.media_cases), decisions: arr(dos.decisions), edr_roles: arr(dos.edr_roles), wanted: arr(dos.wanted),
     posts: dos.posts?.items ? dos.posts : null, registry_hits: arr(dos.registry_hits), web: arr(dos.web) } : null;
   return { level: "person", id, min_n: MIN_N, k: K, actor: actor || null, label: actor?.name_uk || p?.label || id, graph_name: dname,
     group: grp ? { id: grp.id, name: grp.name, score: grp.score } : null, country: p?.country || actor?.country,

@@ -223,6 +223,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
 .axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
 .tp .split{display:block;font-size:11px;color:var(--muted);white-space:nowrap}
 /* mood small multiples */
+.fxsvg{display:block;overflow:visible}.fxsvg text{font-size:10px;fill:var(--muted)}#wanted h4{margin:8px 0 4px;font-size:13px}#wanted .tbwrap table{border-collapse:collapse;font-size:12px;width:100%}#wanted .tbwrap td,#wanted .tbwrap th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left}
 .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 .mcard{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}.mcard.on{border-color:var(--accent)}
 .mcard h4{margin:0;font-size:13px}.mcard .now{font-size:12px;color:var(--muted)}
@@ -319,6 +320,12 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"><h3>Настрій в Україні за темами</h3><div class="lgd"><span><i style="background:var(--s-ua)"></i>українські джерела</span><span><i style="background:var(--s-ru)"></i>російські джерела (як подають тему)</span></div></div>
     <p class="how">Як читати: лінія — середній тон постів за тиждень від −2 (різко негативно) до +2 (схвально), 0 — нейтрально; сірі стовпчики — скільки постів. Нижче — тон за типом джерела і що саме обговорюють.</p>
     <div id="moodb"><p class="empty">Завантаження…</p></div>
+  </div>
+  <div class="rh" id="wanted">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"><h3>Розшук і зниклі безвісти · Нацполіція</h3>
+      <input id="wq" type="search" placeholder="ПІБ: Прізвище Імʼя…" aria-label="Пошук у розшуку за ПІБ" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;font-size:12px"></div>
+    <p class="how">Відкриті дані Нацполіції (data.gov.ua), щодня. Розшук — особи, які переховуються від слідства, суду, прокуратури, а також дезертири; групи — за першою статтею КК. «Нові за місяць» — за датою, з якої людина переховується. Зниклі безвісти — лише кількості, без імен. Збіг за ПІБ не означає, що це та сама людина.</p>
+    <div id="wantedb"><p class="empty">Завантаження…</p></div>
   </div>
   <div class="rh" id="rhet">
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
@@ -778,7 +785,7 @@ function show(v,push=true){if(!VIEWS[v])v='home';for(const [k,ids] of Object.ent
   document.querySelectorAll('#side [data-view]').forEach(b=>b.tagName==='BUTTON'&&b.setAttribute('aria-current',b.dataset.view===v?'page':'false'));
   if(push){const u=new URL(location.href);if(v==='home')u.searchParams.delete('view');else u.searchParams.set('view',v);u.searchParams.delete('person');if(v!=='graph')u.hash='';history.pushState({v},'',u)}
   if(v==='graph')render();
-  if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet();if(CAN_QUEUE){loadTrust();loadOverview();loadMood()}}
+  if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet();if(CAN_QUEUE){loadTrust();loadOverview();loadMood();loadWanted()}}
   if(v==='factcheck'&&CAN_QUEUE){const pid=new URL(location.href).searchParams.get('person');if(pid)openPerson(pid,false);else closePerson(false)}
   if(v==='prognoz'&&!loaded.pg){loaded.pg=1;loadPG()}
   if(v==='home')loadHome();window.scrollTo({top:0})}
@@ -939,6 +946,46 @@ function renderMonthly(){const box=document.getElementById('fxmonb');if(!OV)retu
     <details class="tbl"><summary>таблиця</summary><div class="tbwrap"><table><tr><th>місяць</th><th>заяв</th>${VK.map(([,l,i])=>`<th>${i} ${l}</th>`).join('')}</tr>${rows.filter(r=>r.n).map(r=>`<tr><td>${r.m}</td><td>${nf(r.n)}</td>${VK.map(([k])=>`<td>${nf(r[k])}</td>`).join('')}</tr>`).join('')}</table></div></details>`}
 {let rt;window.addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(OV&&!document.getElementById('factcheck').hidden)renderMonthly();if(MD&&!document.getElementById('factcheck').hidden)renderMood()},200)})}
 // mood: weekly average tone per topic, UA vs RU sources; n per week as its own strip (no second y axis)
+// ---------- wanted persons and missing persons (Нацполіція, /api/wanted, migration 021) ----------
+const WG={military_evasion:'ухилення від служби, СЗЧ, дезертирство',war_collab:'держзрада, колабораціонізм, воєнні злочини',corruption:'корупція, розкрадання',border:'незаконний перетин кордону',violent:'насильницькі',property:'майнові (крадіжки, шахрайство)',other:'інші статті',no_article:'без статті (аліменти, цивільні)'};
+const WC={military_evasion:'--s-ua',war_collab:'--s-ru',corruption:'--v-p'};
+const WA={police:'Нацполіція',sbu:'СБУ',dbr:'ДБР',nabu:'НАБУ',border_guard:'ДПСУ',other:'інші'};
+const RG={kharkivska:'Харківська',donetska:'Донецька',luhanska:'Луганська',zaporizka:'Запорізька',khersonska:'Херсонська',mykolaivska:'Миколаївська',odeska:'Одеська',dnipropetrovska:'Дніпропетровська',kyivska:'Київська','kyiv-city':'м. Київ',crimea:'Крим',lvivska:'Львівська',vinnytska:'Вінницька',poltavska:'Полтавська',zakarpatska:'Закарпатська',khmelnytska:'Хмельницька',ivano_frankivska:'Івано-Франківська','ivano-frankivska':'Івано-Франківська',ternopilska:'Тернопільська',cherkaska:'Черкаська',kirovohradska:'Кіровоградська',chernivetska:'Чернівецька',zhytomyrska:'Житомирська',sumska:'Сумська',rivnenska:'Рівненська',chernihivska:'Чернігівська',volynska:'Волинська',russia:'РФ',unknown:'не визначено'};
+let WD=null;
+async function loadWanted(){const box=document.getElementById('wantedb');try{WD=await getJ('/api/wanted?months=48');renderWanted()}catch(e){box.innerHTML=`<p class="empty">Дані розшуку ще недоступні: ${esc(e.message)}</p>`}}
+function wLines(series,keys,W=Math.max(300,(document.getElementById('wantedb').clientWidth||640)-4),H=170){// series: [{month,key,n}] -> one line per key, shared y axis
+  const ms=[...new Set(series.map(s=>s.month))].sort();if(ms.length<2)return '<p class="empty">Замало місяців.</p>';const mx=Math.max(1,...series.filter(s=>keys.includes(s.key)).map(s=>s.n));
+  const L=34,R=8,T=8,B=18,x=i=>L+i*(W-L-R)/(ms.length-1),y=v=>T+(H-T-B)*(1-v/mx);let g='';
+  [0,.5,1].forEach(f=>g+=`<line x1="${L}" x2="${W-R}" y1="${y(mx*f)}" y2="${y(mx*f)}" stroke="var(--grid)"/><text x="${L-4}" y="${y(mx*f)+3}" text-anchor="end">${nf(Math.round(mx*f))}</text>`);
+  ms.forEach((m,i)=>{if(m.endsWith('-01-01'))g+=`<text x="${x(i)}" y="${H-4}" text-anchor="middle">${m.slice(0,4)}</text>`});
+  keys.forEach(k=>{const pts=ms.map((m,i)=>{const s=series.find(z=>z.month===m&&z.key===k);return `${x(i).toFixed(1)},${y(s?s.n:0).toFixed(1)}`});g+=`<polyline fill="none" stroke="var(${WC[k]||'--muted'})" stroke-width="2" points="${pts.join(' ')}"/>`});
+  ms.forEach((m,i)=>{const t=keys.map(k=>{const s=series.find(z=>z.month===m&&z.key===k);return `${esc(WG[k]||k)}: ${nf(s?s.n:0)}`}).join('<br>');const bw=(W-L-R)/ms.length;g+=`<rect x="${(x(i)-bw/2).toFixed(1)}" y="${T}" width="${bw.toFixed(1)}" height="${H-T-B}" fill="transparent" data-tip="${tipA(`<b>${m.slice(0,7)}</b><br>${t}`)}"/>`});
+  return `<svg class="fxsvg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="ряд по місяцях">${g}</svg>`}
+function renderWanted(){const box=document.getElementById('wantedb'),r=WD||{},m=r.meta||{};
+  if(!m.total){box.innerHTML='<p class="empty">Реєстр розшуку ще не завантажено: перший прогін — щоденний workflow opendata.</p>';return}
+  const G=(r.groups||[]).filter(g=>g.active>0),gmx=Math.max(1,...G.map(g=>g.active)),act=k=>(G.find(g=>g.art_group===k)||{}).active||0;
+  const mis=(r.missing_regions||[]).reduce((a,x)=>a+x.n,0);
+  const kpi=[['У розшуку зараз',m.active,`усього записів ${nf(m.total)} · оновлено ${esc(m.updated||'')}`],['Ухилення, СЗЧ, дезертирство',act('military_evasion'),'ст. 335–336, 402–410'],['Держзрада, колабораціонізм',act('war_collab'),'ст. 110–114-2, 258, 260, 436–438'],['Зниклі безвісти з 02.2022',mis,'за даними поліції, лише кількість']];
+  const flow=(r.flow||[]).map(f=>({month:f.month,key:f.art_group,n:f.n}));
+  const miss=(()=>{const mm=new Map();(r.missing||[]).forEach(x=>mm.set(x.month,(mm.get(x.month)||0)+x.n));return [...mm].sort().map(([month,n])=>({month,key:'missing',n}))})();
+  const regs=k=>(r.regions||[]).filter(x=>x.art_group===k).sort((a,b)=>b.active-a.active).slice(0,8);
+  const ag=['military_evasion','war_collab','corruption'].map(k=>{const A=(r.agencies||[]).filter(x=>x.art_group===k),t=A.reduce((s,x)=>s+x.active,0)||1;return `<tr><td>${esc(WG[k])}</td>${Object.keys(WA).map(a=>`<td>${Math.round(100*((A.find(x=>x.agency===a)||{}).active||0)/t)}%</td>`).join('')}</tr>`}).join('');
+  const bars=(list,lab,col)=>`<div class="hb">${list.map(x=>`<div class="hbr"><span>${esc(lab(x))}</span><span class="stk"><span style="flex:${x.v} 1 0;background:var(${col})"></span><span style="flex:${Math.max(0,x.max-x.v)} 1 0;background:transparent"></span></span><span class="meta">${nf(x.v)}</span></div>`).join('')}</div>`;
+  WC.missing='--v-u';
+  box.innerHTML=`<div class="kpis">${kpi.map(([l,v,s])=>`<div class="kpi"><span class="k">${l}</span><b>${nf(v)}</b><span class="meta">${s}</span></div>`).join('')}</div>
+    <div class="fxgrid">
+      <div><h4>Хто в розшуку: групи статей</h4>${bars(G.map(g=>({v:g.active,max:gmx,k:g.art_group})),x=>WG[x.k]||x.k,'--accent')}</div>
+      <div><h4>Хто шукає (частка активних записів)</h4><div class="tbwrap"><table><tr><th>група</th>${Object.values(WA).map(a=>`<th>${a}</th>`).join('')}</tr>${ag}</table></div>
+        <h4>Де: ухилення, СЗЧ, дезертирство</h4>${bars(regs('military_evasion').map(x=>({v:x.active,max:regs('military_evasion')[0]?.active||1,k:x.region})),x=>RG[x.k]||x.k,'--s-ua')}</div>
+      <div class="wide"><h4>Нові записи по місяцях <span class="meta">— <span style="color:var(--s-ua)">ухилення/СЗЧ/дезертирство</span> · <span style="color:var(--s-ru)">держзрада/колабораціонізм</span> · <span style="color:var(--v-p)">корупція</span></span></h4>
+        <p class="how">Як читати: за датою, з якої людина переховується; останні місяці неповні — записи додаються із запізненням.</p>${wLines(flow,['military_evasion','war_collab','corruption'])}</div>
+      <div class="wide"><h4>Зниклі безвісти по місяцях зникнення</h4><p class="how">Як читати: скільки людей зникло в кожному місяці і досі в розшуку як зниклі (за останнім знімком). Сюди входять і військові, зниклі на фронті.</p>${wLines(miss,['missing'])}</div>
+      <div><h4>Зниклі з 02.2022 за областями</h4>${bars((r.missing_regions||[]).slice(0,10).map(x=>({v:x.n,max:(r.missing_regions||[])[0]?.n||1,k:x.region})),x=>RG[x.k]||x.k,'--v-u')}</div>
+      <div><h4>Пошук у розшуку</h4><div id="wres"><p class="how">Введіть прізвище та імʼя у полі вгорі блоку.</p></div></div>
+    </div>`}
+document.getElementById('wq').onkeydown=async e=>{if(e.key!=='Enter')return;const q=e.target.value.trim(),out=document.getElementById('wres');if(!out)return;if(q.split(/\s+/).length<2){out.innerHTML='<p class="how">Потрібні щонайменше прізвище та імʼя.</p>';return}
+  out.innerHTML='<p class="empty">Пошук…</p>';try{const r=await getJ('/api/wanted?name='+encodeURIComponent(q));out.innerHTML=(r.items||[]).length?`<p class="how">${esc(r.note)}</p><ul class="plain">${r.items.map(w=>`<li><b>${esc([w.last_name_u,w.first_name_u,w.middle_name_u].filter(Boolean).join(' '))}</b> <span class="meta">нар. ${esc(w.birth_date||'?')} · ${esc(w.article_crim||'')} · ${esc((w.category||'').toLowerCase())} · ${esc(WA[w.agency]||w.agency||'')} · ${esc(RG[w.region]||w.region||'')} · з ${esc(w.lost_date||'?')}${w.removed?` · знято ${esc(w.removed)}`:''}</span></li>`).join('')}</ul>`:'<p class="empty">У розшуку не знайдено.</p>'}catch(err){out.innerHTML='<p class="empty">'+esc(err.message)+'</p>'}};
+{let wt;window.addEventListener('resize',()=>{clearTimeout(wt);wt=setTimeout(()=>{if(WD&&!document.getElementById('factcheck').hidden)renderWanted()},200)})}
 async function loadMood(){const box=document.getElementById('moodb');box.innerHTML='<p class="empty">Завантаження…</p>';
   try{MD=await getJ('/api/mood?weeks='+fxWeeks());renderMood()}catch(e){MD=null;box.innerHTML=`<p class="empty">Настрій ще недоступний: ${esc(e.message)}</p>`}}
 const dvRow=(l,avg,n,tip)=>{const a=Math.max(-2,Math.min(2,+avg||0)),w=Math.abs(a)/2*50;return `<span class="l" title="${esc(l)}">${esc(l)}</span><span class="b" tabindex="0" data-tip="${tipA(tip)}"><span style="${a>=0?`left:50%`:`left:${50-w}%`};width:${w.toFixed(1)}%;background:var(${a>=0?'--d-pos':'--d-neg'})"></span></span><span class="v">${sgn(avg)}</span>`};
@@ -966,7 +1013,7 @@ function renderMood(){const box=document.getElementById('moodb'),r=MD||{},ser=r.
       ${GR.length?`<div class="meta">Українські джерела за типом</div><div class="dv">${GR.map(x=>dvRow(`${STN[x.stype]||x.stype} · ${nf(x.n)}`,x.avg,x.n,`<b>${esc(STN[x.stype]||x.stype)}</b><br>тон ${sgn(x.avg)} · ${nf(x.n)} постів${x.neg!=null?' · негативних '+Math.round(100*x.neg)+'%':''}`)).join('')}</div>`:''}
       ${O.length?`<div class="meta">Що обговорюють</div><div class="dv">${O.map(x=>dvRow(`${x.object} · ${nf(x.n)}`,x.avg,x.n,`<b>${esc(x.object)}</b><br>тон ${sgn(x.avg)} · ${nf(x.n)} постів`)).join('')}</div>`:''}</div>`};
   box.innerHTML=note+`<div class="mgrid">${pick.map(card).join('')}</div>${cov.first?`<p class="how" style="margin-top:6px">Розмітка тону з ${d10(cov.first)} · оцінено постів: ${nf(cov.labeled)}.</p>`:''}`}
-if(!CAN_QUEUE)['fxcharts','fxkpi','fxkpinote','mood'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});
+if(!CAN_QUEUE)['fxcharts','fxkpi','fxkpinote','mood','wanted'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});
 function stmtHTML(s,evm,withActor){const ev=(s.evidence_ids||[]).map(id=>evm&&evm.get(id)||(id.startsWith('gt:')?{gt:id}:null)).filter(Boolean);
   return `<div class="fci"><div><span class="badge v-${s.status}">${VST[s.status]||s.status}</span> <span class="meta">${d10(s.ts_published)} · ${esc(STY[s.stype]||s.stype)}${withActor&&s.actor_name?' · '+esc(s.actor_name):''}${s.source_id?' · '+esc(s.source_id):''}${s.target_region?' · '+esc(s.target_region):''}</span></div>
     <div class="q">«${esc(s.quote)}»${s.url?` <a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:''}</div>${s.predicted_event?`<div class="meta">Що мало статися: ${esc(s.predicted_event)}</div>`:''}${s.resolver_note?`<div class="meta">Висновок: ${esc(s.resolver_note)}</div>`:''}
@@ -988,6 +1035,7 @@ function personHTML(r){const s=r.score,evm=new Map((r.evidence||[]).map(e=>[e.id
     ${(did.cases||[]).length?`<h4 class="meta">Справи</h4><ul class="plain">${did.cases.map(c=>`<li>${esc(c.nickname||c.ref||'')} <span class="meta">${esc(c.agency||'')} · ${esc(c.stage||'')}</span></li>`).join('')}</ul>`:''}
     ${(did.decisions||[]).length?`<h4 class="meta">Рішення судів зі згадкою</h4><ul class="plain">${did.decisions.map(d=>`<li>${esc(d.d||'')} · ${esc(d.f||'рішення')} · ${esc(d.cause_num||'')}${lnk(d.doc_url)}</li>`).join('')}</ul>`:''}
     ${(did.edr_roles||[]).length?`<h4 class="meta">У ЄДР</h4><ul class="plain">${did.edr_roles.map(o=>`<li>${esc(o.short_name||o.edrpou)} <span class="meta">${esc(o.stan||'')}</span></li>`).join('')}</ul>`:''}
+    ${(did.wanted||[]).length?`<h4 class="meta">У розшуку Нацполіції · збіг за ПІБ (перевірте дату народження)</h4><ul class="plain">${did.wanted.map(w=>`<li><b>${esc([w.last_name_u,w.first_name_u,w.middle_name_u].filter(Boolean).join(' '))}</b> <span class="meta">нар. ${esc(w.birth_date||'?')} · ${esc(w.article_crim||'')} · ${esc((w.category||'').toLowerCase())} · ${esc(w.ovd||'')} · з ${esc(w.lost_date||'?')}${w.removed?` · знято з розшуку ${esc(w.removed)}`:''}</span></li>`).join('')}</ul>`:''}
     ${posts.length?`<h4 class="meta">Новини про нього · ${did.posts.found}${did.posts.more?'+':''}</h4><ul class="tl">${posts.slice(0,10).map(p=>`<li><span class="meta">${esc(p.date||'')} · ${esc(p.source||'')}</span> ${esc((p.snippet||'').slice(0,200))}${lnk(p.url)}</li>`).join('')}</ul>`:''}</div>
   <div class="card"><h3>Де сказав неправду · ${(r.refuted||[]).length}</h3><p class="meta">Заяви, які докази спростували (✗) або підтвердили лише частково (½), з доказами.</p><div class="fcl">${(r.refuted||[]).map(x=>stmtHTML(x,evm)).join('')||'<p class="empty">Спростованих заяв немає'+(s&&s.n<r.min_n?' (перевірено замало)':'')+'.</p>'}</div></div>
   <div class="card"><h3>Де суперечив сам собі · ${(r.contradictions||[]).length}</h3><div class="fcl">${(r.contradictions||[]).map(i=>`<div class="fci"><div><span class="badge v-partial">${{reversal:'розворот',contradiction:'суперечність',say_vs_do:'слова vs дії'}[i.kind]||esc(i.kind)}</span> <span class="meta">${esc(i.topic||'')} · ${Math.round((i.confidence||0)*100)}%</span></div><div class="q">${d10(i.a_date)}: «${esc(i.a_quote)}»${lnk(i.a_url)}</div><div class="q">${i.b_quote?`${d10(i.b_date)}: «${esc(i.b_quote)}»${lnk(i.b_url)}`:`${esc(i.e_date||'')}: дія — ${esc(ETY[i.e_type]||i.e_type||'')}, ${esc(i.e_details||'')}`}</div><div class="meta">${esc(i.explanation||'')}</div></div>`).join('')||'<p class="empty">Суперечностей не знайдено.</p>'}</div></div>

@@ -2,6 +2,7 @@ import { sql, query } from "./_db.js";
 import { getCaps, sources, plan } from "./search.js";
 import { byName, byCode, card } from "./registry.js";
 import { getManifest } from "./_lake.js";
+import { byName as wantedByName } from "./wanted.js";
 import { getGraph, around, norm, isPlaceholder } from "./_graph.js";
 import { ukVariants, queryWords, stem, isStop, wordRe, oblastOf, oblastTextRe, dateOf, kyivToday, addDays } from "./_text.js";
 
@@ -213,6 +214,8 @@ export async function dossier(id, { enqueue, graph = true } = {}) {
                   WHERE lower(p.name_norm) = ANY(${variants}) LIMIT 10`;
     P.media_cases = sql`SELECT cause_num, role, left(quote, 200) quote, url, confidence FROM media_links WHERE lower(name_norm) = ANY(${variants}) ORDER BY confidence DESC LIMIT 10`;
     P.registry_hits = sql`SELECT source, count(*)::int n, (array_agg(title ORDER BY created_at DESC))[1:5] titles FROM registry_hits WHERE lower(query) = ANY(${variants}) GROUP BY 1`;
+    // police wanted list (migration 021): full-name prefix match, Ukrainian or Russian spelling; namesakes possible
+    if (isPerson && words.length >= 2) P.wanted = wantedByName(name, 10);
     P.edr_roles = words.length >= 2
       ? query(`SELECT edrpou, short_name, stan FROM edr_orgs WHERE (founders || signers || beneficiaries)::text ILIKE $1 LIMIT 15`, ["%" + name + "%"])
       : Promise.resolve([]);
