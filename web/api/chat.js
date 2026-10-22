@@ -219,7 +219,10 @@ async function direct(text) {
 
 // ---- model providers: Claude when ANTHROPIC_API_KEY is set, otherwise Gemini (free tier) ----
 async function claudeLoop(messages, key, trace) {
+  const t0 = Date.now();
   for (let step = 0; step < 6; step++) {
+    // stop before the function limit (vercel.json maxDuration 60 s): answer from what the tools found so far
+    if (Date.now() - t0 > 40000) return "Не встиг завершити пошук за відведений час; показую знайдене на графі. Уточніть запит.";
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
@@ -230,13 +233,12 @@ async function claudeLoop(messages, key, trace) {
     const toolUses = (data.content || []).filter((b) => b.type === "tool_use");
     if (!toolUses.length || data.stop_reason !== "tool_use") return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
     messages = [...messages, { role: "assistant", content: data.content }];
-    const results = [];
-    for (const tu of toolUses) {
-      let out;
-      try { out = await runTool(tu.name, tu.input || {}); } catch (e) { out = { error: String(e.message || e) }; }
-      trace.push({ tool: tu.name, input: tu.input, summary: summarize(out) });
-      results.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out).slice(0, 12000) });
-    }
+    // tools of one step run in parallel; results go back in one user message, in call order
+    const outs = await Promise.all(toolUses.map((tu) => runTool(tu.name, tu.input || {}).catch((e) => ({ error: String(e.message || e) }))));
+    const results = toolUses.map((tu, i) => {
+      trace.push({ tool: tu.name, input: tu.input, summary: summarize(outs[i]) });
+      return { type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(outs[i]).slice(0, 12000) };
+    });
     messages = [...messages, { role: "user", content: results }];
   }
   return "Забагато кроків; уточніть запит.";

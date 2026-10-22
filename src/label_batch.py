@@ -1,7 +1,7 @@
 """Bulk labeling through the Anthropic Message Batches API (50% off, async, up to 24 h). Same prompt, schema,
 validation and write path as label_messages.py, so batch labels are interchangeable with the interactive ones.
 
-  python src/label_batch.py submit --panel [--limit 30000]   # build requests, submit, save batch id to data/batches/
+  python src/label_batch.py submit [--panel] [--newest] [--limit 30000]   # build requests, submit, save batch id to data/batches/
   python src/label_batch.py fetch                            # fetch every submitted-but-unwritten batch, write labels
   python src/label_batch.py status
 
@@ -57,7 +57,7 @@ def candidates(cur, a):
         + ("AND s.id = ANY(%s) AND m.ts_published >= '2026-03-31' AND m.id IN (SELECT message_id FROM rule_features WHERE r_threat) " % PANEL_SQL if a.panel else "")
         + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) "
         "AND NOT (length(m.text) < 300 AND m.text ~* '(повітряна тривога|відбій повітряної|воздушная тревога|отбой воздушной)') "
-        "ORDER BY m.ts_published LIMIT %s", (list(SKIP_SOURCES), list(SKIP_TYPES), a.limit))
+        "ORDER BY m.ts_published " + ("DESC " if a.newest else "") + "LIMIT %s", (list(SKIP_SOURCES), list(SKIP_TYPES), a.limit))
     return cur.fetchall()
 
 
@@ -192,5 +192,6 @@ if __name__ == "__main__":
     ap.add_argument("cmd", choices=["submit", "fetch", "status"])
     ap.add_argument("--panel", action="store_true")
     ap.add_argument("--limit", type=int, default=30000)
+    ap.add_argument("--newest", action="store_true", help="submit: newest unlabeled first (default: oldest first)")
     a = ap.parse_args()
     {"submit": submit, "fetch": fetch, "status": status}[a.cmd](a)

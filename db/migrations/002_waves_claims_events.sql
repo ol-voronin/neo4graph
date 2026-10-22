@@ -16,7 +16,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS alerts_uniq ON alerts (region_id, ts_start, so
 
 -- messages.hash is not unique: identical repeated posts in monitoring feeds are signal
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_hash_key;
-CREATE INDEX IF NOT EXISTS messages_hash_idx ON messages (hash);
 
 -- fact-checking layer (docs/factcheck.md)
 CREATE TABLE IF NOT EXISTS claims (

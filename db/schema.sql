@@ -28,7 +28,6 @@ CREATE TABLE messages (
   embedding vector(1024)
 );
 CREATE INDEX messages_ts_idx ON messages (ts_published);
-CREATE INDEX messages_hash_idx ON messages (hash);
 CREATE INDEX messages_source_ts_idx ON messages (source_id, ts_published);
 CREATE INDEX messages_narrative_idx ON messages (narrative_id);
 
@@ -79,7 +78,7 @@ CREATE TABLE alerts (
   id bigserial PRIMARY KEY, region_id text REFERENCES regions(id),
   ts_start timestamptz NOT NULL, ts_end timestamptz, alert_type text, source text
 );
-CREATE INDEX alerts_region_ts_idx ON alerts (region_id, ts_start);
+-- (region_id, ts_start) lookups use alerts_uniq (region_id, ts_start, source)
 
 -- Stores case STATUS, never a verdict.
 CREATE TABLE anticorruption_cases (
