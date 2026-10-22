@@ -10,7 +10,7 @@ on:
         default: "2026-03-25"
 
 concurrency:
-  group: collect
+  group: ova-backfill
   cancel-in-progress: false
 
 jobs:
