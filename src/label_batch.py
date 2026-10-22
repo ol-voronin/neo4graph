@@ -64,11 +64,19 @@ def pending_ids():
     return list(ids)
 
 
+# Ukrainian sources only when the rules see a threat, target or timeframe. Measured on 19,963 unfiltered batch labels
+# (2026-10-22): keeps 80% of posts and 96.8% of threat_level>=2 (510/527), 96.3% of >=1, 93.6% of rhetoric; the misses
+# are mostly UA media retelling threats already labeled at their Russian source. Plain rule filtering kept only 82% of >=2.
+UA_FILTER = ("AND (s.country <> 'UA' OR EXISTS (SELECT 1 FROM rule_labels r WHERE r.message_id = m.id "
+             "AND (r.r_threat OR r.r_target OR r.r_time))) ")
+
+
 def candidates(cur, a):
     cur.execute(
         "SELECT m.id, m.text, m.ts_published, s.id, s.country, s.type, s.lang FROM messages m JOIN sources s ON s.id=m.source_id "
         "WHERE m.labeled_at IS NULL "
         + ("AND s.id = ANY(%s) AND m.ts_published >= '2026-03-31' AND m.id IN (SELECT message_id FROM rule_features WHERE r_threat) " % PANEL_SQL if a.panel else "")
+        + ("" if a.all_ua else UA_FILTER)
         + "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) AND m.id <> ALL(%s) "
         "AND NOT (length(m.text) < 300 AND m.text ~* '(повітряна тривога|відбій повітряної|воздушная тревога|отбой воздушной)') "
         "ORDER BY m.ts_published " + ("DESC " if a.newest else "") + "LIMIT %s", (list(SKIP_SOURCES), list(SKIP_TYPES), pending_ids(), a.limit))
@@ -225,6 +233,7 @@ if __name__ == "__main__":
     ap.add_argument("cmd", choices=["submit", "fetch", "status"])
     ap.add_argument("--panel", action="store_true")
     ap.add_argument("--limit", type=int, default=30000)
+    ap.add_argument("--all-ua", action="store_true", help="submit: label every Ukrainian post too (default: UA only with rule signals)")
     ap.add_argument("--newest", action="store_true", help="submit: newest unlabeled first (default: oldest first)")
     a = ap.parse_args()
     {"submit": submit, "fetch": fetch, "status": status}[a.cmd](a)
