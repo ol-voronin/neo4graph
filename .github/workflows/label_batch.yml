@@ -39,6 +39,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
+          # keys of other workspaces whose batches are still pending (batches are visible only to their own workspace)
+          ANTHROPIC_API_KEY_LEGACY: ${{ secrets.ANTHROPIC_API_KEY_LEGACY }},${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
           CMD="${{ github.event.inputs.cmd || 'fetch' }}"

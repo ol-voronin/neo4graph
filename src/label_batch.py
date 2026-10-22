@@ -21,6 +21,34 @@ from label_messages import PANEL_SQL, PROMPT_VERSION, SKIP_SOURCES, SKIP_TYPES, 
 BATCH_DIR = ROOT / "data" / "batches"
 MODEL = "claude-haiku-5-5"
 
+RESULTS_TTL_DAYS = 29  # the Batches API keeps results for 29 days after creation
+
+
+def clients():
+    """Every configured key: the current one first, then ANTHROPIC_API_KEY_LEGACY (comma-separated) for batches that
+    were submitted under an older key/workspace. A batch is only visible to keys of the workspace that created it."""
+    import os
+    import anthropic
+    keys = [os.environ.get("ANTHROPIC_API_KEY", "")] + os.environ.get("ANTHROPIC_API_KEY_LEGACY", "").split(",")
+    return [anthropic.Anthropic(api_key=k.strip()) for k in dict.fromkeys(keys) if k.strip()]
+
+
+def locate(cs, batch_id):
+    """(client, batch) for the first key that can see the batch, or (None, None)."""
+    import anthropic
+    for c in cs:
+        try:
+            return c, c.messages.batches.retrieve(batch_id)
+        except (anthropic.NotFoundError, anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+            continue
+    return None, None
+
+
+def expired(meta):
+    from datetime import datetime, timedelta, timezone
+    sub = datetime.strptime(meta["submitted_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) > sub + timedelta(days=RESULTS_TTL_DAYS)
+
 
 def candidates(cur, a):
     cur.execute(
@@ -91,24 +119,26 @@ def write_result(cur, raw, mid, ts, model):
 
 
 def fetch(a):
-    import anthropic
     from datetime import datetime
     from load_to_db import connect
-    client = anthropic.Anthropic()
+    cs = clients()
     conn = connect()
     cur = conn.cursor()
     for p in sorted(BATCH_DIR.glob("*.json")):
         meta = json.loads(p.read_text())
         if meta.get("written"):
             continue
-        try:
-            b = client.messages.batches.retrieve(meta["batch_id"])
-        except anthropic.NotFoundError:
-            # batch belongs to another API key/workspace (e.g. a revoked key): results are unreachable, the messages stay
-            # unlabeled (labeled_at IS NULL) and the next `submit` picks them up again. Mark it so fetch stops retrying.
-            meta["written"], meta["lost"] = True, "not found under the current API key"
-            p.write_text(json.dumps(meta, ensure_ascii=False))
-            print(meta["batch_id"], "not found under the current key; marked lost")
+        client, b = locate(cs, meta["batch_id"])
+        if b is None:
+            # created under a key/workspace we don't have (e.g. the revoked company key). Keep retrying while the
+            # results still exist, so adding that workspace's key as ANTHROPIC_API_KEY_LEGACY recovers them; after
+            # expiry mark it lost (its messages stay unlabeled and the next `submit` re-covers them).
+            if expired(meta):
+                meta["written"], meta["lost"] = True, f"results expired ({RESULTS_TTL_DAYS} days) and no configured key can see the batch"
+                p.write_text(json.dumps(meta, ensure_ascii=False))
+                print(meta["batch_id"], "expired; marked lost")
+            else:
+                print(meta["batch_id"], "not visible to any configured key; set ANTHROPIC_API_KEY_LEGACY to the key of the workspace that submitted it")
             continue
         print(meta["batch_id"], b.processing_status, dict(b.request_counts))
         if b.processing_status != "ended":
@@ -145,20 +175,17 @@ def fetch(a):
 
 
 def status(a):
-    import anthropic
-    client = anthropic.Anthropic()
+    cs = clients()
     for p in sorted(BATCH_DIR.glob("*.json")):
         meta = json.loads(p.read_text())
         if meta.get("lost"):
             print(meta["batch_id"], meta["n"], "lost:", meta["lost"])
             continue
-        try:
-            b = client.messages.batches.retrieve(meta["batch_id"])
-        except anthropic.NotFoundError:
-            print(meta["batch_id"], meta["n"], "not found under the current API key")
+        _, b = locate(cs, meta["batch_id"])
+        if b is None:
+            print(meta["batch_id"], meta["n"], "not visible to any configured key", "(expired)" if expired(meta) else "")
             continue
         print(meta["batch_id"], meta["n"], b.processing_status, dict(b.request_counts), "written" if meta.get("written") else "")
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
