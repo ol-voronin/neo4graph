@@ -14,6 +14,13 @@ on:
       limit:
         description: "submit: max messages"
         default: "30000"
+      scope:
+        description: "submit: all (every channel, all of Ukraine) | panel (12 key channels since 2026-03-31)"
+        default: "all"
+      newest:
+        description: "submit: newest unlabeled first"
+        type: boolean
+        default: true
 
 concurrency:
   group: label-batch
@@ -39,10 +46,12 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
+          # keys of other workspaces whose batches are still pending (batches are visible only to their own workspace)
+          ANTHROPIC_API_KEY_LEGACY: ${{ secrets.ANTHROPIC_API_KEY_LEGACY }},${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
           CMD="${{ github.event.inputs.cmd || 'fetch' }}"
-          if [ "$CMD" = "submit" ]; then python src/label_batch.py submit --panel --limit "${{ github.event.inputs.limit || '30000' }}"; else python src/label_batch.py "$CMD"; fi
+          if [ "$CMD" = "submit" ]; then python src/label_batch.py submit --limit "${{ github.event.inputs.limit || '30000' }}" ${{ github.event.inputs.scope == 'panel' && '--panel' || '' }} ${{ github.event.inputs.newest == 'true' && '--newest' || '' }}; else python src/label_batch.py "$CMD"; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
