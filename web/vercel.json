@@ -2,11 +2,11 @@
   "regions": ["fra1"],
   "functions": { "api/*.js": { "maxDuration": 60 } },
   "headers": [
-    { "source": "/api/((?!(?:graph|registry|search|node|case|predictions|rhetoric|factcheck|contradictions|mood|wanted)$).*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
+    { "source": "/api/((?!(?:graph|registry|search|node|case|predictions|rhetoric|factcheck|contradictions|mood|wanted|crime)$).*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
     { "source": "/api/graph", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=600, stale-while-revalidate=86400" }] },
     { "source": "/api/registry", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400" }] },
     { "source": "/api/(search|node)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=60, stale-while-revalidate=300" }] },
     { "source": "/api/case", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=30, stale-while-revalidate=30" }] },
-    { "source": "/api/(predictions|rhetoric|factcheck|contradictions|mood|wanted)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=600, stale-while-revalidate=3600" }] }
+    { "source": "/api/(predictions|rhetoric|factcheck|contradictions|mood|wanted|crime)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=600, stale-while-revalidate=3600" }] }
   ]
 }

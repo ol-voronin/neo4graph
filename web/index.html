@@ -223,7 +223,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
 .axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
 .tp .split{display:block;font-size:11px;color:var(--muted);white-space:nowrap}
 /* mood small multiples */
-.fxsvg{display:block;overflow:visible}.fxsvg text{font-size:10px;fill:var(--muted)}#wanted h4{margin:8px 0 4px;font-size:13px}#wanted .tbwrap table{border-collapse:collapse;font-size:12px;width:100%}#wanted .tbwrap td,#wanted .tbwrap th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left}
+.fxsvg{display:block;overflow:visible}.ctab{border-collapse:collapse;font-size:13px;width:100%}.ctab td,.ctab th{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.ctab .num{text-align:right;white-space:nowrap}.fxsvg text{font-size:10px;fill:var(--muted)}#wanted h4{margin:8px 0 4px;font-size:13px}#wanted .tbwrap table{border-collapse:collapse;font-size:12px;width:100%}#wanted .tbwrap td,#wanted .tbwrap th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left}
 .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 .mcard{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}.mcard.on{border-color:var(--accent)}
 .mcard h4{margin:0;font-size:13px}.mcard .now{font-size:12px;color:var(--muted)}
@@ -326,6 +326,11 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
       <input id="wq" type="search" placeholder="ПІБ: Прізвище Імʼя…" aria-label="Пошук у розшуку за ПІБ" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;font-size:12px"></div>
     <p class="how">Відкриті дані Нацполіції (data.gov.ua), щодня. Розшук — особи, які переховуються від слідства, суду, прокуратури, а також дезертири; групи — за першою статтею КК. «Нові за місяць» — за датою, з якої людина переховується. Зниклі безвісти — лише кількості, без імен. Збіг за ПІБ не означає, що це та сама людина.</p>
     <div id="wantedb"><p class="empty">Завантаження…</p></div>
+  </div>
+  <div class="rh" id="crime">
+    <h3>Кримінальна статистика Офісу Генпрокурора · по Україні</h3>
+    <p class="how">Як читати: зареєстровано кримінальних правопорушень з початку року — і те саме за ті ж місяці торік; стрілка — зміна. Лінія — приріст по місяцях за 3 роки. Військові злочини (розділ XIX: СЗЧ, дезертирство) з 2022 не публікуються — показано розрахунково: усього мінус опубліковані розділи. Регіонів у відкритих звітах немає.</p>
+    <div id="crimeb"><p class="empty">Завантаження…</p></div>
   </div>
   <div class="rh" id="rhet">
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
@@ -785,7 +790,7 @@ function show(v,push=true){if(!VIEWS[v])v='home';for(const [k,ids] of Object.ent
   document.querySelectorAll('#side [data-view]').forEach(b=>b.tagName==='BUTTON'&&b.setAttribute('aria-current',b.dataset.view===v?'page':'false'));
   if(push){const u=new URL(location.href);if(v==='home')u.searchParams.delete('view');else u.searchParams.set('view',v);u.searchParams.delete('person');if(v!=='graph')u.hash='';history.pushState({v},'',u)}
   if(v==='graph')render();
-  if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet();if(CAN_QUEUE){loadTrust();loadOverview();loadMood();loadWanted()}}
+  if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet();if(CAN_QUEUE){loadTrust();loadOverview();loadMood();loadWanted();loadCrime()}}
   if(v==='factcheck'&&CAN_QUEUE){const pid=new URL(location.href).searchParams.get('person');if(pid)openPerson(pid,false);else closePerson(false)}
   if(v==='prognoz'&&!loaded.pg){loaded.pg=1;loadPG()}
   if(v==='home')loadHome();window.scrollTo({top:0})}
@@ -986,6 +991,15 @@ function renderWanted(){const box=document.getElementById('wantedb'),r=WD||{},m=
 document.getElementById('wq').onkeydown=async e=>{if(e.key!=='Enter')return;const q=e.target.value.trim(),out=document.getElementById('wres');if(!out)return;if(q.split(/\s+/).length<2){out.innerHTML='<p class="how">Потрібні щонайменше прізвище та імʼя.</p>';return}
   out.innerHTML='<p class="empty">Пошук…</p>';try{const r=await getJ('/api/wanted?name='+encodeURIComponent(q));out.innerHTML=(r.items||[]).length?`<p class="how">${esc(r.note)}</p><ul class="plain">${r.items.map(w=>`<li><b>${esc([w.last_name_u,w.first_name_u,w.middle_name_u].filter(Boolean).join(' '))}</b> <span class="meta">нар. ${esc(w.birth_date||'?')} · ${esc(w.article_crim||'')} · ${esc((w.category||'').toLowerCase())} · ${esc(WA[w.agency]||w.agency||'')} · ${esc(RG[w.region]||w.region||'')} · з ${esc(w.lost_date||'?')}${w.removed?` · знято ${esc(w.removed)}`:''}</span></li>`).join('')}</ul>`:'<p class="empty">У розшуку не знайдено.</p>'}catch(err){out.innerHTML='<p class="empty">'+esc(err.message)+'</p>'}};
 {let wt;window.addEventListener('resize',()=>{clearTimeout(wt);wt=setTimeout(()=>{if(WD&&!document.getElementById('factcheck').hidden)renderWanted()},200)})}
+// ---------- Prosecutor General report forms (/api/crime, migration 022): YTD vs a year earlier, monthly increments ----------
+const CK=[['total','Усього зареєстровано'],['sec:military','Військові злочини (СЗЧ, дезертирство…), розрахунково'],['art:336','Ухилення від мобілізації, ст. 336'],['art:111','Державна зрада, ст. 111'],['art:111-1','Колабораційна діяльність, ст. 111-1'],['art:438','Воєнні злочини, ст. 438'],['art:332','Незаконне переправлення через кордон, ст. 332'],['art:191','Привласнення, розтрата, ст. 191'],['art:368','Хабар (прийняття), ст. 368'],['art:369','Хабар (пропозиція, надання), ст. 369'],['art:369-2','Зловживання впливом, ст. 369-2'],['detected_by:nabu','Виявлено НАБУ']];
+async function loadCrime(){const box=document.getElementById('crimeb');try{const r=await getJ('/api/crime?months=36&keys='+CK.map(k=>k[0]).join(','));
+  const Y=new Map((r.ytd||[]).map(x=>[x.key,x])),S=new Map();(r.series||[]).forEach(x=>(S.get(x.key)||S.set(x.key,[]).get(x.key)).push(x));
+  const rows=CK.filter(([k])=>Y.has(k)).map(([k,l])=>{const y=Y.get(k),ch=y.prev?Math.round(100*(y.value-y.prev)/y.prev):null,ser=(S.get(k)||[]).map(x=>Math.max(0,+x.value||0));
+    return `<tr><td>${esc(l)}${y.derived?' <span class="meta">(розрахунково)</span>':''}</td><td class="num">${nf(y.value)}</td><td class="num meta">${y.prev!=null?nf(y.prev):'—'}</td><td class="num">${ch==null?'—':`<span class="${ch>0?'up':ch<0?'down':''}">${ch>0?'▲':ch<0?'▼':''} ${ch>0?'+':''}${ch}%</span>`}</td><td class="hide-m">${spark(ser,150,24)}</td></tr>`});
+  const per=(r.ytd||[]).find(x=>x.key==='total');
+  box.innerHTML=rows.length?`<p class="meta">Період: січень — ${esc((per&&per.period_to||'').slice(0,7))}</p><div class="tbwrap"><table class="ctab"><tr><th>що</th><th class="num">з початку року</th><th class="num">торік за ті ж місяці</th><th class="num">зміна</th><th class="hide-m">по місяцях, 3 роки</th></tr>${rows.join('')}</table></div>`:'<p class="empty">Звіти ОГП ще не завантажено: перший прогін — workflow opendata.</p>'}
+  catch(e){box.innerHTML='<p class="empty">Статистика ще недоступна: '+esc(e.message)+'</p>'}}
 async function loadMood(){const box=document.getElementById('moodb');box.innerHTML='<p class="empty">Завантаження…</p>';
   try{MD=await getJ('/api/mood?weeks='+fxWeeks());renderMood()}catch(e){MD=null;box.innerHTML=`<p class="empty">Настрій ще недоступний: ${esc(e.message)}</p>`}}
 const dvRow=(l,avg,n,tip)=>{const a=Math.max(-2,Math.min(2,+avg||0)),w=Math.abs(a)/2*50;return `<span class="l" title="${esc(l)}">${esc(l)}</span><span class="b" tabindex="0" data-tip="${tipA(tip)}"><span style="${a>=0?`left:50%`:`left:${50-w}%`};width:${w.toFixed(1)}%;background:var(${a>=0?'--d-pos':'--d-neg'})"></span></span><span class="v">${sgn(avg)}</span>`};
@@ -1013,7 +1027,7 @@ function renderMood(){const box=document.getElementById('moodb'),r=MD||{},ser=r.
       ${GR.length?`<div class="meta">Українські джерела за типом</div><div class="dv">${GR.map(x=>dvRow(`${STN[x.stype]||x.stype} · ${nf(x.n)}`,x.avg,x.n,`<b>${esc(STN[x.stype]||x.stype)}</b><br>тон ${sgn(x.avg)} · ${nf(x.n)} постів${x.neg!=null?' · негативних '+Math.round(100*x.neg)+'%':''}`)).join('')}</div>`:''}
       ${O.length?`<div class="meta">Що обговорюють</div><div class="dv">${O.map(x=>dvRow(`${x.object} · ${nf(x.n)}`,x.avg,x.n,`<b>${esc(x.object)}</b><br>тон ${sgn(x.avg)} · ${nf(x.n)} постів`)).join('')}</div>`:''}</div>`};
   box.innerHTML=note+`<div class="mgrid">${pick.map(card).join('')}</div>${cov.first?`<p class="how" style="margin-top:6px">Розмітка тону з ${d10(cov.first)} · оцінено постів: ${nf(cov.labeled)}.</p>`:''}`}
-if(!CAN_QUEUE)['fxcharts','fxkpi','fxkpinote','mood','wanted'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});
+if(!CAN_QUEUE)['fxcharts','fxkpi','fxkpinote','mood','wanted','crime'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});
 function stmtHTML(s,evm,withActor){const ev=(s.evidence_ids||[]).map(id=>evm&&evm.get(id)||(id.startsWith('gt:')?{gt:id}:null)).filter(Boolean);
   return `<div class="fci"><div><span class="badge v-${s.status}">${VST[s.status]||s.status}</span> <span class="meta">${d10(s.ts_published)} · ${esc(STY[s.stype]||s.stype)}${withActor&&s.actor_name?' · '+esc(s.actor_name):''}${s.source_id?' · '+esc(s.source_id):''}${s.target_region?' · '+esc(s.target_region):''}</span></div>
     <div class="q">«${esc(s.quote)}»${s.url?` <a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:''}</div>${s.predicted_event?`<div class="meta">Що мало статися: ${esc(s.predicted_event)}</div>`:''}${s.resolver_note?`<div class="meta">Висновок: ${esc(s.resolver_note)}</div>`:''}
