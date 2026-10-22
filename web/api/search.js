@@ -1,5 +1,6 @@
 import { query, json, CAUSE_RE } from "./_db.js";
-import { norm, caseKey } from "./_graph.js";
+import { norm, caseKey, isPlaceholder } from "./_graph.js";
+import { ukVariants } from "./_text.js";
 
 // GET /api/search?q=...&kind=all|person|org|fop|code|case|place|channel|post
 // Ranked results (exact code / case number / full name -> name prefix -> trigram similarity), at most 20, with ids of /api/graph nodes.
@@ -12,7 +13,7 @@ const tierOf = (k, ...names) => { k = bare(k); const b = names.filter(Boolean).m
 const REG = { edr_fop: "fop:", yc_fop: "fopx:", yc_org: "orgx:" };
 
 let caps = null;
-async function getCaps() {
+export async function getCaps() {
   if (!caps || Date.now() - caps.at > 300e3)
     caps = { at: Date.now(), ...(await query(`SELECT to_regclass('search_names') IS NOT NULL AS names, EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') AS trgm`))[0] };
   return caps;
@@ -25,7 +26,7 @@ export function detect(q) {
   return "all";
 }
 
-function sources(q, C) {
+export function sources(q, C) {
   const k = norm(q).toLowerCase(), P = [k, "%" + like(k) + "%"];
   // $1 = query, $2 = substring pattern (every query references both: Postgres rejects unreferenced parameters).
   // With pg_trgm the GIN index serves both LIKE and <% (word similarity); without it, sim is just "starts with".
@@ -38,7 +39,7 @@ function sources(q, C) {
         : await query(`SELECT kind, lower(label) key, max(label) label, count(*)::int n, 0 sim FROM (
                          SELECT 'person' kind, name_norm label FROM ee_persons WHERE lower(name_norm) LIKE $2 UNION ALL SELECT 'org', name FROM ee_orgs WHERE lower(name) LIKE $2) x
                        WHERE kind = ANY($3::text[]) GROUP BY 1, 2 ORDER BY lower(label) = $1::text DESC, n DESC LIMIT 20`, [...P, kinds]);
-      return rows.map((r) => ({ id: r.kind === "case" ? caseKey(r.label) : r.kind + ":" + norm(r.key), type: r.kind, label: r.kind === "case" ? norm(r.label).replace(/[«»"“”„]/g, "") : norm(r.label), n: r.n, sim: r.sim, tier: tierOf(k, r.label) }));
+      return rows.filter((r) => !isPlaceholder(r.label)).map((r) => ({ id: r.kind === "case" ? caseKey(r.label) : r.kind + ":" + norm(r.key), type: r.kind, label: r.kind === "case" ? norm(r.label).replace(/[«»"“”„]/g, "") : norm(r.label), n: r.n, sim: r.sim, tier: tierOf(k, r.label) }));
     },
     edr: async () => {
       const h = "lower(coalesce(short_name, '') || ' ' || name)";
@@ -88,12 +89,12 @@ function sources(q, C) {
       const rows = await query(`SELECT id, name, country, ${sim("lower(name)")} sim FROM sources WHERE lower(id) LIKE $2 OR ${cond("lower(name)")} ORDER BY sim DESC LIMIT 20`, P);
       return rows.map((r) => ({ id: "channel:" + r.id, type: "channel", label: r.name, sub: r.id + (r.country ? " · " + r.country : ""), sim: r.sim, tier: tierOf(k, r.name, r.id, r.id.replace(/^\w+:/, "")) }));
     },
-    // posts: no text index; scan the most recent 20k messages only, newest first
+    // posts: no text index; scan the most recent 20k messages only, newest first; Russian spelling variants too
     post: async () => {
       if (k.length < 3) return [];
       const rows = await query(`SELECT id, source_id, ts_published::date::text t, left(regexp_replace(text, '[[:space:]]+', ' ', 'g'), 200) x
                                 FROM (SELECT id, source_id, ts_published, text FROM messages ORDER BY ts_published DESC LIMIT 20000) m
-                                WHERE text ILIKE $1 ORDER BY ts_published DESC LIMIT 20`, ["%" + like(norm(q)) + "%"]);
+                                WHERE text ILIKE ANY($1::text[]) ORDER BY ts_published DESC LIMIT 20`, [ukVariants(q).map((v) => "%" + like(v) + "%")]);
       return rows.map((r) => ({ id: "post:" + r.id, type: "post", label: (r.x || "").slice(0, 90), sub: `${r.source_id} · ${r.t}`, tier: 2 }));
     },
   };
@@ -110,18 +111,9 @@ export default async function handler(req, res) {
   if (kind === "all" && detected !== "all") kind = detected;
   try {
     if (kind === "url") return json(res, 200, { q, kind, detected, results: [] });
-    const S = sources(q, await getCaps().catch(() => ({ names: false, trgm: false })));
-    const run = {
-      all: () => [S.names(["person", "org", "case"]), S.edr(), S.reg(["edr_fop", "yc_fop", "yc_org"]), S.place(), S.channel()],
-      person: () => [S.names(["person"])],
-      org: () => [S.names(["org"]), S.edr(), S.reg(["yc_org"])],
-      fop: () => [S.reg(["edr_fop", "yc_fop"])],
-      code: () => (/^\d{8}$|^\d{10}$/.test(q) ? [S.code()] : []),
-      case: () => [S.cases(), ...(/^\d/.test(q) ? [] : [S.names(["case"])])],
-      place: () => [S.place()],
-      channel: () => [S.channel()],
-      post: () => [S.post()],
-    }[kind]();
+    const C = await getCaps().catch(() => ({ names: false, trgm: false }));
+    // name lookups also run for Ukrainian spellings of Russian input (Миндич -> Міндіч), at most 4 spellings
+    const run = (/^(all|person|org|fop|place|channel)$/.test(kind) ? ukVariants(q) : [q]).flatMap((v) => plan(sources(v, C), kind, v));
     const warn = [];
     const lists = await Promise.all(run.map((p) => p.catch((e) => (warn.push(String(e.message || e)), []))));
     const seen = new Set(), results = [];
@@ -135,4 +127,18 @@ export default async function handler(req, res) {
   } catch (e) {
     return json(res, 500, { error: String(e.message || e) });
   }
+}
+
+export function plan(S, kind, q) {
+  return {
+    all: () => [S.names(["person", "org", "case"]), S.edr(), S.reg(["edr_fop", "yc_fop", "yc_org"]), S.place(), S.channel()],
+    person: () => [S.names(["person"])],
+    org: () => [S.names(["org"]), S.edr(), S.reg(["yc_org"])],
+    fop: () => [S.reg(["edr_fop", "yc_fop"])],
+    code: () => (/^\d{8}$|^\d{10}$/.test(q) ? [S.code()] : []),
+    case: () => [S.cases(), ...(/^\d/.test(q) ? [] : [S.names(["case"])])],
+    place: () => [S.place()],
+    channel: () => [S.channel()],
+    post: () => [S.post()],
+  }[kind]();
 }

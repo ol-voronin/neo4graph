@@ -80,8 +80,21 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .fci .q{font-weight:500}
 .fci .ev{margin-top:4px}
 .fc .ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.chat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
-.chat .log{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow:auto}
+/* chat: full-height sidebar left of the graph (resizable, collapsible); a toggled overlay on phones */
+.chat{grid-column:2;grid-row:1;align-self:start;position:sticky;top:0;height:100vh;height:100dvh;box-sizing:border-box;width:var(--chatw,380px);min-width:260px;max-width:60vw;
+  background:var(--panel);border-right:1px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:8px;z-index:20}
+.chat .chead{display:flex;gap:8px;align-items:center}.chat .chead .t{flex:1;font-size:14px}
+.chat .cclose,.chat .fab{display:none}
+.chat .log{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+.chat .grip{position:absolute;top:0;right:-4px;bottom:0;width:8px;cursor:col-resize;z-index:2}.chat .grip:hover,.chat .grip:focus-visible{background:var(--accent-soft);outline:none}
+.fab{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:12px 20px;font:inherit;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer}
+@media (min-width:761px){.chat.min{width:46px;min-width:46px;padding:12px 6px}.chat.min .cbody,.chat.min .chead .t,.chat.min .grip{display:none}.chat.min .chead{justify-content:center}}
+@media (max-width:760px){
+  .chat{position:fixed;inset:0;width:auto;min-width:0;max-width:none;height:100dvh;border:0;z-index:60;padding:12px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+  .chat:not(.open){inset:auto;right:16px;bottom:max(16px,env(safe-area-inset-bottom));height:auto;padding:0;background:none;border:0}
+  .chat:not(.open)>:not(.fab){display:none!important}
+  .chat .fab{display:inline-flex}.chat.open .fab,.chat .cmin,.chat .grip{display:none}.chat .cclose{display:inline-flex}
+}
 .msg{padding:8px 10px;border-radius:10px;max-width:92%;font-size:13px;line-height:1.45;white-space:pre-wrap}
 .msg.me{align-self:flex-end;background:var(--accent-soft)}
 .msg.ai{align-self:flex-start;border:1px solid var(--line)}
@@ -90,7 +103,7 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .chat textarea{flex:1;min-width:0;resize:vertical;min-height:40px;max-height:120px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:14px}
 .chat button.send{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:0 14px;font:inherit;cursor:pointer}
 .chat button.send:disabled{opacity:.6;cursor:default}
-.chat .ex{display:flex;flex-wrap:wrap;gap:4px}
+.chat .ex{display:flex;flex-wrap:wrap;gap:4px}.chat .ex .chip{text-align:left}
 .fbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .active{display:contents}
 .chip.on{background:var(--accent-soft);border-color:var(--accent)}
@@ -124,11 +137,12 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
   .main{display:flex;flex-direction:column;margin-top:10px;height:auto}.canvas{height:54vh;min-height:300px}.canvas .hint{display:none}.panel{max-height:70vh;margin-top:10px}
   .search input,#ftext,.chat textarea,select,input[type=date]{font-size:16px}
   .fmenu{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:72vh;overflow:auto;border-radius:14px 14px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.25);padding-bottom:max(12px,env(safe-area-inset-bottom))}
-  .sugg{max-height:50vh}.legend{margin-top:8px}.chat .log{max-height:50vh}.fc .bars{grid-template-columns:1fr}
+  .sugg{max-height:50vh}.legend{margin-top:8px}.fc .bars{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 /* Sections: left menu (stacks to a top bar on phones), home overview, rhetoric tracker, forecast */
-body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
+body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0}
+.side{grid-column:1;grid-row:1}.content{grid-column:3;grid-row:1}
 .side{position:sticky;top:0;height:100vh;box-sizing:border-box;padding:16px 10px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:2px;z-index:30}
 .side .brand{display:flex;gap:10px;align-items:center;padding:6px 8px 14px;color:var(--fg);text-decoration:none;font-weight:600;line-height:1.2;border-radius:8px}
 .side .brand:hover{background:var(--accent-soft)}.side .brand small{display:block;font-weight:400;color:var(--muted);font-size:11px;margin-top:2px}
@@ -151,7 +165,7 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
 .pg .card b{font-size:22px;display:block}.pg table{border-collapse:collapse;width:100%;background:var(--panel);font-size:13px}.pg th,.pg td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
 .pg .bar{display:inline-block;height:8px;background:var(--accent);border-radius:4px;vertical-align:middle;margin-right:6px}.pg .wrap{overflow-x:auto}
 .pg .regs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}.pg .reg{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}.pg .reg .bar{opacity:.85}.pg .reg .bar.b{background:var(--muted)}
-@media (max-width:760px){body{grid-template-columns:1fr}.side{height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px;gap:4px}
+@media (max-width:760px){body{grid-template-columns:1fr}.content{grid-column:1;grid-row:2}.side{grid-row:1;height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px;gap:4px}
   .side .brand{padding:4px 8px 4px 0}.side .brand small,.side .navnote{display:none}.rh .row{grid-template-columns:1fr 60px 90px;}.rh .row .hide-m{display:none}}
 </style>
 </head>
@@ -163,6 +177,15 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
   <button type="button" data-view="prognoz">Прогноз</button>
   <p class="navnote">Дослідження на відкритих даних. Не попередження про загрозу.</p>
 </nav>
+<aside class="chat" id="chat" hidden aria-label="Чат по базі">
+  <div class="chead"><b class="t">Запит до бази</b><button type="button" class="chip cmin" id="chatmin" aria-expanded="true" title="Згорнути / розгорнути чат">⟨</button><button type="button" class="chip cclose" id="chatclose" title="Закрити">✕</button></div>
+  <div class="meta cbody">Будь-яке питання словами — особа, компанія, справа, ЄДРПОУ, місто, канал, удари. Знайдене зʼявляється на графі.</div>
+  <div class="log cbody" id="chatlog"></div>
+  <div class="ex cbody" id="chatex"></div>
+  <form id="chatform" class="cbody"><textarea id="chatq" placeholder="Напр.: справа Міндіча; удари по Харкову вчора і що писали російські канали" aria-label="Запит до бази"></textarea><button class="send" id="chatsend" type="submit">Запитати</button></form>
+  <div class="grip" id="chatgrip" role="separator" aria-orientation="vertical" aria-label="Ширина чату" tabindex="0"></div>
+  <button type="button" class="fab" id="chatfab" aria-controls="chat">Чат</button>
+</aside>
 <div class="content" id="content">
 <section class="home" id="home" hidden>
   <h1>Риторика, звʼязки, удари</h1>
@@ -222,12 +245,6 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
   <h3 class="meta" style="margin:14px 0 6px" id="pgregh">Масований удар по областях</h3>
   <div class="regs" id="pgregs"></div>
   <div class="wrap" style="margin-top:12px"><table><thead><tr><th>День</th><th>Область</th><th>Модель</th><th>Ймовірність</th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div>
-</section>
-<section class="chat" id="chat" hidden>
-  <div class="meta">Запит словами: модель перекладає його у пошук по базі та реєстрах і відповідає з конкретикою.</div>
-  <div class="log" id="chatlog"></div>
-  <div class="ex" id="chatex"></div>
-  <form id="chatform"><textarea id="chatq" placeholder="Напр.: знайди справи за 2025 рік щодо земельних питань" aria-label="Запит до бази"></textarea><button class="send" id="chatsend" type="submit">Запитати</button></form>
 </section>
 <script>/* show the right section before the graph data arrives (no flash of the graph on the home page) */
 {const u=new URL(location.href),v=u.searchParams.get('view')||(location.hash.length>1?'graph':'home');if(v!=='graph'){['graphtop','filters','legend'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});const m=document.querySelector('.main');if(m)m.hidden=true}const t=document.getElementById(v==='prognoz'?'prognoz':v==='factcheck'?'factcheck':'home');if(v!=='graph'&&t)t.hidden=false}</script>
@@ -523,7 +540,19 @@ if(CAN_QUEUE){const V={true:'підтверджено',false:'спростова
   window.__loadFC=()=>loadFC();}
 // chat (API version only)
 if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const log=document.getElementById('chatlog'),form=document.getElementById('chatform'),ta=document.getElementById('chatq'),btn=document.getElementById('chatsend');const hist=[];
-  const EX=['знайди справи за 2025 рік щодо земельних питань','які категорії справ є в індексі за 2021','що відомо про Кацубу і його компанії','заяви Кремля з погрозами за останній місяць і чи збулися'];
+  // sidebar: width by dragging the right edge (or arrow keys), collapse to a rail; on phones a full-screen overlay behind the «Чат» button
+  const PH=()=>window.matchMedia('(max-width:760px)').matches,relayout=()=>window.dispatchEvent(new Event('resize'));
+  const minB=document.getElementById('chatmin'),grip=document.getElementById('chatgrip'),clampW=w=>Math.max(260,Math.min(window.innerWidth*.6,w));
+  const saveUI=()=>{try{localStorage.setItem('chat-ui',JSON.stringify({w:parseInt(chat.style.getPropertyValue('--chatw'))||null,min:chat.classList.contains('min')}))}catch(_){}};
+  const setMin=(m,quiet)=>{chat.classList.toggle('min',m);minB.textContent=m?'⟩':'⟨';minB.setAttribute('aria-expanded',String(!m));if(!quiet){saveUI();relayout()}};
+  try{const s=JSON.parse(localStorage.getItem('chat-ui')||'{}');if(s.w)chat.style.setProperty('--chatw',clampW(s.w)+'px');setMin(!!s.min,true)}catch(_){}
+  minB.onclick=()=>setMin(!chat.classList.contains('min'));
+  grip.onpointerdown=e=>{e.preventDefault();grip.setPointerCapture(e.pointerId);const x0=e.clientX,w0=chat.getBoundingClientRect().width;
+    grip.onpointermove=m=>chat.style.setProperty('--chatw',clampW(w0+m.clientX-x0)+'px');grip.onpointerup=()=>{grip.onpointermove=null;saveUI();relayout()}};
+  grip.onkeydown=e=>{if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;e.preventDefault();chat.style.setProperty('--chatw',clampW(chat.getBoundingClientRect().width+(e.key==='ArrowRight'?24:-24))+'px');saveUI();relayout()};
+  const openChat=o=>{chat.classList.toggle('open',o);if(o)setTimeout(()=>ta.focus(),50)};
+  document.getElementById('chatfab').onclick=()=>openChat(true);document.getElementById('chatclose').onclick=()=>openChat(false);
+  const EX=['справа Міндіча','Які удари по Харкову були вчора і що писали російські канали напередодні?','що відомо про Кацубу і його компанії','24584661','знайди справи за 2025 рік щодо земельних питань'];
   const ex=document.getElementById('chatex');EX.forEach(x=>{const b=document.createElement('button');b.className='chip';b.type='button';b.textContent=x;b.onclick=()=>{ta.value=x;form.requestSubmit()};ex.appendChild(b)});
   // minimal, safe markdown for model answers: escape first, then **bold**, [text](https://…), "- " lists, line breaks
   function md(t){return esc(t).replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>').replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s"]+)\)/g,'<a href="$2" target="_blank" rel="noopener" style="color:var(--accent)">$1</a>').replace(/^- /gm,'• ').replace(/\n/g,'<br>')}
@@ -531,8 +560,8 @@ if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const
   function linkify(d){d.innerHTML=d.innerHTML.replace(/\b(\d{1,4}\/\d{1,6}\/\d{2})\b/g,(m)=>`<a href="#" data-case="${m}" style="color:var(--accent)">${m}</a>`);d.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid){select(cid);q.value='Справа '+c;window.scrollTo({top:0,behavior:'smooth'})}})}
   function toGraph(g,d){if(!g||!g.nodes||!g.nodes.length)return;g.nodes.forEach(n=>{const x=addNode({...n});for(const [k,v] of Object.entries(n))if(x[k]==null&&v!=null)x[k]=v});g.edges.forEach(e=>{if(byId.has(e.source)&&byId.has(e.target))addEdge({...e})});
     const show=()=>{if(!byId.has(g.focus))return;select(g.focus);q.value=byId.get(g.focus).label;document.getElementById('graphtop').scrollIntoView({behavior:'smooth'})};
-    const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=`показати в графі (${g.nodes.length})`;b.onclick=show;d.appendChild(document.createElement('br'));d.appendChild(b);show()}
-  form.onsubmit=async e=>{e.preventDefault();const t=ta.value.trim();if(!t)return;ta.value='';add('me',t);hist.push({role:'user',content:t});btn.disabled=true;const wait=add('ai','Шукаю…');
+    const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=`показати в графі (${g.nodes.length})`;b.onclick=()=>{if(PH())openChat(false);show()};d.appendChild(document.createElement('br'));d.appendChild(b);show()}
+  form.onsubmit=async e=>{e.preventDefault();const t=ta.value.trim();if(!t)return;ta.value='';ex.hidden=true;add('me',t);hist.push({role:'user',content:t});btn.disabled=true;const wait=add('ai','Шукаю…');
     try{const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:hist})})).json();wait.remove();if(r.error){add('ai','Помилка: '+r.error)}else{const d=add('ai',r.answer||'(порожня відповідь)',r.trace);linkify(d);toGraph(r.graph,d);hist.push({role:'assistant',content:r.answer||''})}}
     catch(err){wait.remove();add('ai','Не вдалося звʼязатися з сервером.')}btn.disabled=false;};
   ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}};}
