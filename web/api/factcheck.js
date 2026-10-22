@@ -15,7 +15,7 @@ export default async function handler(req, res) {
         AND (${q} = '' OR s.quote ILIKE ${"%" + q + "%"} OR s.actor_name ILIKE ${"%" + q + "%"} OR s.predicted_event ILIKE ${"%" + q + "%"})
       ORDER BY (s.status <> 'pending') DESC, s.resolved_at DESC NULLS LAST, s.ts_published DESC LIMIT ${lim}`;
     const ids = [...new Set(items.flatMap((i) => i.evidence_ids || []))].filter((x) => !x.startsWith("gt:"));
-    const ev = ids.length ? await sql`SELECT id, source_id, ts_published, url, left(regexp_replace(text,'\s+',' ','g'), 240) snippet FROM messages WHERE id = ANY(${ids})` : [];
+    const ev = ids.length ? await sql`SELECT id, source_id, ts_published, url, left(regexp_replace(text,'[[:space:]]+',' ','g'), 240) snippet FROM messages WHERE id = ANY(${ids})` : [];
     const summary = await sql`SELECT actor_side, actor_name,
         count(*)::int n, count(*) FILTER (WHERE status='true')::int confirmed, count(*) FILTER (WHERE status='false')::int refuted,
         count(*) FILTER (WHERE status='partial')::int partial, count(*) FILTER (WHERE status='unresolvable')::int unverifiable, count(*) FILTER (WHERE status='pending')::int pending

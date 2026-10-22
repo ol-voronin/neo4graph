@@ -9,11 +9,11 @@
 /* Layout: one working screen — top bar (search + filters), graph canvas left, evidence panel right; stacks on phones. */
 :root{
   --bg:#f5f6f4; --panel:#ffffff; --fg:#1b2024; --muted:#5e6a72; --line:#d9ded9; --accent:#0f6b6e; --accent-soft:#d9ecec;
-  --c-person:#2f6fde; --c-org:#c2731a; --c-case:#8a3ab9; --c-asset:#2a9d5c; --c-post:#8b949a; --c-registry:#b8322f; --c-decision:#0f7a8c; --c-court:#6b5b95; --c-web:#9a7b1c;
+  --c-person:#2f6fde; --c-org:#c2731a; --c-case:#8a3ab9; --c-asset:#2a9d5c; --c-post:#8b949a; --c-registry:#b8322f; --c-decision:#0f7a8c; --c-court:#6b5b95; --c-web:#9a7b1c;--c-place:#5b7d2a;--c-channel:#4a5a8c;
   --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#15191c;--panel:#1d2327;--fg:#e8ecee;--muted:#9aa6ad;--line:#333c42;--accent:#5fc3c5;--accent-soft:#1f3b3c;--c-person:#7aa4ff;--c-org:#e9a35c;--c-case:#c48af0;--c-asset:#5fd48f;--c-post:#7d888f;--c-registry:#f0776f;--c-decision:#5ccbe0;--c-court:#b3a4e8;--c-web:#e3c05a;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#15191c;--panel:#1d2327;--fg:#e8ecee;--muted:#9aa6ad;--line:#333c42;--accent:#5fc3c5;--accent-soft:#1f3b3c;--c-person:#7aa4ff;--c-org:#e9a35c;--c-case:#c48af0;--c-asset:#5fd48f;--c-post:#7d888f;--c-registry:#f0776f;--c-decision:#5ccbe0;--c-court:#b3a4e8;--c-web:#e3c05a;color-scheme:dark}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#15191c;--panel:#1d2327;--fg:#e8ecee;--muted:#9aa6ad;--line:#333c42;--accent:#5fc3c5;--accent-soft:#1f3b3c;--c-person:#7aa4ff;--c-org:#e9a35c;--c-case:#c48af0;--c-asset:#5fd48f;--c-post:#7d888f;--c-registry:#f0776f;--c-decision:#5ccbe0;--c-court:#b3a4e8;--c-web:#e3c05a;--c-place:#a3cf6a;--c-channel:#9fb0ea;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15191c;--panel:#1d2327;--fg:#e8ecee;--muted:#9aa6ad;--line:#333c42;--accent:#5fc3c5;--accent-soft:#1f3b3c;--c-person:#7aa4ff;--c-org:#e9a35c;--c-case:#c48af0;--c-asset:#5fd48f;--c-post:#7d888f;--c-registry:#f0776f;--c-decision:#5ccbe0;--c-court:#b3a4e8;--c-web:#e3c05a;--c-place:#a3cf6a;--c-channel:#9fb0ea;color-scheme:dark}
 html{height:100%}body{min-height:100%}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:14px;line-height:1.45;display:flex;flex-direction:column;
@@ -21,7 +21,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);font-
 h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
 .top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .search{position:relative;flex:1 1 260px;min-width:0}
-.search input{width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
+.sbar{display:flex;gap:6px}.sbar select{flex:none;max-width:42%;font-size:13px;padding:0 6px;border-radius:8px}
+.search input{flex:1;min-width:0;width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
 .search input:focus{outline:2px solid var(--accent);outline-offset:1px}
 .sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:8px;max-height:300px;overflow:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.12)}
 .sugg button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;padding:8px 10px;border:0;background:none;color:var(--fg);font:inherit;cursor:pointer}
@@ -40,6 +41,7 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .canvas svg{width:100%;height:100%;display:block;touch-action:none}
 .canvas .hint{position:absolute;left:10px;bottom:8px;font-size:11px;color:var(--muted);pointer-events:none}
 .canvas .count{position:absolute;right:10px;top:8px}
+.canvas .moren{position:absolute;left:10px;top:8px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow:auto;min-width:0}
 .panel h2{font-size:16px;margin:0 0 2px;font-weight:600;text-wrap:balance}
 .panel h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}
@@ -172,7 +174,7 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
 </section>
 <div class="top" id="graphtop">
   <h1>Граф зв'язків · антикорупційний шар</h1>
-  <div class="search"><input id="q" type="search" placeholder="Особа, компанія, номер справи (991/1234/21), ЄДРПОУ…" autocomplete="off" aria-label="Пошук об'єкта"><div class="sugg" id="sugg" hidden></div></div>
+  <div class="search"><div class="sbar"><select id="qscope" aria-label="Де шукати"><option value="all">Усе</option><option value="person">Людина</option><option value="org">Компанія</option><option value="fop">ФОП</option><option value="code">Код ЄДРПОУ/ІПН</option><option value="case">Справа</option><option value="place">Місце</option><option value="channel">Канал</option><option value="post">Пости</option></select><input id="q" type="search" placeholder="Особа, компанія, номер справи (991/1234/21), ЄДРПОУ…" autocomplete="off" aria-label="Пошук об'єкта"></div><div class="sugg" id="sugg" hidden></div></div>
   <span class="meta" id="stats"></span>
 </div>
 <div class="filters" id="filters">
@@ -187,7 +189,7 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
   <div class="hints" id="fhints"></div>
 </div>
 <div class="main">
-  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><span class="meta count" id="count"></span><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div><button type="button" class="chip tod" id="todetails" hidden>деталі ↓</button></div>
+  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><span class="meta count" id="count"></span><button type="button" class="chip moren" id="moren" hidden>показати ще</button><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div><button type="button" class="chip tod" id="todetails" hidden>деталі ↓</button></div>
   <aside class="panel" id="panel"><p class="empty">Введіть об'єкт у пошук або натисніть вузол.</p></aside>
 </div>
 <div class="legend" id="legend"></div>
@@ -232,9 +234,9 @@ body{display:grid;grid-template-columns:212px minmax(0,1fr);gap:0;padding:0}
 (async function(){
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 const G=window.__API__?await (await fetch('/api/graph')).json():JSON.parse(document.getElementById('data').textContent);if(G.error){document.getElementById('panel').innerHTML='<p class="empty">База недоступна: '+esc(G.error)+'</p>';return}
-const TYPES={person:'Особи',org:'Організації',case:'Справи',asset:'Активи',post:'Пости',registry:'ЄДР',decision:'Рішення судів',court:'Суди',web:'Згадки в інтернеті',declaration:'Декларації НАЗК'};
-const COLORS={person:'var(--c-person)',org:'var(--c-org)',case:'var(--c-case)',asset:'var(--c-asset)',post:'var(--c-post)',registry:'var(--c-registry)',decision:'var(--c-decision)',court:'var(--c-court)',web:'var(--c-web)',declaration:'var(--c-registry)'};
-const REL={affiliated:'пов\'язаний з',reports:'повідомляє про',suspect:'підозрюваний',defendant:'обвинувачений',convicted:'засуджений',acquitted:'виправданий',official_commenting:'коментує як посадовець',investigator:'слідчий',prosecutor:'прокурор',judge:'суддя',lawyer:'адвокат',journalist:'журналіст',politician_mentioned:'згаданий політик',owner:'власник',other:'інше',involved:'фігурує',seized_or_named:'актив у справі',owns_or_linked:'актив пов\'язано з особою',registry_record:'запис у ЄДР',decision_of:'рішення у справі',judge_of:'суддя',heard_in:'розглядалось у',mentioned_in:'згадується в',web_mention:'згадка в інтернеті',court_register_mention:'згадка в реєстрі рішень',named_by_media:'названий у ЗМІ у звʼязку зі справою',accountant:'бухгалтер',notary:'нотаріус',expert:'експерт',director:'керівник',witness:'свідок',victim:'потерпілий',founder:'засновник',beneficiary:'бенефіціар',signer:'підписант / керівник',investigation:'розслідує',prosecution:'обвинувачення',court:'суд',victim:'потерпілий',declaration:'декларація НАЗК',fop_record:'запис ФОП у ЄДР',debtor_record:'запис у реєстрі боржників',paid_public_money:'платив з бюджету (spending.gov.ua)',namesake:'збіг імені (однофамілець?)',брат:'брат',сестра:'сестра',родич:'родич',партнер:'партнер',колега:'колега'};
+const TYPES={person:'Особи',org:'Організації',case:'Справи',asset:'Активи',post:'Пости',registry:'ЄДР',decision:'Рішення судів',court:'Суди',web:'Згадки в інтернеті',declaration:'Декларації НАЗК',place:'Місця',channel:'Канали'};
+const COLORS={person:'var(--c-person)',org:'var(--c-org)',case:'var(--c-case)',asset:'var(--c-asset)',post:'var(--c-post)',registry:'var(--c-registry)',decision:'var(--c-decision)',court:'var(--c-court)',web:'var(--c-web)',declaration:'var(--c-registry)',place:'var(--c-place)',channel:'var(--c-channel)'};
+const REL={affiliated:'пов\'язаний з',reports:'повідомляє про',suspect:'підозрюваний',defendant:'обвинувачений',convicted:'засуджений',acquitted:'виправданий',official_commenting:'коментує як посадовець',investigator:'слідчий',prosecutor:'прокурор',judge:'суддя',lawyer:'адвокат',journalist:'журналіст',politician_mentioned:'згаданий політик',owner:'власник',other:'інше',involved:'фігурує',seized_or_named:'актив у справі',owns_or_linked:'актив пов\'язано з особою',registry_record:'запис у ЄДР',decision_of:'рішення у справі',judge_of:'суддя',heard_in:'розглядалось у',mentioned_in:'згадується в',web_mention:'згадка в інтернеті',court_register_mention:'згадка в реєстрі рішень',named_by_media:'названий у ЗМІ у звʼязку зі справою',accountant:'бухгалтер',notary:'нотаріус',expert:'експерт',director:'керівник',witness:'свідок',victim:'потерпілий',founder:'засновник',beneficiary:'бенефіціар',signer:'підписант / керівник',investigation:'розслідує',prosecution:'обвинувачення',court:'суд',victim:'потерпілий',declaration:'декларація НАЗК',fop_record:'запис ФОП у ЄДР',debtor_record:'запис у реєстрі боржників',paid_public_money:'платив з бюджету (spending.gov.ua)',namesake:'збіг імені (однофамілець?)',located_in:'згадує місце',published_in:'опубліковано в каналі',брат:'брат',сестра:'сестра',родич:'родич',партнер:'партнер',колега:'колега'};
 const SRC={'tg:sap_gov_ua':'САП','tg:NAZK_gov_ua':'НАЗК','tg:PressCourt':'Суди','tg:fuckcorruption':'ЦПК','tg:fightcorruptor':'TI Ukraine','tg:BihusInfo':'Bihus.Info','tg:slidstvo_info':'Слідство.Інфо','tg:ukrpravda_news':'УП'};
 const byId=new Map(G.nodes.map(n=>[n.id,n]));
 const CAUSE_RE=/^\d{1,4}\/\d{1,6}\/\d{2}(?:-[\w\/]+)?$/;const CAN_QUEUE=!!window.__API__;let DEC={cases:{},courts:{},scope:''};
@@ -262,7 +264,7 @@ const OBLN={'Вінниц':'Вінницька','Волин':'Волинська
 const CITY={'Дніпр':'Дніпропетров','Кривий Ріг':'Дніпропетров','Кам\'янськ':'Дніпропетров','Кременчу':'Полтав','Маріупол':'Донец','Краматор':'Донец','Слов\'янськ':'Донец','Ужгород':'Закарпат','Луцьк':'Волин','Рівне':'Рівн','Суми':'Сум','Тернопіл':'Терноп','Черкаси':'Черкас','Чернігів':'Черніг','Чернівці':'Чернівец','Хмельницьк':'Хмельниц','Житомир':'Житомир','Полтав':'Полтав','Миколаїв':'Миколаїв','Херсон':'Херсон','Запоріж':'Запоріз','Львів':'Львів','Одес':'Одес','Харк':'Харків','Київ':'Київ','Вінниц':'Вінниц','Луганськ':'Луган','Донецьк':'Донец','Кропивницьк':'Кіровоград','Івано-Франківськ':'Івано-Франків'};
 function regionOf(s){if(!s)return null;for(const k of OBL)if(s.includes(k))return OBLN[k];for(const [c,k] of Object.entries(CITY))if(s.includes(c))return OBLN[k];return null}
 function patrOf(n){if(!['person','declaration','registry','org'].includes(n.type))return null;let src=n.label;if(src.includes('·'))src=src.split('·').pop();src=src.replace(/\(\d{4} р\.н\.\)/,'').replace(/^\s*(ФОП|ПП|ТОВ)\s+/i,'').trim();const w=src.split(/\s+/).slice(0,4);const p=w.find((x,i)=>i>=2&&/(ович|івна|ївна|евич|йович|івич)$/i.test(x));return p||null}
-function provOf(n){return {decision:'реєстр судових рішень',court:'реєстр судових рішень',registry:'ЄДР',declaration:'декларації НАЗК',web:'інтернет',post:'пости та ЗМІ',case:'справи',person:'особи',org:'організації',asset:'активи'}[n.type]||n.type}
+function provOf(n){return {decision:'реєстр судових рішень',court:'реєстр судових рішень',registry:'ЄДР',declaration:'декларації НАЗК',web:'інтернет',post:'пости та ЗМІ',case:'справи',place:'місця (події, суди, адреси)',channel:'канали',person:'особи',org:'організації',asset:'активи'}[n.type]||n.type}
 const FACETS={
   type:{label:'Тип вузла',get:n=>n.type,fmt:v=>TYPES[v]||v},
   prov:{label:'Походження даних',get:n=>provOf(n)},
@@ -291,7 +293,7 @@ function ego(center,depth,g=groups()){
   const seen=new Map([[center,0]]);const q=[center];const edges=new Set();
   while(q.length){const u=q.shift();const d=seen.get(u);if(d>=depth)continue;
     for(const e of adj.get(u)||[]){if(!edgeOk(e,g))continue;const v=e.source===u?e.target:e.source;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);const vn=byId.get(v);const hub=vn&&vn.type==='person'&&!patrOf(vn)&&vn.label.trim().split(/\s+/).length<=2&&centerPatr();if(!hub)q.push(v)}}}
-  return {nodes:[...seen.keys()].map(id=>byId.get(id)),edges:[...edges]};
+  return {nodes:[...seen.keys()].map(id=>byId.get(id)),edges:[...edges],dist:seen};
 }
 // facet values available around the current object (computed on the unfiltered neighbourhood so removed values can be added back)
 function facetCounts(){if(!state.center)return{};const {nodes,edges}=ego(state.center,state.depth,{});const out={};for(const [k,F] of Object.entries(FACETS)){if(k==='text')continue;const c=new Map();for(const x of (F.edge?edges:nodes)){if(!F.edge&&x.id===state.center)continue;const v=F.get(x);if(v==null)continue;c.set(v,(c.get(v)||0)+1)}if(c.size)out[k]=[...c].sort((a,b)=>b[1]-a[1])}return out}
@@ -315,21 +317,20 @@ function parseWords(t){const toks=t.split(/[\s,;]+/).filter(Boolean);for(const t
   const rl=Object.entries(REL).find(([k,l])=>l.toLowerCase()===tok.toLowerCase());if(rl){addF('rel',rl[0]);continue}
   addF('text',tok)}}
 ftext.onkeydown=e=>{if(e.key==='Enter'){parseWords(ftext.value.trim());ftext.value=''}};
-const depthSel=document.getElementById('depth');depthSel.value=state.depth;depthSel.onchange=()=>{state.depth=+depthSel.value;save();render()};
+const depthSel=document.getElementById('depth');depthSel.value=state.depth;depthSel.onchange=async()=>{state.depth=+depthSel.value;save();render();if(state.center&&await loadAround(state.center))render()};
 document.getElementById('legend').innerHTML=Object.entries(TYPES).map(([t,l])=>`<span><span class="dot" style="background:${COLORS[t]}"></span>${l}</span>`).join('');
-document.getElementById('stats').textContent=`${G.nodes.length} вузлів · ${G.edges.length} зв'язків · дані на ${G.generated}`;
+document.getElementById('stats').textContent=`${G.total?G.total.nodes:G.nodes.length} вузлів у базі · ${G.total?G.total.edges:G.edges.length} зв'язків · дані на ${G.generated}`;
 drawF();
-// search
-const q=document.getElementById('q'),sugg=document.getElementById('sugg');
+// search: server-side and ranked (api/search.js); the scope selector narrows it, «Усе» still recognises case numbers and codes
+const q=document.getElementById('q'),sugg=document.getElementById('sugg'),scope=document.getElementById('qscope');
+try{const s=localStorage.getItem('graph-scope');if(s&&[...scope.options].some(o=>o.value===s))scope.value=s}catch(_){}
 function hay(n){return [n.label,n.edrpou,n.position,n.full,n.summary,n.text,n.agency,n.ref,n.judge,n.doc_id].filter(Boolean).join(' ').toLowerCase()}
 function search(t){t=t.trim().toLowerCase();if(t.length<2)return[];const hits=[];for(const n of G.nodes){const h=hay(n);const i=h.indexOf(t);if(i>=0)hits.push([n.type==='post'?2:(i===0?0:1),-(adj.get(n.id)||[]).length,n])}
   return hits.sort((a,b)=>a[0]-b[0]||a[1]-b[1]).slice(0,12).map(h=>h[2]);}
 function classify(t){if(/^https?:\/\//i.test(t))return 'url';if(CAUSE_RE.test(t))return 'case';if(/^\d{8}$/.test(t))return 'edrpou';if(/^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо)\b|[«»"]/i.test(t))return 'org';if(/^\p{Lu}[\p{L}'’-]+(\s+\p{Lu}[\p{L}'’.-]+){1,2}$/u.test(t))return 'person';return 'text'}
 const CHAIN={url:'забрати сторінку як джерело → витягти людей, ролі, справи з цитатами (додайте « | номер справи», щоб привʼязати до справи)',case:'ЄДРСР (рішення, судді) → тексти → учасники → ЄДР; з українського IP: усі рішення справи з реєстру + тексти',edrpou:'ЄДР (засновники, підписанти) → ЄДРСР → корпус → веб → бюджетні платежі (spending.gov.ua)',org:'ЄДР → ЄДРСР → згадки в корпусі → веб → бюджетні платежі (spending.gov.ua)',person:'згадки в постах і заявах → реєстр корупціонерів НАЗК → ЄДР (засновник/керівник) → ЄДРСР за суддею; з українського IP: повнотекстовий пошук у реєстрі рішень, декларації НАЗК, ЄДР ФОП',text:'повнотекстовий пошук по корпусу; з українського IP: повнотекстовий пошук у реєстрі судових рішень'};
-function chainBox(t){const k=classify(t);const id='chain-'+Math.random().toString(36).slice(2,7);const html=CAN_QUEUE?`<div class="meta" style="margin-top:6px">Пошук у реєстрах для «${esc(t)}» (${k}): ${esc(CHAIN[k])}.</div><button class="chip" id="${id}" type="button" style="margin-top:6px">Запустити пошук у реєстрах</button>`:`<div class="meta" style="margin-top:6px">Ця копія статична; пошук у реєстрах (${esc(CHAIN[k])}) запускається з повної версії.</div>`;return {html,bind:()=>{const b=document.getElementById(id);if(!b)return;b.onclick=async()=>{b.disabled=true;b.textContent='Ставлю в чергу…';const qr=await enqueue(t,k);b.textContent=qr.queued?(qr.existing?'Вже в черзі. Перевірятиму щохвилини.':'У черзі. Перевірятиму щохвилини.'):('Не вдалося: '+(qr.error||''));if(qr.queued)pollQuery(t,k);}}}}
-async function notFound(t){const k=classify(t);if(!CAN_QUEUE){const c=chainBox(t);sugg.innerHTML=`<div style="padding:10px 12px"><div>У базі нічого немає за запитом «${esc(t)}».</div>${c.html}</div>`;sugg.hidden=false;c.bind();return}
-  const qr=await enqueue(t,k);if(!qr.queued){sugg.innerHTML=`<div style="padding:10px 12px">Не вдалося поставити в чергу: ${esc(qr.error||'')}</div>`;sugg.hidden=false;return}
-  searchCard(t,k,qr.created_at);pollQuery(t,k);}
+const QKIND={person:'person',org:'org',fop:'fop',case:'case'};CHAIN.fop='ЄДР ФОП: картка, стан, КВЕД';
+function chainBox(t,k=QKIND[scope.value]||(scope.value==='code'&&/^\d{8}$/.test(t)?'edrpou':classify(t))){const id='chain-'+Math.random().toString(36).slice(2,7);const html=CAN_QUEUE?`<div class="meta" style="margin-top:6px">Пошук у реєстрах для «${esc(t)}» (${k}): ${esc(CHAIN[k]||CHAIN.text)}.</div><button class="chip" id="${id}" type="button" style="margin-top:6px">Шукати в реєстрах</button>`:`<div class="meta" style="margin-top:6px">Ця копія статична; пошук у реєстрах (${esc(CHAIN[k]||CHAIN.text)}) запускається з повної версії.</div>`;return {html,bind:()=>{const b=document.getElementById(id);if(!b)return;b.onclick=async()=>{b.disabled=true;b.textContent='Ставлю в чергу…';const qr=await enqueue(t,k);b.textContent=qr.queued?(qr.existing?'Вже в черзі. Перевірятиму щохвилини.':'У черзі. Перевірятиму щохвилини.'):('Не вдалося: '+(qr.error||''));if(qr.queued)pollQuery(t,k);}}}}
 const LEG={queued:['wait','у черзі'],running:['spin','виконується'],done:['ok','готово'],failed:['err','помилка'],skipped:['err','пропущено'],error:['err','помилка'],skip:['err','пропущено']};
 function searchCard(t,k,created){const t0=created?new Date(created).getTime():Date.now();sugg.innerHTML=`<div class="scard" id="scard"><div class="sc-head"><span class="spinner" id="sc-spin"></span><b>Шукаю «${esc(t)}»</b> <span class="meta">(${esc(k)}) · <span id="sc-el">0:00</span></span></div>
   <div class="sc-leg"><span class="st wait" id="sc-cloud"></span><span>Хмара: корпус, ЄДР, реєстр корупціонерів, веб</span><span class="meta" id="sc-cloud-t">у черзі</span></div>
@@ -338,55 +339,96 @@ function searchCard(t,k,created){const t0=created?new Date(created).getTime():Da
   clearInterval(window.__scTick);window.__scTick=setInterval(()=>{const el=document.getElementById('sc-el');if(!el){clearInterval(window.__scTick);return}const s=Math.max(0,Math.round((Date.now()-t0)/1000));el.textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`},1000);}
 function setLeg(id,status,text){const d=document.getElementById(id),tt=document.getElementById(id+'-t');if(!d)return;const [cls,lbl]=LEG[status]||['wait',status||'у черзі'];d.className='st '+cls;if(tt)tt.textContent=text||lbl;}
 async function queueStatus(t){if(!CAN_QUEUE)return null;try{const r=await (await fetch('/api/queue?q='+encodeURIComponent(t))).json();const it=(r.items||[])[0]||null;return it?{...it,item:it,worker:r.worker}:null}catch(e){return null}}
+// a finished registry run: refetch only the neighbourhood of the searched object (fresh rebuild on the server), no page reload
+const nk=t=>t.toLowerCase().replace(/\s+/g,' ').trim();
+async function showQueued(t,k){sugg.hidden=true;if(k==='case'){const r=await fetchCase(t);if(r.decisions&&r.decisions.length)mergeCase(t)}
+  const id=k==='case'?'case:'+nk(t):k==='edrpou'?'registry:'+t.trim():(k==='org'?'org:':'person:')+nk(t);
+  if(await select(id,{fresh:true,placeholder:{id,type:k==='case'?'case':k==='edrpou'?'registry':k==='org'?'org':'person',label:k==='case'?'Справа '+t:t}}))q.value=byId.get(id).label}
 function pollQuery(t,k){clearInterval(pollTimer);let n=0;const tick=async()=>{const st=await queueStatus(t);if(!st)return;if(!document.getElementById('scard'))searchCard(t,k,st.created_at);
   const it=st.item,w=st.worker;const ago=w&&w.seen_at?Math.round((Date.now()-new Date(w.seen_at))/60000):null;
   setLeg('sc-cloud',it.status,({queued:'у черзі (раз на 5 хв)',running:'виконується',done:'готово',failed:'помилка'})[it.status]);
   setLeg('sc-ua',it.ua_status||'queued',it.ua_status==='done'?'готово'+(it.ua_note?': '+it.ua_note.slice(0,120):''):it.ua_status==='error'?'помилка':(ago==null?'воркер не підключено — результати лише з хмари':ago<=6?'воркер онлайн, чекає чергу':`воркер офлайн ${ago<120?ago+' хв':Math.round(ago/60)+' год'}`));
   const cloudDone=['done','failed'].includes(it.status),uaDone=['done','error','skip'].includes(it.ua_status||'');
-  const act=document.getElementById('sc-actions');if(act&&(cloudDone||uaDone)&&!act.children.length){const b=document.createElement('button');b.type='button';b.className='chip on';b.textContent=cloudDone&&uaDone?'Показати результат':'Показати те, що вже є';b.onclick=async()=>{if(k==='case'){const r=await fetchCase(t);if(r.decisions&&r.decisions.length){mergeCase(t);select('case:'+t.toLowerCase());sugg.hidden=true;q.value='Справа '+t;return}}location.hash='#c='+encodeURIComponent((k==='org'?'org:':'person:')+t.toLowerCase());location.reload()};act.appendChild(b)}
-  if(cloudDone&&uaDone){clearInterval(pollTimer);clearInterval(window.__scTick);document.getElementById('sc-spin')?.classList.add('done');if(k==='case'){const r=await fetchCase(t);if(r.decisions&&r.decisions.length){mergeCase(t);select('case:'+t.toLowerCase());sugg.hidden=true;q.value='Справа '+t;return}}
-    document.getElementById('sc-note').textContent=it.status==='done'?'Готово — відкриваю результат…':'Хмарна частина впала; показую те, що є.';setTimeout(()=>{location.hash='#c='+encodeURIComponent((k==='org'?'org:':'person:')+t.toLowerCase());location.reload()},1500)}
+  const act=document.getElementById('sc-actions');if(act&&(cloudDone||uaDone)&&!act.children.length){const b=document.createElement('button');b.type='button';b.className='chip on';b.textContent=cloudDone&&uaDone?'Показати результат':'Показати те, що вже є';b.onclick=()=>showQueued(t,k);act.appendChild(b)}
+  if(cloudDone&&uaDone){clearInterval(pollTimer);clearInterval(window.__scTick);document.getElementById('sc-spin')?.classList.add('done');
+    document.getElementById('sc-note').textContent=it.status==='done'?'Готово — відкриваю результат…':'Хмарна частина впала; показую те, що є.';setTimeout(()=>showQueued(t,k),1200)}
   if(++n>90)clearInterval(pollTimer)};tick();pollTimer=setInterval(tick,20000);}
-async function tryCase(t){if(!CAUSE_RE.test(t))return false;sugg.innerHTML=`<div style="padding:10px 12px" class="meta">Шукаю справу ${esc(t)}…</div>`;sugg.hidden=false;const r=await fetchCase(t);const cid=mergeCase(t);if(cid){select(cid);sugg.hidden=true;q.value='Справа '+t;return true}
-  const yr='20'+(t.split('/')[2]||'').slice(0,2);let msg=`<div>Справи «${esc(t)}» ще немає в базі (суд ${esc(t.split('/')[0])}, ${yr} рік).</div>`;
-  if(r.queue&&['queued','running'].includes(r.queue.status)){msg+=`<div class="meta" style="margin-top:4px">${fmtQueue(r.queue)} Зазвичай 5–15 хв; сторінка перевірить сама.</div>`;pollCase(t);}
-  else{const c=chainBox(t);msg+=c.html;sugg.innerHTML=`<div style="padding:10px 12px">${msg}</div>`;sugg.hidden=false;c.bind();return true;}
-  sugg.innerHTML=`<div style="padding:10px 12px">${msg}</div>`;sugg.hidden=false;return true;}
 let pollTimer=null;function pollCase(t){clearInterval(pollTimer);pollTimer=setInterval(async()=>{const r=await fetchCase(t);if(r.decisions&&r.decisions.length){clearInterval(pollTimer);const cid=mergeCase(t);select(cid);sugg.hidden=true;q.value='Справа '+t;}else if(r.queue&&['done','failed'].includes(r.queue.status)){clearInterval(pollTimer);sugg.innerHTML=`<div style="padding:10px 12px">${r.queue.status==='done'?'Пошук виконано: у реєстрі рішень за цим номером не знайдено.':'Пошук завершився з помилкою; спробуйте пізніше.'}</div>`;sugg.hidden=false;}},60000);}
-q.oninput=async()=>{const t=q.value.trim();if(t.length<2){sugg.hidden=true;return}
-  if(/^https?:\/\//i.test(t)){const c=chainBox(t);sugg.innerHTML=`<div style="padding:10px 12px"><div>Посилання як джерело.</div>${c.html}</div>`;sugg.hidden=false;c.bind();return}
-  if(/^\d{1,4}\/\d{0,6}/.test(t)){if(CAUSE_RE.test(t)){await tryCase(t);return}const keys=await casePrefix(t);sugg.innerHTML='';if(!keys.length){sugg.innerHTML=`<div style="padding:10px 12px" class="meta">Немає справ, що починаються на «${esc(t)}». Введіть повний номер (наприклад 991/1234/21).</div>`;sugg.hidden=false;return}
-    keys.forEach(k=>{const b=document.createElement('button');b.type='button';b.innerHTML=`<span class="dot" style="background:${COLORS.case}"></span><span>Справа ${esc(k.cause_num)}</span><span class="meta">${k.n} рішень · ${esc((k.d0||'').slice(0,10))}…${esc((k.d1||'').slice(0,10))}</span>`;b.onclick=async()=>{await fetchCase(k.cause_num);mergeCase(k.cause_num);select('case:'+k.cause_num.toLowerCase());sugg.hidden=true;q.value='Справа '+k.cause_num};sugg.appendChild(b)});sugg.hidden=false;return}
-  const r=search(t);sugg.innerHTML='';if(!r.length){sugg.innerHTML=`<div style="padding:10px 12px"><div>У базі нічого немає за запитом «${esc(t)}».</div><div class="meta" style="margin-top:4px">Натисніть Enter — запущу пошук по всіх джерелах (${esc(classify(t))}).</div></div>`;sugg.hidden=false;return}
-  r.forEach(n=>{const b=document.createElement('button');b.type='button';b.innerHTML=`<span class="dot" style="background:${COLORS[n.type]}"></span><span>${esc(n.label)}</span><span class="meta">${TYPES[n.type]}${n.position?' · '+esc(n.position):''}${n.type==='post'?' · '+esc(SRC[n.src]||n.src||''):''} · ${(adj.get(n.id)||[]).length}</span>`;b.onclick=()=>{select(n.id);sugg.hidden=true;q.value=n.label};sugg.appendChild(b)});
-  const c=chainBox(t);const d=document.createElement('div');d.style.cssText='padding:6px 10px 10px;border-top:1px solid var(--line)';d.innerHTML=c.html;sugg.appendChild(d);c.bind();sugg.hidden=false;};
-q.onkeydown=async e=>{if(e.key==='Enter'){const t=q.value.trim();if(await tryCase(t))return;const r=search(t);if(r[0]){select(r[0].id);sugg.hidden=true;q.value=r[0].label}else if(t.length>=2){notFound(t);document.getElementById('panel').innerHTML=`<p class="empty">За запитом «${esc(t)}» нічого не знайдено.</p>`}}if(e.key==='Escape')sugg.hidden=true};
+let sTimer=null,sCtl=null,sLast=null;
+async function runSearch(t,kind){
+  if(!CAN_QUEUE){if(/^\d{1,4}\/\d/.test(t))return {results:(await casePrefix(t)).map(c=>({id:'case:'+c.cause_num.toLowerCase(),type:'case',label:'Справа '+c.cause_num,cause_num:c.cause_num,sub:c.n+' рішень',strong:c.cause_num===t}))};
+    return {results:search(t).map(n=>({id:n.id,type:n.type,label:n.label,sub:n.position||'',strong:n.label.toLowerCase()===t.toLowerCase()}))}}
+  sCtl?.abort();sCtl=new AbortController();
+  return (await fetch(`/api/search?q=${encodeURIComponent(t)}&kind=${kind}`,{signal:sCtl.signal})).json()}
+async function doSearch(t){const kind=scope.value;if(sugg.hidden){sugg.innerHTML='<div class="meta" style="padding:10px 12px">Шукаю…</div>';sugg.hidden=false}
+  try{const r=await runSearch(t,kind);if(q.value.trim()!==t||scope.value!==kind)return null;sLast={t,kind,r};showResults(t,r);return r}
+  catch(e){if(e.name!=='AbortError'){sugg.innerHTML=`<div class="meta" style="padding:10px 12px">Пошук недоступний: ${esc(e.message)}</div>`;sugg.hidden=false}return null}}
+function showResults(t,r){sugg.innerHTML='';sugg.hidden=false;if(r.error){sugg.innerHTML=`<div class="meta" style="padding:10px 12px">Пошук недоступний: ${esc(r.error)}</div>`;return}
+  const res=r.results||[];if(!res.length)sugg.innerHTML=`<div style="padding:10px 12px">У базі нічого немає за запитом «${esc(t)}»${scope.value!=='all'?` (${esc(scope.selectedOptions[0].textContent)})`:''}.</div>`;
+  res.forEach(x=>{const b=document.createElement('button');b.type='button';b.innerHTML=`<span class="dot" style="background:${COLORS[x.type]||'var(--c-post)'}"></span><span>${esc(x.label)}</span><span class="meta">${esc(TYPES[x.type]||x.type)}${x.sub?' · '+esc(x.sub):''}${x.strong?' · точний збіг':''}</span>`;b.onclick=()=>pick(x);sugg.appendChild(b)});
+  const qs=r.queue,c=chainBox(t),d=document.createElement('div');d.style.cssText='padding:6px 10px 10px;border-top:1px solid var(--line)';
+  d.innerHTML=(qs&&['queued','running'].includes(qs.status)?`<div class="meta">Пошук у реєстрах за «${esc(t)}» уже ${qs.status==='running'?'виконується':'у черзі'}.</div>`:'')+c.html;sugg.appendChild(d);c.bind()}
+async function pick(x){sugg.hidden=true;q.value=x.label;if(x.cause_num){await fetchCase(x.cause_num);mergeCase(x.cause_num)}select(x.id,{placeholder:{id:x.id,type:x.type,label:x.label}})}
+q.oninput=()=>{clearTimeout(sTimer);const t=q.value.trim();if(t.length<2){sCtl?.abort();sugg.hidden=true;return}
+  if(/^https?:\/\//i.test(t)){sCtl?.abort();const c=chainBox(t,'url');sugg.innerHTML=`<div style="padding:10px 12px"><div>Посилання як джерело.</div>${c.html}</div>`;sugg.hidden=false;c.bind();return}
+  sTimer=setTimeout(()=>doSearch(t),250)};
+// Enter opens a result only when exactly one is an exact match; otherwise it just shows the list. Registry runs are explicit (button).
+q.onkeydown=async e=>{if(e.key==='Escape'){sugg.hidden=true;return}if(e.key!=='Enter')return;e.preventDefault();clearTimeout(sTimer);const t=q.value.trim();if(t.length<2||/^https?:\/\//i.test(t))return;
+  const r=sLast&&sLast.t===t&&sLast.kind===scope.value?sLast.r:await doSearch(t);if(!r)return;const strong=(r.results||[]).filter(x=>x.strong);if(strong.length===1)pick(strong[0]);else showResults(t,r)};
+scope.onchange=()=>{try{localStorage.setItem('graph-scope',scope.value)}catch(_){}sLast=null;const t=q.value.trim();if(t.length>=2&&!/^https?:\/\//i.test(t))doSearch(t);q.focus()};
 document.addEventListener('click',e=>{if(!e.target.closest('.search'))sugg.hidden=true});
 
-// render
-const svg=d3.select('#svg'),tip=document.getElementById('tip');let sim=null;
+// graph data: the overview from /api/graph, plus neighbourhoods merged in as objects are opened (/api/graph?around=)
+const OVER=new Set(G.nodes.map(n=>n.id)),AROUND=new Map(),CAP=200;state.cap=CAP;
+const deg=n=>n.deg??(adj.get(n.id)||[]).length;
+function mergeSlice(r){for(const n of r.nodes||[]){const x=addNode({...n});for(const [k,v] of Object.entries(n))if(x[k]==null&&v!=null)x[k]=v}
+  for(const e of r.edges||[])if(byId.has(e.source)&&byId.has(e.target))addEdge({...e});
+  for(const [m,p] of Object.entries(r.ev||{}))if(!msgIndex.has(m))msgIndex.set(m,p);
+  for(const n of r.nodes||[])if(n.type==='post')msgIndex.set(n.id.slice(5),byId.get(n.id))}
+async function loadAround(id,o={}){if(!CAN_QUEUE)return null;const key=id+'|'+state.depth,have=AROUND.get(key),limit=o.limit||have?.limit||150;
+  if(have&&!o.fresh&&have.limit>=limit)return have;
+  try{const r=await (await fetch(`/api/graph?around=${encodeURIComponent(id)}&depth=${state.depth}&limit=${limit}${o.fresh?'&fresh='+Date.now():''}`)).json();if(r.error)return null;
+    mergeSlice(r);const a={limit,total:r.total,shown:r.shown};AROUND.set(key,a);return a}catch(e){return null}}
+// what is drawn: the filtered neighbourhood of the selected object, capped (closest and most connected first); no selection -> overview
+function visible(){
+  if(!state.center){const ns=[...OVER].map(id=>byId.get(id)).sort((a,b)=>deg(b)-deg(a)).slice(0,state.cap),ids=new Set(ns.map(n=>n.id));const es=G.edges.filter(e=>ids.has(e.source)&&ids.has(e.target));return {nodes:ns,edges:es,all:{nodes:ns,edges:es},more:OVER.size-ns.length}}
+  const {nodes,edges,dist}=ego(state.center,state.depth),a=AROUND.get(state.center+'|'+state.depth),server=a&&a.limit<600?Math.max(0,a.total-a.shown):0;  // the server sends at most 600
+  if(nodes.length<=state.cap)return {nodes,edges,all:{nodes,edges},more:server};
+  const keep=nodes.slice().sort((x,y)=>dist.get(x.id)-dist.get(y.id)||deg(y)-deg(x)).slice(0,state.cap),ids=new Set(keep.map(n=>n.id));
+  return {nodes:keep,edges:edges.filter(e=>ids.has(e.source)&&ids.has(e.target)),all:{nodes,edges},more:nodes.length-keep.length+server}}
+const moreB=document.getElementById('moren');
+moreB.onclick=async()=>{state.cap+=150;const a=state.center&&AROUND.get(state.center+'|'+state.depth);if(a&&a.total>a.shown)await loadAround(state.center,{limit:Math.min(600,a.limit+150)});render()};
+// render: one persistent SVG and simulation; nodes keep their positions across selections, new ones start next to a drawn neighbour
+const svg=d3.select('#svg'),tip=document.getElementById('tip');
+const root=svg.append('g'),gl=root.append('g'),gn=root.append('g');
+const zoom=d3.zoom().scaleExtent([.3,4]).on('zoom',ev=>root.attr('transform',ev.transform));svg.call(zoom);
+const pos=new Map();let link=gl.selectAll('line'),node=gn.selectAll('g'),lastCenter;
+const sim=d3.forceSimulation().force('link',d3.forceLink().distance(d=>d.source.n.type==='post'||d.target.n.type==='post'?40:70)).force('charge',d3.forceManyBody().strength(-180)).force('collide',d3.forceCollide(16)).force('x',d3.forceX().strength(.04)).force('y',d3.forceY().strength(.04))
+  .on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${d.x},${d.y})`)}).stop();
+const drag=d3.drag().on('start',(ev,d)=>{if(!ev.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y}).on('drag',(ev,d)=>{d.fx=ev.x;d.fy=ev.y}).on('end',(ev,d)=>{if(!ev.active)sim.alphaTarget(0);d.fx=null;d.fy=null});
 function render(){
-  if(!state.center)return;
-  const {nodes,edges}=ego(state.center,state.depth);
-  document.getElementById('count').textContent=`${nodes.length} вузлів · ${edges.length} зв'язків`;
-  const W=svg.node().clientWidth||600,H=svg.node().clientHeight||400;
-  svg.selectAll('*').remove();
-  const g=svg.append('g');
-  svg.call(d3.zoom().scaleExtent([.3,4]).on('zoom',ev=>g.attr('transform',ev.transform)));
-  const ns=nodes.map(n=>({...n})),idx=new Map(ns.map(n=>[n.id,n]));
-  const ls=edges.map(e=>({...e,source:idx.get(e.source),target:idx.get(e.target)}));
-  const link=g.append('g').selectAll('line').data(ls).join('line').attr('class',d=>'link'+(d.rel==='registry_record'||d.rel==='founder'||d.rel==='beneficiary'||d.rel==='signer'?' reg':'')).attr('stroke-width',d=>Math.min(4,1+(d.msgs||[]).length*.6));
-  const node=g.append('g').selectAll('g').data(ns).join('g').attr('class',d=>'node'+(d.id===state.center?' center':''))
-    .call(d3.drag().on('start',(ev,d)=>{if(!ev.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y}).on('drag',(ev,d)=>{d.fx=ev.x;d.fy=ev.y}).on('end',(ev,d)=>{if(!ev.active)sim.alphaTarget(0);d.fx=null;d.fy=null}));
-  node.append('circle').attr('r',d=>d.id===state.center?11:d.type==='post'?4:(ns.length>140?3.5:6)+Math.min(6,((adj.get(d.id)||[]).length)*.4)).attr('fill',d=>COLORS[d.type])
-    .on('click',(ev,d)=>{ev.stopPropagation();select(d.id)})
-    .on('mousemove',(ev,d)=>{tip.hidden=false;tip.textContent=d.label+(d.position?' · '+d.position:'');const r=svg.node().getBoundingClientRect();tip.style.left=(ev.clientX-r.left)+'px';tip.style.top=(ev.clientY-r.top)+'px'})
-    .on('mouseleave',()=>tip.hidden=true);
-  const crowded=ns.length>140;node.filter(d=>d.id===state.center||(!crowded&&d.type!=='post')||(crowded&&(adj.get(d.id)||[]).length>=4&&d.type!=='post')).append('text').attr('dx',9).attr('dy',4).text(d=>d.label.length>34?d.label.slice(0,33)+'…':d.label);
-  if(sim)sim.stop();
-  sim=d3.forceSimulation(ns).force('link',d3.forceLink(ls).id(d=>d.id).distance(d=>d.source.type==='post'||d.target.type==='post'?40:70)).force('charge',d3.forceManyBody().strength(-180)).force('center',d3.forceCenter(W/2,H/2)).force('collide',d3.forceCollide(16))
-    .on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${d.x},${d.y})`)});
-  panel(nodes,edges);hints(nodes);save();
+  const v=visible(),{nodes,edges}=v;
+  document.getElementById('count').textContent=`${nodes.length} вузлів · ${edges.length} зв'язків`+(state.center?'':' · найзв’язніші в базі');
+  moreB.hidden=!(v.more>0);moreB.textContent=`показати ще (${v.more})`;
+  const W=svg.node().clientWidth||600,H=svg.node().clientHeight||400,[vx,vy]=d3.zoomTransform(svg.node()).invert([W/2,H/2]);
+  const prev=new Set(sim.nodes().map(d=>d.id)),placed=new Map(nodes.filter(n=>prev.has(n.id)).map(n=>[n.id,pos.get(n.id)]));let added=0;
+  const ns=nodes.map(n=>{let d=placed.get(n.id);
+    if(!d){added++;const nb=(adj.get(n.id)||[]).map(e=>placed.get(e.source===n.id?e.target:e.source)).find(Boolean),c=nb||placed.get(state.center)||{x:vx,y:vy};
+      d={id:n.id,x:c.x+(Math.random()-.5)*50,y:c.y+(Math.random()-.5)*50};pos.set(n.id,d);placed.set(n.id,d)}
+    d.n=n;return d});
+  const ls=edges.map(e=>({source:pos.get(e.source),target:pos.get(e.target),rel:e.rel,w:e.nmsgs||(e.msgs||[]).length,k:e.source+'|'+e.target+'|'+e.rel}));
+  link=gl.selectAll('line').data(ls,d=>d.k).join('line').attr('class',d=>'link'+(['registry_record','founder','beneficiary','signer'].includes(d.rel)?' reg':'')).attr('stroke-width',d=>Math.min(4,1+d.w*.6));
+  const crowded=ns.length>140,named=new Set(crowded?ns.filter(d=>d.n.type!=='post').sort((a,b)=>deg(b.n)-deg(a.n)).slice(0,40).map(d=>d.id):[]);
+  node=gn.selectAll('g.node').data(ns,d=>d.id).join(en=>{const g=en.append('g').call(drag);g.append('circle').on('click',(ev,d)=>{ev.stopPropagation();select(d.id)})
+      .on('mousemove',(ev,d)=>{tip.hidden=false;tip.textContent=d.n.label+(d.n.position?' · '+d.n.position:'');const r=svg.node().getBoundingClientRect();tip.style.left=(ev.clientX-r.left)+'px';tip.style.top=(ev.clientY-r.top)+'px'})
+      .on('mouseleave',()=>tip.hidden=true);g.append('text').attr('dx',9).attr('dy',4);return g})
+    .attr('class',d=>'node'+(d.id===state.center?' center':'')).attr('transform',d=>`translate(${d.x},${d.y})`);
+  node.select('circle').attr('r',d=>d.id===state.center?11:d.n.type==='post'?4:(crowded?3.5:6)+Math.min(6,deg(d.n)*.4)).attr('fill',d=>COLORS[d.n.type]||'var(--c-post)');
+  node.select('text').text(d=>d.id===state.center||(d.n.type!=='post'&&(!crowded||named.has(d.id)))?(d.n.label.length>34?d.n.label.slice(0,33)+'…':d.n.label):'');
+  link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  const c=pos.get(state.center);sim.nodes(ns);sim.force('link').links(ls);sim.force('x').x(c?c.x:W/2);sim.force('y').y(c?c.y:H/2);sim.alpha(added?.3:.1).restart();
+  if(state.center!==lastCenter){lastCenter=state.center;if(c)svg.transition().duration(600).call(zoom.translateTo,c.x,c.y)}
+  if(state.center){panel(v.all.nodes,v.all.edges);hints(v.all.nodes)}save();
 }
 const hist=[];
 const PROV_REL=new Set(['court_register_mention','declaration','fop_record','namesake','named_by_media','web_mention','mentioned_in','registry_record','founder','signer','beneficiary']);
@@ -434,8 +476,10 @@ function panel(nodes,edges){
   p.scrollTop=0;
   if(CAN_QUEUE)loadDetail(n);else document.getElementById('nexplain').innerHTML=`<span class="meta">Що це: ${esc(provOf(n))}; подробиці з реєстрів — у повній версії.</span>`;
 }
+const DETAIL=new Map();  // /api/node answers per id: a re-render after a neighbourhood merge does not refetch
 async function loadDetail(n){const box=document.getElementById('ndetail'),ex=document.getElementById('nexplain');try{
-  const r=await (await fetch('/api/node?id='+encodeURIComponent(n.id)+'&q='+encodeURIComponent(q.value||''))).json();
+  let pr=DETAIL.get(n.id);if(!pr){pr=fetch('/api/node?id='+encodeURIComponent(n.id)+'&q='+encodeURIComponent(q.value||'')).then(r=>r.json());DETAIL.set(n.id,pr)}
+  const r=await pr.catch(e=>{DETAIL.delete(n.id);throw e});if(r.error)DETAIL.delete(n.id);
   if(state.center!==n.id)return;if(r.error){ex.innerHTML=`<span class="meta">${esc(r.error)}</span>`;return}
   ex.innerHTML=`<b>Що це.</b> ${esc(r.explain||'')}`;let h='';
   if(r.kind==='decision'){if(r.fragments&&r.fragments.length)h+=`<h3>Фрагменти тексту з імʼям</h3>`+r.fragments.map(f=>`<p class="frag">…${esc(f)}…</p>`).join('');else if(r.record.head)h+=`<h3>Початок тексту</h3><p class="frag">${esc(r.record.head)}…</p>`;if(r.case_summary&&r.case_summary.n>1)h+=`<p class="meta">У справі ${esc(r.record.cause_num)}: ${r.case_summary.n} рішень, ${fmtDate(r.case_summary.d0)} … ${fmtDate(r.case_summary.d1)}. <a href="#" data-case="${esc(r.record.cause_num)}">Відкрити справу</a></p>`}
@@ -447,11 +491,18 @@ async function loadDetail(n){const box=document.getElementById('ndetail'),ex=doc
   if(r.kind==='web'){h+=`<h3>Поглибити</h3><div class="group">${r.ingested?'':`<button type="button" class="chip" data-ingest="${esc(n.url)}">Взяти сторінку в базу → люди, посади, організації</button>`}${(r.names||[]).map(nm=>`<button type="button" class="chip" data-person="${esc(nm)}">Шукати саме «${esc(nm)}» по всіх джерелах</button>`).join('')}</div><p class="meta" id="webact"></p>`}
   box.innerHTML=h;box.querySelectorAll('button[data-ingest]').forEach(b=>b.onclick=async()=>{b.disabled=true;const qr=await enqueue(b.dataset.ingest,'url');document.getElementById('webact').textContent=qr.queued?'У черзі: сторінка буде забрана й розібрана хмарою (5–15 хв), потім зʼявиться у графі як джерело.':'Не вдалося: '+(qr.error||'')});
   box.querySelectorAll('button[data-person]').forEach(b=>b.onclick=async()=>{b.disabled=true;const nm=b.dataset.person;const qr=await enqueue(nm,'person');document.getElementById('webact').textContent=qr.queued?`У черзі: «${nm}» — усі джерела. Сторінка оновиться, коли буде результат.`:'Не вдалося: '+(qr.error||'');if(qr.queued){q.value=nm;pollQuery(nm,'person')}});
-  box.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>{if(!byId.has(b.dataset.id)){q.value=b.textContent.trim();q.dispatchEvent(new Event('input'));return}select(b.dataset.id)});box.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid)select(cid)});
+  box.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>{const id=b.dataset.id,t=id.slice(0,id.indexOf(':'));select(id,{placeholder:{id,type:TYPES[t]?t:'registry',label:b.textContent.trim()}})});box.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid)select(cid)});
 }catch(e){ex.innerHTML='<span class="meta">Подробиці недоступні.</span>'}}
-function select(id){state.center=id;drawF();render();const tb=document.getElementById('todetails');if(window.matchMedia('(max-width:760px)').matches){tb.hidden=false;}}
+// select: draw what is known at once, then fetch the capped neighbourhood and merge it in (same SVG, positions kept)
+let selSeq=0;
+async function select(id,o={}){const seq=++selSeq;if(id!==state.center)state.cap=CAP;state.center=id;if(window.matchMedia('(max-width:760px)').matches)document.getElementById('todetails').hidden=false;
+  if(byId.has(id)){drawF();render()}else document.getElementById('panel').innerHTML='<p class="empty">Завантажую оточення…</p>';
+  const had=byId.has(id),n0=G.nodes.length,e0=G.edges.length;await loadAround(id,o);if(seq!==selSeq)return byId.has(id);
+  if(!byId.has(id)&&o.placeholder)addNode({...o.placeholder});
+  if(!byId.has(id)){state.center=null;save();document.getElementById('panel').innerHTML=`<p class="empty">Обʼєкта «${esc(id.slice(id.indexOf(':')+1))}» ще немає в графі.</p>`;render();return false}
+  if(!had||G.nodes.length!==n0||G.edges.length!==e0){drawF();render()}return true}
 document.getElementById('todetails').onclick=()=>document.getElementById('panel').scrollIntoView({behavior:'smooth',block:'start'});
-window.addEventListener('resize',()=>{if(state.center)render()});
+window.addEventListener('resize',()=>render());
 // tabs + fact-check (API version only)
 if(CAN_QUEUE){const V={true:'підтверджено',false:'спростовано',partial:'частково',unresolvable:'не перевірено',pending:'не перевірялось'};const SIDE={RU_official:'РФ офіційні',RU_milblogger:'РФ воєнкори',RU_media:'РФ медіа',UA_official:'Україна офіційні',UA_media:'Україна медіа',US_admin:'США адміністрація',US_right:'США праві',US_left:'США ліві',US_congress_bipartisan:'США Конгрес',US_other:'США інші',EU:'ЄС',NATO:'НАТО',other:'інші'};
   const fc=document.getElementById('factcheck'),gtop=document.getElementById('graphtop'),main=document.querySelector('.main'),filt=document.querySelector('.filters'),leg=document.getElementById('legend');
@@ -487,12 +538,12 @@ const start=G.nodes.filter(n=>n.type==='person').sort((a,b)=>(adj.get(b.id)||[])
 async function emptyState(){document.getElementById('panel').innerHTML=`<div class="meta">Початок</div><h2>Що шукати</h2><p class="meta" style="font-family:var(--font);font-size:13px">Будь-який запит проходить усі джерела: корпус постів, ЄДР, реєстр корупціонерів, реєстр судових рішень, декларації, ФОП, боржники, веб. Якщо в базі вже щось є — побачите одразу; якщо ні — запит стане в чергу і сторінка сама підхопить результат.</p>
   <h3>Приклади</h3><div class="group" id="ex-q"></div><h3>Останні запити</h3><div id="ex-recent" class="meta">завантажую…</div>`;
   const EXQ=[['932/2641/25','номер справи'],['Кацуба Александр','особа'],['ТОВ "ГАЗ-МДС"','компанія'],['24253556','ЄДРПОУ'],['https://nabu.gov.ua/news','сторінка як джерело']];const ex=document.getElementById('ex-q');EXQ.forEach(([v,l])=>{const b=document.createElement('button');b.type='button';b.className='chip';b.innerHTML=`${esc(v)} <span class="meta">${l}</span>`;b.onclick=()=>{q.value=v;q.dispatchEvent(new Event('input'));q.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))};ex.appendChild(b)});
-  document.getElementById('count').textContent='';svg.selectAll('*').remove();
+  state.center=null;render();
   if(!CAN_QUEUE){document.getElementById('ex-recent').textContent='';return}
   try{const r=await (await fetch('/api/queue')).json();const items=(r.items||[]).filter(i=>i.status!=='skipped').slice(0,12);document.getElementById('ex-recent').innerHTML=items.length?`<ul class="tl">${items.map(i=>`<li><button type="button" data-q="${esc(i.query)}">${esc(i.query)}</button> <span class="meta">${esc(i.kind||'')} · хмара: ${esc((LEG[i.status]||[,i.status])[1])} · UA: ${esc((LEG[i.ua_status||'queued']||[,i.ua_status])[1])}</span></li>`).join('')}</ul>`:'ще немає';
     document.getElementById('ex-recent').querySelectorAll('button[data-q]').forEach(b=>b.onclick=()=>{q.value=b.dataset.q;q.dispatchEvent(new Event('input'));q.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))});
     const w=r.worker;const st=document.getElementById('stats');if(w&&w.seen_at){const ago=Math.round((Date.now()-new Date(w.seen_at))/60000);st.textContent+=` · воркер UA: ${ago<=6?'онлайн':'офлайн '+(ago<120?ago+' хв':Math.round(ago/60)+' год')}`}}catch(e){document.getElementById('ex-recent').textContent=''}}
-if(state.center&&byId.has(state.center)){q.value=byId.get(state.center).label;select(state.center)}else{emptyState()}
+if(state.center){const c=state.center;select(c).then(ok=>{if(ok)q.value=byId.get(c).label;else emptyState()})}else{emptyState()}
 q.addEventListener('input',()=>{if(!q.value.trim()&&!state.center)emptyState()});
 // ---------- sections: home / graph / factcheck+rhetoric / forecast; ?view= in the URL, the graph keeps its own #hash ----------
 const VIEWS={home:['home'],graph:['graphtop','filters','main','legend','chat'],factcheck:['factcheck'],prognoz:['prognoz']};
@@ -501,14 +552,14 @@ const loaded={};
 function show(v,push=true){if(!VIEWS[v])v='home';for(const [k,ids] of Object.entries(VIEWS))ids.forEach(id=>{const el=elOf(id);if(el&&!(id==='chat'&&!CAN_QUEUE))el.hidden=k!==v});
   document.querySelectorAll('#side [data-view]').forEach(b=>b.tagName==='BUTTON'&&b.setAttribute('aria-current',b.dataset.view===v?'page':'false'));
   if(push){const u=new URL(location.href);if(v==='home')u.searchParams.delete('view');else u.searchParams.set('view',v);if(v!=='graph')u.hash='';history.pushState({v},'',u)}
-  if(v==='graph'&&state.center)render();
+  if(v==='graph')render();
   if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet()}
   if(v==='prognoz'&&!loaded.pg){loaded.pg=1;loadPG()}
   if(v==='home')loadHome();window.scrollTo({top:0})}
 document.querySelectorAll('#side [data-view],#home [data-view]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();show(b.dataset.view)}));
 window.addEventListener('popstate',()=>show(new URL(location.href).searchParams.get('view')||'home',false));
 window.__show=show;
-async function loadHome(){document.getElementById('h-graph').textContent=G.nodes.length.toLocaleString('uk-UA');
+async function loadHome(){document.getElementById('h-graph').textContent=(G.total?G.total.nodes:G.nodes.length).toLocaleString('uk-UA');
   if(!CAN_QUEUE)return;
   if(!loaded.hfc){loaded.hfc=1;fetch('/api/rhetoric?group=country').then(r=>r.json()).then(r=>{document.getElementById('h-fc').textContent=(r.top||[]).reduce((s,x)=>s+x.n,0).toLocaleString('uk-UA')}).catch(()=>{})}
   if(!loaded.hpg){loaded.hpg=1;fetch('/api/predictions').then(r=>r.json()).then(r=>{document.getElementById('h-pg').textContent=(r.rows||[]).length}).catch(()=>{})}}

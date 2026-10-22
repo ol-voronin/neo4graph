@@ -45,6 +45,19 @@ def connect():
     return psycopg.connect(url)
 
 
+def refresh_search_names(conn):
+    """Rebuild the name index behind /api/search (db/migrations/013_search_trgm.sql); a no-op until it is applied."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('search_names') IS NOT NULL")
+            if cur.fetchone()[0]:
+                cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY search_names")
+        conn.commit()
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        print("search_names refresh failed:", e)
+
+
 def cmd_alerts(a):
     rows = list(iter_alerts(Path(a.dataset), a.official))
     print(f"parsed {len(rows)} alert rows")
