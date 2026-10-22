@@ -88,7 +88,7 @@ async function runTool(name, a) {
   if (name === "search_corpus") {
     const pat = "%" + a.q + "%";
     const lim = Math.min(40, a.limit || 15);
-    const rows = await sql`SELECT m.id, m.source_id, m.ts_published, m.url, left(regexp_replace(m.text,'\s+',' ','g'), 300) snippet FROM messages m
+    const rows = await sql`SELECT m.id, m.source_id, m.ts_published, m.url, left(regexp_replace(m.text,'[[:space:]]+',' ','g'), 300) snippet FROM messages m
       WHERE m.text ILIKE ${pat} AND (${a.since || null}::timestamptz IS NULL OR m.ts_published >= ${a.since || null}) AND (${a.until || null}::timestamptz IS NULL OR m.ts_published <= ${a.until || null})
       ORDER BY m.ts_published DESC LIMIT ${lim}`;
     const tot = await sql`SELECT count(*)::int n FROM messages WHERE text ILIKE ${pat}`;

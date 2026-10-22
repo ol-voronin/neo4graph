@@ -175,6 +175,9 @@ def main():
                      a.model, PROMPT_VERSION + "-" + a.provider))
         conn.commit()
     print(f"extracted {ok}, failed {bad}" + (", stopped on quota" if quota_stop else ""))
+    if ok and not a.dry_run:
+        from load_to_db import refresh_search_names
+        refresh_search_names(conn)
     if bad and not ok:
         sys.exit(1)
 
