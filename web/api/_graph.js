@@ -3,6 +3,9 @@ import { sql } from "./_db.js";
 // Full entity graph built from the database (persons, orgs, cases, assets, ЄДР records, evidence posts), kept in memory per
 // warm function instance. /api/graph serves slices of it: a light overview and capped neighbourhoods (see graph.js).
 export const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
+// ЄДР and extracted names carry placeholders ("НЕМАЄ", "відсутній", "-") that must not become one giant node
+export const PLACEHOLDER = /^(немає|нема|немає даних|відсутн[а-яії]*|не встановлено|не визначено|не вказано|невідом[а-яії]*|нет|нету|отсутству[а-яє]*|не указан[а-я]*|неизвест[а-я]*|н\/?а|n\/?a|none|null|unknown|[-–—.х_x0 ]+)$/i;
+export const isPlaceholder = (s) => !norm(s) || PLACEHOLDER.test(norm(s).replace(/[«»"“”„]/g, "").replace(/^(тов|пп|фоп)\s+/i, ""));
 export const caseKey = (label) => "case:" + norm(label).replace(/[«»"“”„]/g, "").replace(/^(операція|операция|справа)\s+/i, "").toLowerCase();
 
 async function build() {
@@ -33,20 +36,22 @@ async function build() {
     edge(post(c.m), id, "reports", c.m, { date: c.t, src: c.s });
   }
   for (const p of persons) {
+    if (isPlaceholder(p.n)) continue;
     const id = node("person:" + norm(p.n).toLowerCase(), "person", norm(p.n), { position: p.p });
     const cs = caseByMsg.get(p.m) || [];
     for (const ck of cs) edge(id, ck, p.r, p.m, { date: p.t, src: p.s });
     if (!cs.length) edge(id, post(p.m), p.r, p.m, { date: p.t, src: p.s });
-    if (p.o) edge(id, node("org:" + norm(p.o).toLowerCase(), "org", norm(p.o)), "affiliated", p.m, { date: p.t, src: p.s });
+    if (p.o && !isPlaceholder(p.o)) edge(id, node("org:" + norm(p.o).toLowerCase(), "org", norm(p.o)), "affiliated", p.m, { date: p.t, src: p.s });
   }
   for (const o of orgs) {
+    if (isPlaceholder(o.n)) continue;
     const id = node("org:" + norm(o.n).toLowerCase(), "org", norm(o.n), { kind: o.k });
     if (o.e) nodes.get(id).edrpou = o.e;
     for (const ck of caseByMsg.get(o.m) || []) edge(id, ck, o.r || "involved", o.m, { date: o.t, src: o.s });
   }
   for (const a of assets) {
     const id = node("asset:" + (a.d || "").toLowerCase() + "|" + (a.lp || ""), "asset", a.d, { kind: a.ty });
-    if (a.lp) edge(node("person:" + norm(a.lp).toLowerCase(), "person", norm(a.lp)), id, "owns_or_linked", a.m, { date: a.t, src: a.s });
+    if (a.lp && !isPlaceholder(a.lp)) edge(node("person:" + norm(a.lp).toLowerCase(), "person", norm(a.lp)), id, "owns_or_linked", a.m, { date: a.t, src: a.s });
     for (const ck of caseByMsg.get(a.m) || []) edge(id, ck, "seized_or_named", a.m, { date: a.t, src: a.s });
   }
   function objFor(qq) {
@@ -56,7 +61,7 @@ async function build() {
   }
   for (const e of edr) {
     const rk = node("registry:" + e.edrpou, "registry", `ЄДР ${e.edrpou} · ${e.name}`, { stan: e.stan, full: e.full, edrpou: e.edrpou });
-    for (const q of e.q || []) { const ok = node("org:" + norm(q).toLowerCase(), "org", norm(q)); nodes.get(ok).edrpou = e.edrpou; edge(ok, rk, "registry_record", null); }
+    for (const q of e.q || []) { if (isPlaceholder(q)) continue; const ok = node("org:" + norm(q).toLowerCase(), "org", norm(q)); nodes.get(ok).edrpou = e.edrpou; edge(ok, rk, "registry_record", null); }
     // Founders are kept under their FULL name (surname, name, patronymic): two people who share surname and name are
     // different nodes. A person query ("Кравченко Дмитро") is linked to each full-name match with a "namesake" edge,
     // so the user sees the candidates and picks by patronymic instead of the graph merging strangers into one person.
@@ -64,7 +69,7 @@ async function build() {
     const big = (e.founders || []).length > 60;  // cooperatives with thousands of members: list only query matches
     nodes.get(rk).n_founders = (e.founders || []).length;
     const people = (list, rel) => { for (const f of list || []) {
-      const nm = String(f).split(";")[0].trim(); if (!nm) continue;
+      const nm = String(f).split(";")[0].trim(); if (isPlaceholder(nm)) continue;
       const tail = String(f).split(";")[1] || "";
       // an 8-digit ЄДРПОУ in the tail = a founding company; a 10-digit ІПН there belongs to a person
       if (/(?<!\d)\d{8}(?!\d)/.test(tail)) { if (!big) edge(node("org:" + nm.toLowerCase(), "org", nm), rk, "founder", null); continue; }
@@ -102,6 +107,7 @@ async function build() {
   // media claims: who the press names in connection with a case (quote + URL as evidence); not a registry fact
   const media = await sql`SELECT cause_num, name_norm, role, position, quote, url, confidence FROM media_links ORDER BY confidence DESC LIMIT 1000`.catch(() => []);
   for (const ml of media) {
+    if (isPlaceholder(ml.name_norm)) continue;
     const cid = node("case:" + ml.cause_num.toLowerCase(), "case", "Справа " + ml.cause_num, { ref: ml.cause_num });
     const pid = node("person:" + norm(ml.name_norm).toLowerCase(), "person", norm(ml.name_norm), { position: ml.position });
     edge(pid, cid, "named_by_media", null, { detail: `за даними ЗМІ (${Math.round((ml.confidence || 0) * 100)}%): ${ml.role} — «${(ml.quote || "").slice(0, 160)}» ${ml.url}` });

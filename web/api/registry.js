@@ -20,7 +20,7 @@ function json(res, status, body) {
 }
 const SRC = { edr: "ЄДР (data.gov.ua)", prozorro: "ProZorro", erb: "Єдиний реєстр боржників" };
 
-function card(r, m) {
+export function card(r, m) {
   const sources = (r.src || "").split(",").filter(Boolean).map((s) => SRC[s] || s);
   if (r.debts) sources.push(SRC.erb);
   return {
@@ -51,12 +51,12 @@ function rank(rows, scoreOf, filter = () => true) {
   return out;
 }
 
-async function byCode(code) {
+export async function byCode(code) {
   const { rows } = await lookup("ids", code, { exact: true });
   return { rows: rank(rows, (r) => score(r, r.code, code)), truncated: false };
 }
 
-async function byName(q, m, fopOnly, regionOk) {
+export async function byName(q, m, fopOnly, regionOk = () => true) {
   const k = coreKey(searchKey(q, m), m);
   if (k.length < 3) return { rows: [], truncated: false, error: "too short" };
   const words = k.split(" ");
