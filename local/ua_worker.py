@@ -131,6 +131,76 @@ def reyestr_search(expr="", case_number="", page=1, per_page=50):
     return total, rows
 
 
+# ---------------------------------------------------------------- court.gov.ua: summons notices (in-absentia proceedings)
+SUMMONS_PAGE = "https://court.gov.ua/unknown/"
+SUMMONS_API = "https://court.gov.ua/unknown.php"
+APOS = str.maketrans({"`": "'", "’": "'", "ʼ": "'"})
+_SUMMONS_SESSION = False
+
+
+def _clean(x):
+    return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(x or "")))).strip()
+
+
+def _nm(x):
+    return re.sub(r"\s+", " ", (x or "").translate(APOS)).strip().lower()
+
+
+def court_summons(name, max_pages=3):
+    """«Оголошення про виклик особи в суд та повідомлення про судове рішення» (court.gov.ua/unknown/, no captcha): notices
+    courts must publish for parties whose address is unknown or on occupied territory, i.e. in-absentia criminal cases.
+    POST /unknown.php with DataTables paging (50 rows); sSearch = the person's name. Keeps notices where a party is this
+    person: the same full name for a 3-word query, surname + first name for a 2-word one."""
+    global _SUMMONS_SESSION
+    q = _nm(name)
+    if not _SUMMONS_SESSION:  # the page sets PHPSESSID / SERVERID; the API answers without them too, but behave like the page
+        get(SUMMONS_PAGE)
+        _SUMMONS_SESSION = True
+    hdr = {"Referer": SUMMONS_PAGE, "X-Requested-With": "XMLHttpRequest", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}
+    out, seen = [], set()
+    for page in range(max_pages):
+        data = [("sEcho", str(page + 1)), ("iColumns", "10"), ("iDisplayStart", str(page * 50)), ("iDisplayLength", "50"), ("q_ver", "arbitr"),
+                ("date", "~"), ("sSearch", name), ("court", "0"), ("region", "0"), ("search_in_participants", "false"), ("a", ""), ("b", ""), ("c", "")]
+        try:
+            j = json.loads(post(SUMMONS_API, urllib.parse.urlencode(data).encode(), hdr).decode("utf-8", "ignore"))
+        except Exception as e:  # noqa: BLE001
+            print("summons:", e)
+            break
+        rows = j.get("aaData") or []
+        for r in rows:
+            c = (lambda k: r.get(k) if isinstance(r, dict) else (r[int(k)] if int(k) < len(r) else ""))
+            parties = _clean(c("5"))
+            mine = None
+            for part in re.split(r",\s*(?=[^,:]{2,40}:)", parties):
+                role, _, who = part.partition(":")
+                w = _nm(who)
+                if (len(q.split()) >= 3 and w == q) or (len(q.split()) == 2 and (w == q or w.startswith(q + " "))):
+                    mine = (role.strip(), who.strip())
+                    break
+            if not mine:
+                continue
+            raw8 = str(c("8") or "")
+            fid = re.search(r'FILENAME"?\s+CONTENT="?([\w.]+?)(?:\.html)?"', html.unescape(raw8), re.I)
+            text = _clean(re.sub(r"(?is)<(head|style|script)[^>]*>.*?</\1>", " ", html.unescape(raw8)))
+            text = re.sub(r"^(Оголошення про виклик|Повідомлення про (судове )?рішення)\s*", "", text)
+            cause = _clean(re.sub(r"(?is)<form.*?</div>", " ", str(c("4"))))
+            cause = (re.search(r"\d{1,4}/\d{1,7}/\d{2}(?:-[\w/]+)?", cause) or [cause])[0]
+            court_code = (re.search(r'name="UserCourtCode"\s+value="(\d+)"', str(c("4"))) or [None, None])[1]
+            erdr = sorted(set(re.findall(r"(?<!\d)\d{17}(?!\d)", text)))
+            nid = fid.group(1) if fid else f"{court_code}:{cause}:{_clean(c('0'))}"
+            if nid in seen:
+                continue
+            seen.add(nid)
+            out.append({"id": nid, "name": mine[1], "role": mine[0], "court": _clean(c("1")), "court_code": court_code, "cause_num": cause,
+                        "proc_num": erdr[0] if erdr else None, "proc_nums": erdr, "date": _clean(c("0")), "hearing": _clean(c("2")),
+                        "judges": _clean(c("3")), "parties": parties[:600], "category": _clean(c("7")),
+                        "notice_type": "Оголошення про виклик" if "виклик" in raw8[:200].lower() else _clean(raw8[:120]).split(" ")[0],
+                        "text": text[:1500], "url": SUMMONS_PAGE})
+        if len(rows) < 50:
+            break
+    return out
+
+
 def reyestr_text(doc_id):
     s = get(f"https://reyestr.court.gov.ua/Review/{doc_id}").decode("utf-8", "ignore")
     m = re.search(r'<textarea id="txtdepository">(.*?)</textarea>', s, re.S)  # the decision (RTF converted to HTML) lives in a textarea
@@ -593,7 +663,15 @@ def yc_company(q, kind="org", limit=3):
 
 
 # ---------------------------------------------------------------- ingest
+DRY = False
+
+
 def ingest(env, payload):
+    if DRY:
+        rows = payload.get("rows") or []
+        print(f"[dry] {payload.get('kind')}: {len(rows)} rows" + "".join(f"\n    {r.get('source', '')} {r.get('title') or r.get('cause_num') or ''} | {(r.get('snippet') or '')[:140]}"
+                                                                    for r in rows[:25] if payload.get("kind") in ("hits", "decisions")))
+        return {"ok": True, "dry": True}
     req = urllib.request.Request(env["API_BASE"] + "/api/ingest", data=json.dumps(payload, ensure_ascii=False).encode(),
                                  headers={"Content-Type": "application/json", "x-ingest-token": env["INGEST_TOKEN"]})
     with urllib.request.urlopen(req, timeout=120) as r:
@@ -631,9 +709,8 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
         notes.append(f"текстів: {got}")
     else:
         exprs = [f'"{q}"'] if kind in ("person", "org", "edrpou") else [q]
-        if kind == "person" and len(q.split()) >= 2:
-            w = q.split()
-            exprs.append(f'"{w[0]} {" ".join(x[0] + "." for x in w[1:])}"')  # Прізвище І.Б.
+        # no «Прізвище І.Б.» search: the register does not honour the phrase with initials and returned 121 k unrelated
+        # decisions for «Сальдо В. В.»; full name only (plus the cases found through summons notices below)
         seen = set()
         all_rows = []
         for ex in exprs:
@@ -677,6 +754,46 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                                  "snippet": f"{f['stan'] or ''}; {f['registration'] or ''}", "payload": f})
             else:
                 notes.append("ЄДР ФОП: дамп не завантажено")
+        if kind == "person" and len(q.split()) >= 2 and tleft():
+            # summons notices -> the person's cases (mostly in-absentia criminal ones) -> decisions and texts in those cases
+            summ = court_summons(q)
+            notes.append(f"оголошення про виклик: {len(summ)}")
+            for n in summ:
+                hits.append({"query": q, "qkind": kind, "source": "summons", "ref": n["id"], "url": n["url"],
+                             "title": f"Виклик до суду · {n['court']} · справа {n['cause_num']}",
+                             "snippet": f"{n['role']}; {n['category']}; засідання {n['hearing']}" + (f"; ЄРДР {n['proc_num']}" if n["proc_num"] else ""), "payload": n})
+            causes = list(dict.fromkeys(n["cause_num"] for n in summ if re.match(r"^\d{1,4}/\d+/\d{2}", n["cause_num"] or "")))[:5]
+            case_rows = []
+            for cn in causes:
+                if not tleft():
+                    break
+                try:
+                    total, rows = reyestr_search(case_number=cn)
+                except Exception as e:  # noqa: BLE001
+                    notes.append(f"ЄДРСР {cn}: {e}")
+                    continue
+                notes.append(f"ЄДРСР справа {cn}: {total}")
+                for r in rows:
+                    if r["doc_id"] in seen:
+                        continue
+                    seen.add(r["doc_id"])
+                    case_rows.append(r)
+                    hits.append({"query": q, "qkind": kind, "source": "reyestr", "ref": r["doc_id"], "url": r["doc_url"],
+                                 "title": f"{r['judgment_form']} {r['adjudication_date'] or ''} · {r['court']} · {r['cause_num']}",
+                                 "snippet": f"справа з оголошення про виклик ({r['justice_kind']})", "payload": r})
+            push_decisions(case_rows)
+            # texts: rulings first (arrests of property are «Ухвала»), newest first; up to 5
+            got = arrests = 0
+            for r in sorted(case_rows, key=lambda x: (x["judgment_form"] != "Ухвала", -int((x["adjudication_date"] or "0000").replace("-", "")[:8] or 0)))[:5]:
+                if not tleft():
+                    break
+                t = reyestr_text(r["doc_id"])
+                if t:
+                    ingest(env, {"kind": "decisions", "rows": [{**r, "text": t}]})
+                    got += 1
+                    arrests += bool(re.search(r"арешт\w* на (майно|автомоб|транспорт|квартир|нерухом|грошов|кошти)", t, re.I))
+            if causes:
+                notes.append(f"тексти рішень у справах з викликів: {got} (з арештом майна: {arrests})")
         if kind == "person":
             rtotal, roles = lake_roles(q)
             if rtotal is not None:
@@ -730,9 +847,11 @@ def main():
     ap.add_argument("--texts", type=int, default=10)
     ap.add_argument("--max-seconds", type=int, default=150, help="time budget per invocation (device shells are short-lived)")
     ap.add_argument("--no-fop", action="store_true", help="skip the ЄДР ФОП scan (slow)")
+    ap.add_argument("--dry-run", action="store_true", help="--query: print what would be sent to /api/ingest instead of sending it")
     a = ap.parse_args()
-    global NO_FOP
+    global NO_FOP, DRY
     NO_FOP = a.no_fop
+    DRY = a.dry_run
     env = cfg()
     if not env["INGEST_TOKEN"]:
         sys.exit("INGEST_TOKEN missing (.env)")
