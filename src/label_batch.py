@@ -107,29 +107,40 @@ def submit(a):
         print(f"submitted {b.id}: {len(reqs)} requests")
 
 
-def write_result(cur, raw, mid, ts, model):
-    f = clean(raw)
-    label = (raw.get("narrative_label") or "").strip()[:120]
-    nid = None
-    if label:
-        cur.execute("SELECT id FROM narratives WHERE label=%s", (label,))
-        r = cur.fetchone()
-        if r:
-            nid = r[0]
-            cur.execute("UPDATE narratives SET last_seen_ts=GREATEST(last_seen_ts,%s) WHERE id=%s", (ts, nid))
-        else:
-            cur.execute("INSERT INTO narratives(label, first_seen_ts, last_seen_ts) VALUES (%s,%s,%s) RETURNING id", (label, ts, ts))
-            nid = cur.fetchone()[0]
+def write_bulk(cur, rows, model):
+    """rows: [(message_id, ts, raw)] -> narratives, messages, message_labels in a handful of set-based statements
+    (row-by-row round trips to Neon managed ~100 rows/min, too slow for 20k-request batches)."""
     pv = f"{PROMPT_VERSION}-anthropic-batch"
-    cur.execute(
-        "UPDATE messages SET event_kind=%(event_kind)s, threat_level=%(threat_level)s, novelty=%(novelty)s, "
-        "target_mentioned=%(target_mentioned)s, timeframe_mentioned=%(timeframe_mentioned)s, "
-        "is_scheduled_context=%(is_scheduled_context)s, tone_amplification=%(tone_amplification)s, "
-        "llm_confidence=%(llm_confidence)s, narrative_id=%(nid)s, prompt_version=%(pv)s, labeled_at=now() WHERE id=%(id)s",
-        {**f, "nid": nid, "pv": pv, "id": mid})
-    cur.execute("INSERT INTO message_labels(message_id, prompt_version, model, raw) VALUES (%s,%s,%s,%s) "
+    span = {}
+    for _, ts, raw in rows:
+        lab = (raw.get("narrative_label") or "").strip()[:120]
+        if lab:
+            a0, b0 = span.get(lab, (ts, ts))
+            span[lab] = (min(a0, ts), max(b0, ts))
+    nid = {}
+    if span:
+        labs = list(span)
+        first, last = [span[l][0] for l in labs], [span[l][1] for l in labs]
+        cur.execute("INSERT INTO narratives(label, first_seen_ts, last_seen_ts) SELECT l, a, b FROM unnest(%s::text[], %s::timestamptz[], %s::timestamptz[]) x(l, a, b) "
+                    "WHERE NOT EXISTS (SELECT 1 FROM narratives n WHERE n.label = x.l)", (labs, first, last))
+        cur.execute("UPDATE narratives n SET last_seen_ts = GREATEST(n.last_seen_ts, x.b) FROM unnest(%s::text[], %s::timestamptz[]) x(l, b) WHERE n.label = x.l",
+                    (labs, last))
+        cur.execute("SELECT label, min(id) FROM narratives WHERE label = ANY(%s) GROUP BY 1", (labs,))
+        nid = dict(cur.fetchall())
+    cur.execute("CREATE TEMP TABLE IF NOT EXISTS lb (id text, event_kind text, threat_level int, novelty real, target_mentioned bool, timeframe_mentioned bool, "
+                "is_scheduled_context bool, tone_amplification bool, llm_confidence real, nid bigint, raw jsonb) ON COMMIT DELETE ROWS")
+    with cur.copy("COPY lb FROM STDIN") as cp:
+        for mid, _, raw in rows:
+            f = clean(raw)
+            cp.write_row((mid, f["event_kind"], f["threat_level"], f["novelty"], f["target_mentioned"], f["timeframe_mentioned"],
+                          f["is_scheduled_context"], f["tone_amplification"], f["llm_confidence"],
+                          nid.get((raw.get("narrative_label") or "").strip()[:120]), json.dumps(raw, ensure_ascii=False)))
+    cur.execute("UPDATE messages m SET event_kind=lb.event_kind, threat_level=lb.threat_level, novelty=lb.novelty, target_mentioned=lb.target_mentioned, "
+                "timeframe_mentioned=lb.timeframe_mentioned, is_scheduled_context=lb.is_scheduled_context, tone_amplification=lb.tone_amplification, "
+                "llm_confidence=lb.llm_confidence, narrative_id=lb.nid, prompt_version=%s, labeled_at=now() FROM lb WHERE m.id = lb.id", (pv,))
+    cur.execute("INSERT INTO message_labels(message_id, prompt_version, model, raw) SELECT id, %s, %s, raw FROM lb "
                 "ON CONFLICT (message_id) DO UPDATE SET raw=EXCLUDED.raw, model=EXCLUDED.model, prompt_version=EXCLUDED.prompt_version, labeled_at=now()",
-                (mid, pv, model, json.dumps(raw, ensure_ascii=False)))
+                (pv, model))
 
 
 def fetch(a):
@@ -159,7 +170,8 @@ def fetch(a):
             continue
         ok = bad = 0
         use = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
-        for i, res in enumerate(client.messages.batches.results(meta["batch_id"])):
+        rows = []
+        for res in client.messages.batches.results(meta["batch_id"]):
             info = meta["ids"].get(res.custom_id)
             if not info:
                 continue
@@ -171,15 +183,17 @@ def fetch(a):
                 use[k] += getattr(u, k, 0) or 0
             try:
                 raw = parse_json(anthropic_text(res.result.message))
-                write_result(cur, raw, info["id"], datetime.fromisoformat(info["ts"]), meta["model"])
-                ok += 1
+                clean(raw)  # validate now so one bad answer is skipped, not the whole bulk write
+                rows.append((info["id"], datetime.fromisoformat(info["ts"]), raw))
             except Exception as e:  # noqa: BLE001
                 bad += 1
                 if bad <= 5:
                     print(f"skip {info['id']}: {e}")
-            if i % 500 == 0:
-                conn.commit()
-        conn.commit()
+        for i in range(0, len(rows), 5000):
+            write_bulk(cur, rows[i:i + 5000], meta["model"])
+            conn.commit()
+            print(f"  written {min(i + 5000, len(rows))}/{len(rows)}", flush=True)
+        ok = len(rows)
         meta["written"] = True
         meta["ok"], meta["bad"], meta["usage"] = ok, bad, use
         p.write_text(json.dumps(meta, ensure_ascii=False))
