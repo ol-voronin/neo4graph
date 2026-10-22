@@ -298,7 +298,8 @@ def fetch_release(name, max_age_h=26):
 
 
 def build_index():
-    """registry_names (name prefix), registry_ids (ЄДРПОУ / РНОКПП exact), registry_addr (address token prefix).
+    """registry_names (name prefix), registry_ids (ЄДРПОУ / РНОКПП exact), registry_addr (address token prefix),
+    registry_people (founders / beneficiaries / signers by ЄДРПОУ) and registry_roles (the same by a person's name key).
 
     Only identifiers the source itself publishes:
       uo (ЄДР legal entities) — ЄДРПОУ, name, short name, status;
@@ -379,6 +380,15 @@ def build_index():
                     WHERE length(token) >= 3 AND NOT regexp_full_match(token, '\\d+') AND token NOT IN ({', '.join(f"'{w}'" for w in STOP)})
                     ORDER BY token, {order}""",
     }
+    # who stands behind a company and where a person appears (founder / beneficiary / signer), for the site's on-the-fly
+    # neighbourhood of a registry hit that is not in the graph yet: people by ЄДРПОУ, companies by a person's search key
+    if (LAKE / "people_roles.parquet").exists() or fetch_release("people_roles.parquet"):
+        con.execute(f"CREATE VIEW people_roles AS SELECT * FROM read_parquet('{LAKE / 'people_roles'}.parquet')")
+        queries["people"] = """SELECT edrpou AS code, role, name, left(detail, 200) AS detail FROM people_roles
+                               WHERE regexp_full_match(edrpou, '\\d{8}') ORDER BY code, role, name"""
+        queries["roles"] = """SELECT skey(r.name) AS key, r.name, r.role, r.edrpou AS code, e.name AS org, e.stan
+                              FROM people_roles r LEFT JOIN ent e ON e.id = 'registry:' || r.edrpou
+                              WHERE skey(r.name) <> '' ORDER BY key, e.stan IS DISTINCT FROM 'зареєстровано', code"""
     # versioned names: a reader holding the previous manifest keeps reading the previous files while new ones upload
     stamp = time.strftime("%Y%m%d%H%M")
     for old in LAKE.glob("registry_*.parquet"):
@@ -391,7 +401,7 @@ def build_index():
         con.execute(f"COPY ({q}) TO '{tmp}' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE {GROUP})")
         tmp.replace(f)
         pf = pq.ParquetFile(f)
-        keycol = {"names": "key", "ids": "code", "addr": "token"}[name]
+        keycol = {"names": "key", "ids": "code", "addr": "token", "people": "code", "roles": "key"}[name]
         groups, start = [], 0
         for i in range(pf.metadata.num_row_groups):
             k = pf.read_row_group(i, columns=[keycol]).column(0)

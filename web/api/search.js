@@ -1,9 +1,18 @@
 import { query, json, CAUSE_RE } from "./_db.js";
-import { norm, caseKey, isPlaceholder } from "./_graph.js";
+import { norm, caseKey, isPlaceholder, peekGraph } from "./_graph.js";
 import { ukVariants } from "./_text.js";
+import { getManifest, searchKey, coreKey } from "./_lake.js";
+import { byName, byCode, byAddress, rolesOf, card } from "./registry.js";
+import { postMentions, decisionTexts, findJudges, webFound } from "./_mentions.js";
+import { findPlaces } from "./_places.js";
 
-// GET /api/search?q=...&kind=all|person|org|fop|code|case|place|channel|post
-// Ranked results (exact code / case number / full name -> name prefix -> trigram similarity), at most 20, with ids of /api/graph nodes.
+// GET /api/search?q=...&kind=all|person|org|fop|code|case|place|channel|post[&part=main|mentions]
+// Searches everything, not only what is already in the graph. Sources run in parallel, each under its own time cap, and the
+// answer is grouped: graph (names already in the graph), registry (the lake's ЄДР / ФОП / ProZorro index: names, codes,
+// addresses, people's roles), courts (case numbers, judges, decision texts), mentions (posts that mention the words, plus web
+// pages found earlier), places (oblasts + KATOTTG gazetteer), channels. `results` is the flat top 20 across groups
+// (exact identifiers, then graph, registry, courts, places, channels, the mentions topic). The page asks for part=main first and
+// part=mentions (the one sequential scan) a little later; without `part` both run.
 // Trigram indexes and the search_names view come from db/migrations/013_search_trgm.sql; until it is applied, plain LIKE is used.
 const KINDS = ["all", "person", "org", "fop", "code", "case", "place", "channel", "post"];
 const like = (s) => s.replace(/[\\%_]/g, "\\$&");
@@ -101,29 +110,149 @@ export function sources(q, C) {
   return S;
 }
 
+// ---- grouped search over every source ----
+const PER_SOURCE_MS = 2500;
+const soft = (p, ms = PER_SOURCE_MS) => Promise.race([Promise.resolve(p), new Promise((_, no) => setTimeout(() => no(new Error(`не встигло за ${ms / 1000} с`)), ms))]);
+export const GROUPS = [["graph", "Граф"], ["registry", "Реєстри"], ["courts", "Суди"], ["mentions", "Згадки в постах"], ["places", "Місця"], ["channels", "Канали"]];
+// scope -> groups that run (detected case numbers / codes narrow «Усе» the same way)
+const SCOPE = {
+  all: ["graph", "registry", "courts", "mentions", "places", "channels"],
+  person: ["graph", "registry", "courts", "mentions"], org: ["graph", "registry", "courts", "mentions"], fop: ["graph", "registry", "mentions"],
+  code: ["graph", "registry", "mentions"], case: ["courts", "graph", "mentions"], place: ["places", "registry", "mentions"],
+  channel: ["channels", "mentions"], post: ["mentions"],
+};
+const ADDRESS = /(^|\s)(вул\.?|вулиця|просп\.?|проспект|пров\.?|провулок|бульв\.?|бульвар|площа|пл\.|ул\.|улица|шосе|набережна)(\s|$)|\d+\s*(кв|оф)\.?\s*\d/i;
+const rank = (a, b) => a.tier - b.tier || (b.sim || 0) - (a.sim || 0) || (b.n || 0) - (a.n || 0);
+const dedupe = (list) => { const seen = new Set(); return list.filter((r) => r?.id && !seen.has(r.id) && seen.add(r.id)); };
+
+// graph names (search_names), ЄДР records and worker cards already in Neon; Ukrainian spellings of Russian input too
+async function graphGroup(q, kind, C) {
+  const S = (v) => sources(v, C);
+  const variants = /^(all|person|org|fop)$/.test(kind) ? ukVariants(q) : [q];
+  const jobs = [];
+  for (const v of variants) {
+    const s = S(v);
+    if (kind === "all") jobs.push(s.names(["person", "org", "case"]), s.edr(), s.reg(["edr_fop", "yc_fop", "yc_org"]));
+    else if (kind === "person") jobs.push(s.names(["person"]));
+    else if (kind === "org") jobs.push(s.names(["org"]), s.edr(), s.reg(["yc_org"]));
+    else if (kind === "fop") jobs.push(s.reg(["edr_fop", "yc_fop"]));
+    else if (kind === "case" && !/^\d/.test(v)) jobs.push(s.names(["case"]));
+    else if (kind === "code" && /^\d{8}$|^\d{10}$/.test(v)) jobs.push(s.code());
+  }
+  const lists = await Promise.all(jobs.map((p) => p.catch(() => [])));
+  return { items: dedupe(lists.flat().sort(rank)).map((r) => ({ ...r, in_graph: true })) };
+}
+
+// the lake index: names (legal entities + ФОП), codes, addresses, a person's roles in companies. Not in Neon, not in the graph yet.
+async function registryGroup(q, kind) {
+  let m;
+  try { m = await soft(getManifest(), 2000); } catch (e) {
+    return { items: [], status: "unavailable", note: /404/.test(String(e.message)) ? "індекс реєстрів ще публікується (lake workflow); спробуйте пізніше" : "реєстри недоступні: " + e.message };
+  }
+  const digits = q.replace(/[\s-]/g, "");
+  const g = peekGraph();
+  const item = (r, extra = {}) => {
+    const c = card(r, m);
+    const person = c.id?.startsWith("person:");
+    return { id: c.id, type: person ? "person" : "registry", label: c.name, lake: true, in_graph: !!g?.byId?.has(c.id),
+      sub: [c.kind === "fop" ? "ФОП" : "", c.code_type && c.code ? `${c.code_type === "edrpou" ? "ЄДРПОУ" : "РНОКПП"} ${c.code}` : "", c.stan, c.region, c.contracts ? `ProZorro: ${c.contracts.won}/${c.contracts.placed}` : ""].filter(Boolean).join(" · "),
+      tier: 2, ...extra };
+  };
+  if (kind === "code" || /^\d{8}$|^\d{10}$/.test(digits)) {
+    if (!/^\d{8}$|^\d{10}$/.test(digits)) return { items: [] };
+    const r = await byCode(digits);
+    return { items: r.rows.map((x) => item(x, { tier: 0, exact: true })),
+      note: digits.length === 10 ? "РНОКПП показуємо лише для ФОП, яких ProZorro публікує як постачальників" : undefined };
+  }
+  const jobs = [];
+  const fopOnly = kind === "fop";
+  // the query and, for Russian input, its first Ukrainian spelling
+  const names = [...new Set([q, ...ukVariants(q, 2)])].slice(0, 2);
+  if (kind !== "place") for (const v of names) jobs.push(byName(v, m, fopOnly).then((r) => (r.rows || [])
+    .filter((x) => kind !== "org" || x.kind === "org").filter((x) => kind !== "person" || x.kind === "fop")
+    .map((x) => item(x, { tier: x.key === coreKey(searchKey(v, m), m) ? 1 : 2 }))));
+  if (kind === "place" || ADDRESS.test(q)) jobs.push(byAddress(q, m).then((r) => (r.rows || []).map((x) => item(x, { sub: [x.locality, x.address].filter(Boolean).join(", ") || undefined }))));
+  // «Прізвище Імʼя [По батькові]» -> companies where that person is founder / beneficiary / signer
+  if (/^(all|person)$/.test(kind) && q.split(" ").length >= 2) {
+    const words = q.split(" ");
+    for (const v of [q, [words.at(-1), ...words.slice(0, -1)].join(" ")]) jobs.push(rolesOf(v, m).then((rows) => rows.slice(0, 15).map((x) => ({
+      id: "registry:" + x.code, type: "registry", label: x.org || "ЄДР " + x.code, lake: true, in_graph: !!g?.byId?.has("registry:" + x.code), tier: 2,
+      sub: `${ROLE[x.role] || x.role}: ${x.name}${x.stan ? " · " + x.stan : ""}`, role_of: x.name }))));
+  }
+  const lists = await Promise.all(jobs.map((p) => soft(p, 2400).catch(() => [])));
+  return { items: dedupe(lists.flat().sort(rank)) };
+}
+const ROLE = { founder: "засновник", beneficiary: "бенефіціар", signer: "підписант / керівник" };
+
+// case numbers (exact / prefix), judges by name, decision texts (trigram index) that contain the words
+async function courtsGroup(q, kind, C) {
+  const isCase = /^\d{1,4}\/\d*/.test(q);
+  const [cases, judges, texts] = await Promise.all([
+    isCase ? sources(q, C).cases().catch(() => []) : [],
+    isCase ? [] : soft(findJudges(q), 2400).catch(() => []),
+    isCase ? { items: [] } : soft(decisionTexts(q), 2400).catch(() => ({ items: [], total: 0 })),
+  ]);
+  const t = texts.items.map((d) => ({ id: "decision:" + d.doc_id, type: "decision", label: `${d.f || "Рішення"} ${d.d || ""} · справа ${d.cause_num || "?"}`,
+    sub: [d.court, d.judge].filter(Boolean).join(" · "), snippet: d.snippet, cause_num: d.cause_num, tier: 2 }));
+  return { items: dedupe([...cases.map((c) => ({ ...c, exact: c.tier === 0 })), ...judges, ...t]), texts_total: texts.total || 0 };
+}
+
+async function placesGroup(q, C) {
+  const [gz, ev] = await Promise.all([soft(findPlaces(q, { limit: 12, wait: 1800 }), 2400).catch(() => []), sources(q, C).place().catch(() => [])]);
+  return { items: dedupe([...gz, ...ev.map((r) => ({ ...r, tier: Math.max(1, r.tier) }))].sort((a, b) => a.tier - b.tier)) };
+}
+
+async function mentionsGroup(q) {
+  const [posts, web] = await Promise.all([postMentions(q, { limit: 5, ms: 2400 }), soft(webFound(q), 2000).catch(() => ({ items: [] }))]);
+  const topic = posts.total ? { id: "topic:" + norm(q).toLowerCase(), type: "topic", label: norm(q), sub: `згадок у постах: ${posts.total}${posts.capped ? "+" : ""}`, tier: 3, n: posts.total } : null;
+  return { items: posts.items.map((p) => ({ ...p, type: "post", label: p.snippet, sub: `${p.src} · ${p.date}`, tier: 3 })), count: posts.total, capped: posts.capped,
+    words: posts.words, topic, web: web.items, note: posts.skipped };
+}
+
+export async function searchAll(q, kind = "all", part = "") {
+  const detected = detect(q);
+  const scope = kind === "all" && detected !== "all" ? detected : kind;
+  if (scope === "url") return { q, kind, detected, groups: [], results: [] };
+  const want = SCOPE[scope].filter((g) => (part === "main" ? g !== "mentions" : part === "mentions" ? g === "mentions" : true));
+  const C = await soft(getCaps(), 2000).catch(() => ({ names: false, trgm: false }));
+  const t0 = Date.now();
+  const run = {
+    graph: () => graphGroup(q, scope, C), registry: () => registryGroup(q, scope), courts: () => courtsGroup(q, scope, C),
+    mentions: () => mentionsGroup(q), places: () => placesGroup(q, C), channels: () => sources(q, C).channel().then((items) => ({ items })),
+  };
+  const groups = await Promise.all(want.map(async (key) => {
+    const s = Date.now();
+    try {
+      const r = await soft(run[key](), key === "mentions" ? 3000 : PER_SOURCE_MS + 300);
+      const all = (r.items || []).filter((x) => !isPlaceholder(x.label));
+      return { key, label: GROUPS.find((g) => g[0] === key)[1], status: r.status || "ok", count: r.count ?? all.length, items: all.slice(0, 20), ms: Date.now() - s,
+        ...(r.note ? { note: r.note } : {}), ...(r.topic !== undefined ? { topic: r.topic, web: r.web, words: r.words, capped: r.capped } : {}), ...(r.texts_total ? { texts_total: r.texts_total } : {}) };
+    } catch (e) {
+      return { key, label: GROUPS.find((g) => g[0] === key)[1], status: /не встигло/.test(e.message) ? "timeout" : "error", note: String(e.message || e), count: 0, items: [], ms: Date.now() - s };
+    }
+  }));
+  // flat list: exact identifiers first, then by group priority
+  const PRI = { graph: 1, registry: 2, courts: 3, places: 4, channels: 5, mentions: 6 };
+  const flat = [];
+  for (const g of groups) g.items.forEach((x, i) => flat.push({ ...x, group: g.key, _p: x.exact || (x.tier === 0 && g.key !== "mentions") ? 0 : PRI[g.key], _i: i }));
+  for (const g of groups) if (g.topic) flat.push({ ...g.topic, group: "mentions", _p: PRI.mentions, _i: -1 });
+  const results = dedupe(flat.filter((x) => x.type !== "post").sort((a, b) => a._p - b._p || a._i - b._i)).slice(0, 20)
+    .map(({ _p, _i, ...x }) => ({ ...x, strong: x.tier === 0 }));
+  return { q, kind, scope, detected, part: part || undefined, groups, results, took_ms: Date.now() - t0 };
+}
+
 export default async function handler(req, res) {
   const url = new URL(req.url, "http://x");
   const q = norm(url.searchParams.get("q"));
-  let kind = url.searchParams.get("kind") || "all";
+  const kind = url.searchParams.get("kind") || "all";
+  const part = url.searchParams.get("part") || "";
   if (!KINDS.includes(kind)) return json(res, 400, { error: "unknown kind" });
+  if (!["", "main", "mentions"].includes(part)) return json(res, 400, { error: "part must be main|mentions" });
   if (q.length < 2) return json(res, 400, { error: "q too short" });
-  const detected = detect(q);
-  if (kind === "all" && detected !== "all") kind = detected;
   try {
-    if (kind === "url") return json(res, 200, { q, kind, detected, results: [] });
-    const C = await getCaps().catch(() => ({ names: false, trgm: false }));
-    // name lookups also run for Ukrainian spellings of Russian input (Миндич -> Міндіч), at most 4 spellings
-    const run = (/^(all|person|org|fop|place|channel)$/.test(kind) ? ukVariants(q) : [q]).flatMap((v) => plan(sources(v, C), kind, v));
-    const warn = [];
-    const lists = await Promise.all(run.map((p) => p.catch((e) => (warn.push(String(e.message || e)), []))));
-    const seen = new Set(), results = [];
-    for (const r of lists.flat().sort((a, b) => a.tier - b.tier || (b.sim || 0) - (a.sim || 0) || (b.n || 0) - (a.n || 0))) {
-      if (seen.has(r.id)) continue;
-      seen.add(r.id); results.push({ ...r, strong: r.tier === 0 });
-      if (results.length >= 20) break;
-    }
-    const queue = (await query(`SELECT status, created_at FROM query_queue WHERE query = $1 ORDER BY created_at DESC LIMIT 1`, [q]).catch(() => []))[0] || null;
-    return json(res, 200, { q, kind, detected, results, queue, ...(warn.length ? { warn } : {}) });
+    const out = await searchAll(q, kind, part);
+    if (part !== "mentions") out.queue = (await soft(query(`SELECT kind, status, created_at FROM query_queue WHERE query = $1 ORDER BY created_at DESC LIMIT 1`, [q]), 1500).catch(() => []))[0] || null;
+    return json(res, 200, out);
   } catch (e) {
     return json(res, 500, { error: String(e.message || e) });
   }

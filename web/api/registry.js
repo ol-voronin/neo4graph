@@ -69,7 +69,21 @@ export async function byName(q, m, fopOnly, regionOk = () => true) {
   return { rows: rank(rows, (r) => score(r, r.key, r._q), filter), truncated: res.some((x) => x.truncated) };
 }
 
-async function byAddress(q, m, regionOk) {
+// founders / beneficiaries / signers of one legal entity (registry_people; empty until the index carries that file)
+export async function peopleOf(code) {
+  const { rows } = await lookup("people", code, { exact: true });
+  return rows.slice(0, 80);
+}
+
+// companies where a person is founder / beneficiary / signer, by full name (surname first, as ЄДР writes it)
+export async function rolesOf(name, m) {
+  const k = searchKey(name, m);
+  if (k.split(" ").length < 2) return [];  // a bare surname matches thousands of strangers
+  const { rows } = await lookup("roles", k);
+  return rows.slice(0, 60);
+}
+
+export async function byAddress(q, m, regionOk = () => true) {
   const all = searchKey(q, m).split(" ").filter(Boolean);
   const words = all.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !m.stop.includes(w));
   if (!words.length) return { rows: [], truncated: false, error: "need a locality or street word (3+ letters)" };
