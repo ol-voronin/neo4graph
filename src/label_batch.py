@@ -228,12 +228,23 @@ def status(a):
             continue
         print(meta["batch_id"], meta["n"], b.processing_status, dict(b.request_counts), "written" if meta.get("written") else "")
 
+def drop(a):
+    """Mark batches as lost now (e.g. their workspace key was revoked), so their posts can be submitted again."""
+    for p in sorted(BATCH_DIR.glob("*.json")):
+        meta = json.loads(p.read_text())
+        if meta["batch_id"] in a.ids and not meta.get("written"):
+            meta["written"], meta["lost"] = True, "dropped by hand: results unreachable"
+            p.write_text(json.dumps(meta, ensure_ascii=False))
+            print(meta["batch_id"], meta["n"], "dropped")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["submit", "fetch", "status"])
+    ap.add_argument("cmd", choices=["submit", "fetch", "status", "drop"])
+    ap.add_argument("ids", nargs="*", help="drop: batch ids")
     ap.add_argument("--panel", action="store_true")
     ap.add_argument("--limit", type=int, default=30000)
     ap.add_argument("--all-ua", action="store_true", help="submit: label every Ukrainian post too (default: UA only with rule signals)")
     ap.add_argument("--newest", action="store_true", help="submit: newest unlabeled first (default: oldest first)")
     a = ap.parse_args()
-    {"submit": submit, "fetch": fetch, "status": status}[a.cmd](a)
+    {"submit": submit, "fetch": fetch, "status": status, "drop": drop}[a.cmd](a)
