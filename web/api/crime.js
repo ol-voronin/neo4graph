@@ -30,7 +30,7 @@ export default async function handler(req, res) {
       return json(res, 200, { catalog });
     }
     const [series, ytd, labels] = await Promise.all([
-      query(`SELECT key, month::date::text month, value, months, derived FROM ogp_monthly
+      query(`SELECT key, month::date::text AS month, value, months, derived FROM ogp_monthly
              WHERE form = $1 AND measure = $2 AND key = ANY($3) AND month >= date_trunc('month', now()) - ($4::int * interval '1 month')
              ORDER BY key, month`, [form, measure, keys, months]),
       // latest cumulative value per key and the same period a year earlier (year-on-year)

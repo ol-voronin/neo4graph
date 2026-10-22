@@ -26,11 +26,11 @@ export default async function handler(req, res) {
       query(`SELECT art_group, count(*)::int active FROM wanted_persons WHERE removed IS NULL GROUP BY 1 ORDER BY 2 DESC`),
       query(`SELECT agency, art_group, count(*)::int active FROM wanted_persons WHERE removed IS NULL GROUP BY 1, 2`),
       query(`SELECT region, art_group, count(*)::int active FROM wanted_persons WHERE removed IS NULL GROUP BY 1, 2`),
-      query(`SELECT month::text month, art_group, sum(n)::int n, sum(still_wanted)::int still FROM wanted_monthly
+      query(`SELECT month::text AS month, art_group, sum(n)::int n, sum(still_wanted)::int still FROM wanted_monthly
              WHERE month >= date_trunc('month', now()) - ($1::int * interval '1 month') GROUP BY 1, 2 ORDER BY 1`, [months]),
-      query(`SELECT date::text date, art_group, sum(active)::int active, sum(added)::int added, sum(removed)::int removed FROM wanted_daily
+      query(`SELECT date::text AS date, art_group, sum(active)::int active, sum(added)::int added, sum(removed)::int removed FROM wanted_daily
              WHERE date >= current_date - 120 GROUP BY 1, 2 ORDER BY 1`),
-      query(`SELECT month::text month, sex, age_band, sum(n)::int n FROM missing_monthly WHERE snapshot = (SELECT max(snapshot) FROM missing_monthly)
+      query(`SELECT month::text AS month, sex, age_band, sum(n)::int n FROM missing_monthly WHERE snapshot = (SELECT max(snapshot) FROM missing_monthly)
              AND month >= '2021-01-01' GROUP BY 1, 2, 3 ORDER BY 1`),
       query(`SELECT region, sum(n)::int n FROM missing_monthly WHERE snapshot = (SELECT max(snapshot) FROM missing_monthly) AND month >= '2022-02-01' GROUP BY 1 ORDER BY 2 DESC`),
       query(`SELECT count(*)::int total, count(*) FILTER (WHERE removed IS NULL)::int active, min(first_seen)::text since, max(last_seen)::text updated,
