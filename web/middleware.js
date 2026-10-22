@@ -1,5 +1,6 @@
 // Private site: every page and API answers 401 unless the browser holds the site key.
-// Unlock a device once with /unlock?key=<SITE_KEY> (cookie for a year). /api/ingest keeps its own token.
+// Unlock a device once with /unlock?key=<SITE_KEY> (cookie for a year). /api/ingest keeps its own token, and /api/queue
+// accepts the same token (the local worker's GET /api/queue?pending=ua).
 // SITE_KEY_AGENT (optional) works only as the x-site-key header, never as a cookie.
 // Runs before the CDN cache, so cached API responses are not served to locked browsers either.
 const COOKIE = "site_key";
@@ -22,6 +23,9 @@ export default async function middleware(request) {
   if (!key) return pass();  // not configured yet: open (set SITE_KEY on Vercel to lock)
   const url = new URL(request.url);
   if (url.pathname === "/api/ingest") return pass();
+  // the local registry worker polls its queue with the ingest token (it has no browser cookie); a wrong token falls through
+  const it = process.env.INGEST_TOKEN;
+  if (url.pathname === "/api/queue" && it && request.headers.get("x-ingest-token") === it) return pass();
   const want = await digest(key);
 
   if (url.pathname === "/unlock") {
