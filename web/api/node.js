@@ -1,4 +1,5 @@
 import { sql, json } from "./_db.js";
+import { lookup } from "./_lake.js";
 
 // GET /api/node?id=<graph node id>&q=<name to highlight>
 // Details for the selected object, on demand: full registry records, decision text fragments, counts across sources,
@@ -40,7 +41,15 @@ export default async function handler(req, res) {
     }
     if (kind === "registry") {
       const r = (await sql`SELECT edrpou, name, short_name, stan, opf, founders, beneficiaries, signers, authorized_capital, matched_queries, updated_at FROM edr_orgs WHERE edrpou = ${key}`)[0];
-      if (!r) return json(res, 404, { error: "no such record" });
+      if (!r) {  // not in the graph yet: the card from the lake's registry index (found via /api/registry)
+        const hit = /^\d{8}$/.test(key) ? (await lookup("ids", key, { exact: true }).catch(() => ({ rows: [] }))).rows[0] : null;
+        if (!hit) return json(res, 404, { error: "no such record" });
+        return json(res, 200, { kind, record: { edrpou: hit.code, name: hit.full_name || hit.name, short_name: hit.name, stan: hit.stan, registration: hit.since,
+          region: hit.region, address: hit.address, contracts_won: hit.n_won, contracts_placed: hit.n_bought, debts: hit.debts, src: hit.src }, in_graph: false,
+          explain: `Запис ЄДР ${hit.code}: ${hit.full_name || hit.name}${hit.stan ? " · стан: " + hit.stan : ""}${hit.since ? " · з " + hit.since : ""}.` +
+            (hit.address ? ` Адреса за даними ProZorro: ${hit.address}.` : "") + (hit.n_won || hit.n_bought ? ` Договорів у ProZorro: постачальник ${hit.n_won}, замовник ${hit.n_bought}.` : "") +
+            (hit.debts ? ` Виконавчих проваджень у реєстрі боржників: ${hit.debts}.` : "") + " Засновники й підписанти з'являться після додавання компанії в граф." });
+      }
       const decisions = await sql`SELECT count(*)::int n FROM court_decisions WHERE text ILIKE ${"%" + (r.short_name || r.name) + "%"}`.catch(() => [{ n: null }]);
       return json(res, 200, { kind, record: r, decisions_mentioning: decisions[0].n,
         explain: `Запис ЄДР ${r.edrpou}: ${r.name}${r.stan ? " · стан: " + r.stan : ""}. Засновників: ${(r.founders || []).length}, підписантів: ${(r.signers || []).length}, бенефіціарів: ${(r.beneficiaries || []).length}.` +

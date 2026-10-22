@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.4"
+    "@neondatabase/serverless": "^0.10.4",
+    "hyparquet": "^1.31.5",
+    "hyparquet-compressors": "^1.1.2"
   }
 }

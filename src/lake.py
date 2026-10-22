@@ -6,12 +6,16 @@ Built once a day into Parquet with a normalised-name column, a lookup is a colum
   python src/lake.py build [--only fop,erb,uo] [--dir data/lake]     # download dumps, write Parquet
   python src/lake.py find "Гузенко Олександр Анатолійович"            # people/companies across all tables
   python src/lake.py find 24253556
+  python src/lake.py build --only prozorro,index   # ProZorro increment + search index (fetches fop/uo/erb from the release if absent)
 
 Tables (all have `name_key` = upper-case, single-spaced, ё/ї/і-normalised name):
   fop   — ЄДР фізичні особи-підприємці: record, name, stan, registration, terminated
   uo    — ЄДР юридичні особи: edrpou, name, short_name, opf, stan, founders[], beneficiaries[], signers[], capital, registration
   erb   — Єдиний реєстр боржників: name, birth_date, code, publisher, executor, vp, category
   people_roles — exploded: every founder/beneficiary/signer of `uo` as (name_key, edrpou, role) — company → people and back
+  pz_contracts — ProZorro contracts x suppliers (src/lake_prozorro.py, incremental): the only open source with a ФОП's РНОКПП
+Search index for the site (`build --only index`, read by web/api/registry.js over HTTP range requests, see docs/registries.md):
+  registry_names / registry_ids / registry_addr .parquet + registry_manifest.json
 Offline data: drop CSV/XLSX/Parquet into data/lake/inbox/; `build` loads each file as table `inbox_<stem>` (all columns
 kept, `name_key` added when a name-like column exists).
 """
@@ -19,6 +23,7 @@ import argparse
 import csv
 import html
 import io
+import json
 import re
 import sys
 import time
@@ -245,6 +250,160 @@ def find(q, limit=50):
     return out
 
 
+# ------------------------------------------------------------------ search index for the site
+# One key function shared with web/api/_lake.js (the manifest carries LATIN/CYR/FORMS/STOP so the two cannot drift):
+# upper-case; Ё->Е and Latin look-alikes -> Cyrillic (mixed-script names like «Свiтлана» are common in state data);
+# apostrophes dropped; every other non-alphanumeric run -> one space. Name keys also drop leading legal forms (ТОВ, ПП …).
+LATIN, CYR = "ЁABCEHIKMOPTXY", "ЕАВСЕНІКМОРТХУ"
+FORMS = ["ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ", "ТОВАРИСТВО З ДОДАТКОВОЮ ВІДПОВІДАЛЬНІСТЮ", "ПРИВАТНЕ АКЦІОНЕРНЕ ТОВАРИСТВО",
+         "ПУБЛІЧНЕ АКЦІОНЕРНЕ ТОВАРИСТВО", "АКЦІОНЕРНЕ ТОВАРИСТВО", "ПРИВАТНЕ ПІДПРИЄМСТВО", "ДЕРЖАВНЕ ПІДПРИЄМСТВО",
+         "КОМУНАЛЬНЕ НЕКОМЕРЦІЙНЕ ПІДПРИЄМСТВО", "КОМУНАЛЬНЕ ПІДПРИЄМСТВО", "КОМУНАЛЬНИЙ ЗАКЛАД", "ДОЧІРНЄ ПІДПРИЄМСТВО",
+         "СЕЛЯНСЬКЕ ФЕРМЕРСЬКЕ ГОСПОДАРСТВО", "ФЕРМЕРСЬКЕ ГОСПОДАРСТВО", "ГРОМАДСЬКА ОРГАНІЗАЦІЯ", "БЛАГОДІЙНА ОРГАНІЗАЦІЯ",
+         "БЛАГОДІЙНИЙ ФОНД", "ОБЄДНАННЯ СПІВВЛАСНИКІВ БАГАТОКВАРТИРНОГО БУДИНКУ", "ФІЗИЧНА ОСОБА ПІДПРИЄМЕЦЬ", "ФО П",
+         "ТОВ", "ТЗОВ", "ПП", "ПАТ", "ПРАТ", "АТ", "ТДВ", "ДП", "КП", "КНП", "КЗ", "ФГ", "СФГ", "ГО", "БО", "БФ", "ОСББ", "ФОП", "ВАТ", "ЗАТ", "СПД"]
+STOP = ["ВУЛ", "ВУЛИЦЯ", "БУД", "БУДИНОК", "КВАРТИРА", "МІСТО", "СЕЛО", "СЕЛИЩЕ", "СМТ", "ОБЛАСТЬ", "ОБЛ", "РАЙОН",
+        "ПРОСП", "ПРОСПЕКТ", "ПРОВ", "ПРОВУЛОК", "ОФІС", "ПЛОЩА", "БУЛЬВ", "БУЛЬВАР", "ПРИМІЩЕННЯ", "ПРИМ", "КОРПУС", "УКРАЇНА",
+        "МІСЬКА", "СІЛЬСЬКА", "СЕЛИЩНА", "ТЕРИТОРІАЛЬНА", "ГРОМАДА", "МІСЬКОГО", "ТИПУ", "ОБЛАСТІ", "РАЙОНУ"]
+GROUP = 16_384  # rows per Parquet row group = the unit one range request fetches (~0.3-0.8 MB)
+
+
+def search_key(s: str) -> str:
+    s = (s or "").upper().translate(str.maketrans(LATIN, CYR))
+    s = re.sub(r"['’ʼ`´‘]", "", s)
+    return re.sub(r"[^0-9A-ZА-ЯЄІЇҐ]+", " ", s).strip()
+
+
+def core_key(k: str) -> str:
+    return re.sub(r"^(?:(?:" + "|".join(FORMS) + r") )+", "", k + " ").strip() or k
+
+
+def fetch_release(name, max_age_h=26):
+    """Reuse the last published table from the lake-latest release when this run does not rebuild it."""
+    p = LAKE / name
+    if p.exists() and time.time() - p.stat().st_mtime < max_age_h * 3600:
+        return p
+    repo = __import__("os").environ.get("GITHUB_REPOSITORY", "ol-voronin/neo4graph")
+    try:
+        tmp = p.with_suffix(".part")
+        req = urllib.request.Request(f"https://github.com/{repo}/releases/download/lake-latest/{name}", headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=900) as r, open(tmp, "wb") as f:
+            while chunk := r.read(1 << 22):
+                f.write(chunk)
+        tmp.replace(p)
+        print(f"[release] {name}: {p.stat().st_size / 1e6:.0f} MB", flush=True)
+        return p
+    except Exception as e:  # first run: the asset does not exist yet
+        print(f"[release] {name}: {e}", flush=True)
+        return p if p.exists() else None
+
+
+def build_index():
+    """registry_names (name prefix), registry_ids (ЄДРПОУ / РНОКПП exact), registry_addr (address token prefix).
+
+    Only identifiers the source itself publishes:
+      uo (ЄДР legal entities) — ЄДРПОУ, name, short name, status;
+      fop (ЄДР ФОП)           — name, status, registration date. The dump has NO РНОКПП and NO address (checked 2026-10-22);
+                                the ЄСВ registration number in EXCHANGE_DATA is deliberately not used as a tax number;
+      pz_contracts (ProZorro) — supplier/buyer code (ЄДРПОУ, or РНОКПП of a ФОП), region, locality; street for legal entities only;
+      erb (debtors)           — number of enforcement proceedings per ЄДРПОУ (codes of individuals are blank in the dump).
+    Each file is sorted by its lookup key in row groups of GROUP rows; registry_manifest.json lists the first/last key of
+    every row group, so the API binary-searches the manifest and fetches only the one or two row groups it needs.
+    """
+    import duckdb
+    import pyarrow.parquet as pq
+    for t in ("uo", "fop", "erb", "pz_contracts"):
+        if not (LAKE / f"{t}.parquet").exists():
+            fetch_release(f"{t}.parquet")
+    have = {p.stem for p in LAKE.glob("*.parquet")}
+    if not {"uo", "fop"} <= have:
+        raise SystemExit("index needs uo.parquet and fop.parquet")
+    (LAKE / "tmp").mkdir(exist_ok=True)
+    con = duckdb.connect()
+    con.execute(f"SET temp_directory='{LAKE / 'tmp'}'; SET preserve_insertion_order=true")
+    con.execute(f"""CREATE MACRO skey(s) AS trim(regexp_replace(regexp_replace(translate(upper(coalesce(s, '')), '{LATIN}', '{CYR}'),
+                    '[''’ʼ`´‘]', '', 'g'), '[^0-9A-ZА-ЯЄІЇҐ]+', ' ', 'g'))""")
+    con.execute(f"CREATE MACRO ckey(k) AS coalesce(nullif(trim(regexp_replace(k || ' ', '^(?:(?:{'|'.join(FORMS)}) )+', '')), ''), k)")
+    con.execute("""CREATE MACRO pname(s) AS trim(regexp_replace(regexp_replace(s, '^\\s*(ФОП|ФО-П|ФІЗИЧНА ОСОБА[- ]ПІДПРИЄМЕЦЬ)[\\s"«]+', '', 'i'), '["«»]', '', 'g'))""")
+    for t in ("uo", "fop", "erb", "pz_contracts"):
+        if t in have:
+            con.execute(f"CREATE VIEW {t} AS SELECT * FROM read_parquet('{LAKE / t}.parquet')")
+    # ProZorro parties: one row per code with the latest name/address and the number of contracts won and placed
+    if "pz_contracts" in have:
+        con.execute("""CREATE TABLE pz AS
+            WITH p AS (
+              SELECT supplier_code AS code, supplier_name AS name, supplier_region AS region, supplier_locality AS locality,
+                     supplier_street AS street, supplier_postal AS postal, date_signed AS d, contract_id, 1 AS sup FROM pz_contracts
+              UNION ALL
+              SELECT DISTINCT ON (contract_id) buyer_code, buyer_name, buyer_region, buyer_locality, buyer_street, NULL, date_signed, contract_id, 0
+              FROM pz_contracts)
+            SELECT code, CASE WHEN length(code) = 10 THEN 'rnokpp' ELSE 'edrpou' END AS code_type,
+                   arg_max(name, d) AS name, arg_max(region, d) AS region, arg_max(locality, d) AS locality,
+                   CASE WHEN length(code) = 8 THEN arg_max(street, d) END AS street, arg_max(postal, d) AS postal,
+                   (count(DISTINCT contract_id) FILTER (sup = 1))::INT AS n_won, (count(DISTINCT contract_id) FILTER (sup = 0))::INT AS n_bought
+            FROM p WHERE regexp_full_match(code, '\\d{8}|\\d{10}') GROUP BY code""")
+    else:
+        con.execute("CREATE TABLE pz (code VARCHAR, code_type VARCHAR, name VARCHAR, region VARCHAR, locality VARCHAR, street VARCHAR, postal VARCHAR, n_won INT, n_bought INT)")
+    con.execute("CREATE TABLE debt AS " + ("SELECT code, count(*)::INT AS debts FROM erb WHERE regexp_full_match(code, '\\d{8}') GROUP BY code" if "erb" in have
+                                           else "SELECT NULL::VARCHAR code, NULL::INT debts WHERE false"))
+    # every entity once, with the columns the API returns; ids follow web/api/graph.js
+    con.execute("""CREATE TABLE ent AS
+        SELECT 'registry:' || u.edrpou AS id, 'org' AS kind, CASE WHEN skey(u.short_name) IN ('', 'НЕ МАЄ', 'НЕМАЄ', 'НЕМА', 'ВІДСУТНЯ', 'ВІДСУТНЄ', 'ВІДСУТНІЙ') THEN u.name ELSE u.short_name END AS name, u.name AS full_name, u.edrpou AS code,
+               'edrpou' AS code_type, u.stan, split_part(u.registration, ';', 1) AS since, pz.region, pz.locality,
+               concat_ws(', ', nullif(pz.postal, ''), nullif(pz.region, ''), nullif(pz.locality, ''), nullif(pz.street, '')) AS address,
+               coalesce(pz.n_won, 0) AS n_won, coalesce(pz.n_bought, 0) AS n_bought, coalesce(d.debts, 0) AS debts,
+               CASE WHEN pz.code IS NULL THEN 'edr' ELSE 'edr,prozorro' END AS src, u.opf
+        FROM (SELECT * FROM uo WHERE regexp_full_match(edrpou, '\\d{8}')
+              QUALIFY row_number() OVER (PARTITION BY edrpou ORDER BY stan = 'зареєстровано' DESC) = 1) u
+        LEFT JOIN pz ON pz.code = u.edrpou LEFT JOIN debt d ON d.code = u.edrpou
+        UNION ALL
+        SELECT 'fop:' || record, 'fop', name, NULL, NULL, NULL, stan, split_part(registration, ';', 1), NULL, NULL, NULL, 0, 0, 0, 'edr', NULL
+        FROM fop
+        UNION ALL
+        SELECT CASE WHEN code_type = 'rnokpp' THEN 'person:' || lower(regexp_replace(pname(name), '\\s+', ' ', 'g'))
+                    ELSE 'org:' || lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) END,
+               CASE WHEN code_type = 'rnokpp' THEN 'fop' ELSE 'org' END, CASE WHEN code_type = 'rnokpp' THEN pname(name) ELSE name END,
+               name, code, code_type, NULL, NULL, region, locality,
+               concat_ws(', ', nullif(postal, ''), nullif(region, ''), nullif(locality, ''), nullif(street, '')), n_won, n_bought, 0, 'prozorro', NULL
+        FROM pz WHERE code NOT IN (SELECT edrpou FROM uo)""")
+    cols = "id, kind, name, full_name, code, code_type, stan, since, region, locality, address, n_won, n_bought, debts, src"
+    order = "stan IS DISTINCT FROM 'зареєстровано', n_won + n_bought DESC, id"  # active first inside one key, then public-money ties
+    queries = {
+        "names": f"""SELECT DISTINCT ON (key, id) key, {cols} FROM (
+                       SELECT ckey(skey(name)) AS key, * FROM ent WHERE name IS NOT NULL
+                       UNION ALL SELECT ckey(skey(full_name)), * FROM ent WHERE kind = 'org' AND full_name IS NOT NULL
+                       UNION ALL SELECT ckey(regexp_replace(skey(full_name), '^' || skey(opf) || ' ', '')), * FROM ent WHERE opf <> '')
+                     WHERE key <> '' ORDER BY key, {order}""",
+        "ids": f"SELECT {cols} FROM ent WHERE code IS NOT NULL ORDER BY code, {order}",
+        "addr": f"""SELECT DISTINCT ON (token, id) token, {cols} FROM (
+                      SELECT unnest(string_split(skey(concat_ws(' ', locality, address)), ' ')) AS token, * FROM ent WHERE address <> '' OR locality <> '')
+                    WHERE length(token) >= 3 AND NOT regexp_full_match(token, '\\d+') AND token NOT IN ({', '.join(f"'{w}'" for w in STOP)})
+                    ORDER BY token, {order}""",
+    }
+    # versioned names: a reader holding the previous manifest keeps reading the previous files while new ones upload
+    stamp = time.strftime("%Y%m%d%H%M")
+    for old in LAKE.glob("registry_*.parquet"):
+        old.unlink()
+    manifest = {"built": time.strftime("%Y-%m-%dT%H:%M:%S"), "latin": LATIN, "cyr": CYR, "forms": FORMS, "stop": STOP, "files": {}}
+    for name, q in queries.items():
+        t0 = time.time()
+        f = LAKE / f"registry_{name}_{stamp}.parquet"
+        tmp = LAKE / f"registry_{name}_{stamp}.tmp"
+        con.execute(f"COPY ({q}) TO '{tmp}' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE {GROUP})")
+        tmp.replace(f)
+        pf = pq.ParquetFile(f)
+        keycol = {"names": "key", "ids": "code", "addr": "token"}[name]
+        groups, start = [], 0
+        for i in range(pf.metadata.num_row_groups):
+            k = pf.read_row_group(i, columns=[keycol]).column(0)
+            groups.append([start, k[0].as_py(), k[-1].as_py()])
+            start += len(k)
+        manifest["files"][name] = {"file": f.name, "key": keycol, "size": f.stat().st_size, "rows": start, "groups": groups}
+        print(f"[index] {f.name}: {start:,} rows, {len(groups)} row groups, {f.stat().st_size / 1e6:.0f} MB, {time.time() - t0:.0f}s", flush=True)
+    manifest["counts"] = [list(r) for r in con.execute("SELECT kind, code_type, src, count(*) FROM ent GROUP BY ALL ORDER BY ALL").fetchall()]
+    (LAKE / "registry_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False))
+    return sum(v["rows"] for v in manifest["files"].values())
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -260,6 +419,16 @@ def main():
             if kind == "edrsr":  # ЄДРСР metadata + Postgres aggregates (src/lake_edrsr.py); years from EDRSR_YEARS, default current
                 import subprocess
                 subprocess.run([sys.executable, str(ROOT / "src" / "lake_edrsr.py"), "--years", __import__("os").environ.get("EDRSR_YEARS") or time.strftime("%Y")], check=True)
+                continue
+            if kind == "prozorro":  # incremental: yesterday's table + state from the release, then the feed since then
+                import subprocess
+                for f in ("pz_contracts.parquet", "prozorro_state.json"):
+                    if not (LAKE / f).exists():
+                        fetch_release(f)
+                subprocess.run([sys.executable, str(ROOT / "src" / "lake_prozorro.py")], check=True)
+                continue
+            if kind == "index":
+                print(f"[index] {build_index():,} rows in {time.time() - t0:.0f}s", flush=True)
                 continue
             n = {"fop": build_fop, "uo": build_uo, "erb": build_erb}[kind](download(kind))
             print(f"[{kind}] {n:,} rows → {kind}.parquet ({(LAKE / f'{kind}.parquet').stat().st_size / 1e6:.0f} MB) in {time.time() - t0:.0f}s", flush=True)
