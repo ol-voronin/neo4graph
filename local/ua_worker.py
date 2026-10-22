@@ -709,9 +709,8 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
         notes.append(f"текстів: {got}")
     else:
         exprs = [f'"{q}"'] if kind in ("person", "org", "edrpou") else [q]
-        if kind == "person" and len(q.split()) >= 2:
-            w = q.split()
-            exprs.append(f'"{w[0]} {" ".join(x[0] + "." for x in w[1:])}"')  # Прізвище І.Б.
+        # no «Прізвище І.Б.» search: the register does not honour the phrase with initials and returned 121 k unrelated
+        # decisions for «Сальдо В. В.»; full name only (plus the cases found through summons notices below)
         seen = set()
         all_rows = []
         for ex in exprs:
