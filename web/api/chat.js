@@ -217,27 +217,37 @@ async function direct(text) {
   return null;
 }
 
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`timeout ${ms / 1000} s`)), ms))]);
+
 // ---- model providers: Claude when ANTHROPIC_API_KEY is set, otherwise Gemini (free tier) ----
 async function claudeLoop(messages, key, trace) {
   const t0 = Date.now();
   for (let step = 0; step < 6; step++) {
     // stop before the function limit (vercel.json maxDuration 60 s): answer from what the tools found so far
     if (Date.now() - t0 > 40000) return "Не встиг завершити пошук за відведений час; показую знайдене на графі. Уточніть запит.";
+    const t = Date.now();
     const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
+      method: "POST", signal: AbortSignal.timeout(Math.max(5000, 45000 - (t - t0))),
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 4000, system: SYSTEM, tools: TOOLS, messages, output_config: { effort: "low" } }),
     });
     const data = await r.json();
+    console.log("claude step", step, Date.now() - t, "ms", data.usage?.output_tokens, data.stop_reason);
     if (data.error) throw new Error(data.error.message || "api error");
     const toolUses = (data.content || []).filter((b) => b.type === "tool_use");
     if (!toolUses.length || data.stop_reason !== "tool_use") return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
     messages = [...messages, { role: "assistant", content: data.content }];
     // tools of one step run in parallel; results go back in one user message, in call order
-    const outs = await Promise.all(toolUses.map((tu) => runTool(tu.name, tu.input || {}).catch((e) => ({ error: String(e.message || e) }))));
+    const outs = await Promise.all(toolUses.map(async (tu) => {
+      const t1 = Date.now();
+      const out = await withTimeout(runTool(tu.name, tu.input || {}), 12000).catch((e) => ({ error: String(e.message || e) }));
+      return { out, ms: Date.now() - t1 };
+    }));
     const results = toolUses.map((tu, i) => {
-      trace.push({ tool: tu.name, input: tu.input, summary: summarize(outs[i]) });
-      return { type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(outs[i]).slice(0, 12000) };
+      const { out, ms } = outs[i];
+      console.log("tool", tu.name, ms, "ms");
+      trace.push({ tool: tu.name, input: tu.input, ms, summary: summarize(out) });
+      return { type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(out).slice(0, 12000) };
     });
     messages = [...messages, { role: "user", content: results }];
   }
