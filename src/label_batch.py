@@ -101,7 +101,15 @@ def fetch(a):
         meta = json.loads(p.read_text())
         if meta.get("written"):
             continue
-        b = client.messages.batches.retrieve(meta["batch_id"])
+        try:
+            b = client.messages.batches.retrieve(meta["batch_id"])
+        except anthropic.NotFoundError:
+            # batch belongs to another API key/workspace (e.g. a revoked key): results are unreachable, the messages stay
+            # unlabeled (labeled_at IS NULL) and the next `submit` picks them up again. Mark it so fetch stops retrying.
+            meta["written"], meta["lost"] = True, "not found under the current API key"
+            p.write_text(json.dumps(meta, ensure_ascii=False))
+            print(meta["batch_id"], "not found under the current key; marked lost")
+            continue
         print(meta["batch_id"], b.processing_status, dict(b.request_counts))
         if b.processing_status != "ended":
             continue
@@ -141,7 +149,14 @@ def status(a):
     client = anthropic.Anthropic()
     for p in sorted(BATCH_DIR.glob("*.json")):
         meta = json.loads(p.read_text())
-        b = client.messages.batches.retrieve(meta["batch_id"])
+        if meta.get("lost"):
+            print(meta["batch_id"], meta["n"], "lost:", meta["lost"])
+            continue
+        try:
+            b = client.messages.batches.retrieve(meta["batch_id"])
+        except anthropic.NotFoundError:
+            print(meta["batch_id"], meta["n"], "not found under the current API key")
+            continue
         print(meta["batch_id"], meta["n"], b.processing_status, dict(b.request_counts), "written" if meta.get("written") else "")
 
 
