@@ -3,6 +3,8 @@ time: a promise later reversed, a claim later denied by the same actor, words vs
 both quotes, dates and links; shown in the Фактчек tab as 'зміна позиції'. Judges consistency only, never intent.
 
   python src/find_contradictions.py [--provider anthropic|gemini] [--max-actors 20] [--since 2026-03-31]
+Actors are canonical (statements.actor_id, migration 019) so all spellings of one person are read together; actors
+with no new statements since their last pass are skipped.
 """
 import argparse
 import json
@@ -47,18 +49,32 @@ def main():
     cur.execute("CREATE TABLE IF NOT EXISTS contradictions (id bigserial PRIMARY KEY, actor_key text, actor_side text, actor_name text, a_statement bigint REFERENCES statements(id) ON DELETE CASCADE, "
                 "b_statement bigint REFERENCES statements(id) ON DELETE CASCADE, b_event bigint, kind text, topic text, explanation text, confidence real, model text, created_at timestamptz DEFAULT now(), "
                 "UNIQUE (a_statement, b_statement, b_event))")
-    cur.execute("SELECT id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, status FROM statements WHERE ts_published >= %s ORDER BY ts_published", (a.since,))
+    conn.commit()
+    # canonical actor (migration 019: statements.actor_id, all spellings of one person) when available, else the name heuristic
+    cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name='statements' AND column_name='actor_id'")
+    has_actor = cur.fetchone() is not None
+    cur.execute("SELECT id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, status, created_at"
+                + (", actor_id" if has_actor else ", NULL") + " FROM statements WHERE ts_published >= %s ORDER BY ts_published", (a.since,))
     groups = defaultdict(list)
     for r in cur.fetchall():
-        groups[actor_key(r[2], r[3])].append(r)
+        groups[r[10] or actor_key(r[2], r[3])].append(r)
     cur.execute("SELECT id, event_date, event_type, actor, details, region FROM extracted_events WHERE event_date >= %s AND event_type <> 'strike' ORDER BY event_date", (a.since,))
     events = cur.fetchall()
-    cands = sorted(((k, v) for k, v in groups.items() if len(v) >= 2), key=lambda kv: -len(kv[1]))[: a.max_actors]
+    # actors with new statements since their last contradiction pass first (re-reading unchanged histories costs money and finds nothing)
+    cur.execute("CREATE TABLE IF NOT EXISTS contradiction_passes (actor_key text PRIMARY KEY, checked_at timestamptz NOT NULL)")
+    cur.execute("SELECT actor_key, checked_at FROM contradiction_passes")
+    last = dict(cur.fetchall())
+    def fresh(kv):
+        t = last.get(kv[0])
+        return sum(1 for s in kv[1] if t is None or s[9] > t)
+    cands = sorted(((k, v) for k, v in groups.items() if len(v) >= 2 and fresh((k, v)) > 0), key=lambda kv: (-fresh(kv), -len(kv[1])))[: a.max_actors]
     print(f"actors with >=2 statements: {len(cands)}")
     total = 0
     for k, sts in cands:
-        side, name = sts[0][2], sts[0][3]
-        acts = [e for e in events if e[3] and name and name.split()[0].lower() in (e[3] or "").lower()][:15]
+        side = sts[0][2]
+        name = max((s[3] for s in sts if s[3]), key=lambda n: sum(1 for s in sts if s[3] == n), default=None)
+        act = sts[0][10]
+        acts = [e for e in events if e[3] and name and name.split()[-1].lower()[:6] in (e[3] or "").lower()][:15]
         payload = {"actor": {"side": side, "name": name},
                    "statements": [{"id": s[0], "date": s[1].date().isoformat(), "type": s[4], "quote": s[5], "predicted_event": s[6], "region": s[7], "verdict": s[8]} for s in sts[-40:]],
                    "actions": [{"event_id": e[0], "date": str(e[1]), "type": e[2], "details": e[4], "region": e[5]} for e in acts]}
@@ -89,11 +105,14 @@ def main():
                 print(f"  {name}: {p.get('kind')} | {p.get('topic')} | {p.get('explanation')}")
                 n += 1
                 continue
-            cur.execute("INSERT INTO contradictions(actor_key, actor_side, actor_name, a_statement, b_statement, b_event, kind, topic, explanation, confidence, model) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (a_statement, b_statement, b_event) DO UPDATE SET explanation=EXCLUDED.explanation, confidence=EXCLUDED.confidence",
+            cur.execute("INSERT INTO contradictions(actor_key, actor_side, actor_name, a_statement, b_statement, b_event, kind, topic, explanation, confidence, model"
+                        + (", actor_id" if has_actor else "") + ") VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" + (",%s" if has_actor else "") + ") "
+                        "ON CONFLICT (a_statement, b_statement, b_event) DO UPDATE SET explanation=EXCLUDED.explanation, confidence=EXCLUDED.confidence",
                         (k, side, name, aid, b_stmt, b_evt, p.get("kind") if p.get("kind") in ("reversal", "contradiction", "say_vs_do") else "contradiction",
-                         (p.get("topic") or "")[:120], (p.get("explanation") or "")[:300], float(p.get("confidence") or 0.5), "claude-haiku-5-5" if a.provider == "anthropic" else "gemini"))
+                         (p.get("topic") or "")[:120], (p.get("explanation") or "")[:300], float(p.get("confidence") or 0.5), "claude-haiku-5-5" if a.provider == "anthropic" else "gemini") + ((act,) if has_actor else ()))
             n += 1
+        if not a.dry_run:
+            cur.execute("INSERT INTO contradiction_passes VALUES (%s, now()) ON CONFLICT (actor_key) DO UPDATE SET checked_at = now()", (k,))
         conn.commit()
         total += n
         print(f"{name or side}: {len(sts)} statements, {len(acts)} actions -> {n} contradictions")

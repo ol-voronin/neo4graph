@@ -172,6 +172,17 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 .pg .regs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}.pg .reg{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}.pg .reg .bar{opacity:.85}.pg .reg .bar.b{background:var(--muted)}
 @media (max-width:760px){body{grid-template-columns:1fr}.content{grid-column:1;grid-row:2}.side{grid-row:1;height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px;gap:4px}
   .side .brand{padding:4px 8px 4px 0}.side .brand small,.side .navnote{display:none}.rh .row{grid-template-columns:1fr 60px 90px;}.rh .row .hide-m{display:none}}
+/* trust levels + person page (fact-check view) */
+.rh.tr .row{grid-template-columns:minmax(150px,1.4fr) 60px 80px minmax(190px,1.8fr) auto}
+.ci{position:relative;display:inline-block;width:110px;height:10px;background:var(--line);border-radius:5px;vertical-align:middle;margin-right:6px}
+.ci i{position:absolute;top:0;bottom:0;background:var(--accent-soft);border:1px solid var(--accent);border-radius:5px;box-sizing:border-box}
+.ci b{position:absolute;top:-2px;width:3px;height:14px;background:var(--accent);border-radius:1px}
+.ci.weak i{border-style:dashed;border-color:var(--muted);background:transparent}.ci.weak b{background:var(--muted)}
+#factcheck.pmode>:not(#pp){display:none}
+.pp{display:flex;flex-direction:column;gap:12px}.pp .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0}
+.pp h2{margin:2px 0}.pp h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}.pp h4{margin:10px 0 4px}
+.pp .big{font-size:30px;font-weight:600;color:var(--accent)}.pp .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+@media (max-width:760px){.rh.tr .row{grid-template-columns:1fr 50px}.rh.tr .row>span:nth-child(4){grid-column:1/-1}.pp .grid2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -223,6 +234,16 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 </div>
 <div class="legend" id="legend"></div>
 <section class="fc" id="factcheck" hidden>
+  <div class="rh tr" id="trust">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+      <b>Рівень довіри до заяв</b>
+      <div class="seg" role="group" aria-label="Рівень"><button type="button" class="chip" data-lv="country" aria-pressed="true">Країна</button><button type="button" class="chip" data-lv="group" aria-pressed="false">Групи</button><button type="button" class="chip" data-lv="person" aria-pressed="false">Людина</button></div>
+      <input id="trq" type="search" placeholder="людина: Лавров, Zelensky, Трамп…" aria-label="Знайти людину" style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;font-size:12px">
+    </div>
+    <div class="meta" id="trnote"></div>
+    <div id="trbody"><p class="empty">Завантаження…</p></div>
+  </div>
+  <div class="pp" id="pp" hidden></div>
   <div class="rh" id="rhet">
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
       <b>Рівень риторики</b>
@@ -544,6 +565,7 @@ function panel(nodes,edges){
   if(n.type==='web')html+=`<p class="frag">${esc(n.text||'')}<br><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.url)}</a></p>`;
   if(n.type==='registry'&&/^ФОП /.test(n.label)){const nm=n.label.replace(/^ФОП /,'').split('·')[0].trim();html+=`<p class="ev">${n.url?`<a href="${esc(n.url)}" target="_blank" rel="noopener">Картка ФОП на YouControl (КВЕД, стан) ↗</a> · `:''}<a href="https://youcontrol.com.ua/search/?q=${encodeURIComponent(nm)}" target="_blank" rel="noopener">пошук YouControl ↗</a> · <a href="https://usr.minjust.gov.ua/content/free-search" target="_blank" rel="noopener">ЄДР Мін'юсту ↗</a></p>`;}
   if((n.type==='decision'||n.type==='declaration')&&n.url)html+=`<p class="ev"><a href="${esc(n.url)}" target="_blank" rel="noopener">${n.type==='decision'?'Відкрити рішення у реєстрі ↗':'Відкрити декларацію на сайті НАЗК ↗'}</a></p>`;
+  if(n.type==='person'&&CAN_QUEUE)html+=`<div id="nprof"></div>`;
   html+=`<div id="ndetail"></div>`;
   // 3. how it got into the graph
   const prov=[];const seenP=new Set();for(const e of mine){if(!PROV_REL.has(e.rel)&&!e.detail)continue;const other=byId.get(e.source===n.id?e.target:e.source);const line=`${REL[e.rel]||e.rel}${e.src?' · '+esc(SRC[e.src]||e.src):''}${e.detail?' — '+esc(e.detail):''}${e.rel==='court_register_mention'||e.rel==='declaration'||e.rel==='fop_record'||e.rel==='namesake'?' ← «'+esc(other.label)+'»':''}`;const k=line.slice(0,120);if(seenP.has(k))continue;seenP.add(k);prov.push(line);if(prov.length>=5)break}
@@ -566,6 +588,7 @@ function panel(nodes,edges){
   p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));
   p.querySelectorAll('li.more button').forEach(b=>b.onclick=()=>{const ul=b.closest('ul');const rel=[...groups].find(([r,it])=>ul.previousElementSibling.textContent.startsWith(REL[r]||r));if(!rel)return;const extra=rel[1].slice(25).map(([oid,e])=>{const o=byId.get(oid);return `<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}</li>`}).join('');b.closest('li').outerHTML=extra;ul.querySelectorAll('button[data-id]').forEach(x=>x.onclick=()=>select(x.dataset.id))});
   p.scrollTop=0;
+  if(CAN_QUEUE&&n.type==='person')loadProf(n);
   if(CAN_QUEUE)loadDetail(n);else document.getElementById('nexplain').innerHTML=`<span class="meta">Що це: ${esc(provOf(n))}; подробиці з реєстрів — у повній версії.</span>`;
 }
 const DETAIL=new Map();  // /api/node answers per id: a re-render after a neighbourhood merge does not refetch
@@ -649,7 +672,8 @@ if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const
   function linkify(d){d.innerHTML=d.innerHTML.replace(/\b(\d{1,4}\/\d{1,6}\/\d{2})\b/g,(m)=>`<a href="#" data-case="${m}" style="color:var(--accent)">${m}</a>`);d.querySelectorAll('a[data-case]').forEach(a=>a.onclick=async e=>{e.preventDefault();const c=a.dataset.case;await fetchCase(c);const cid=mergeCase(c);if(cid){select(cid);q.value='Справа '+c;window.scrollTo({top:0,behavior:'smooth'})}})}
   function toGraph(g,d){if(!g||!g.nodes||!g.nodes.length)return;g.nodes.forEach(n=>{const x=addNode({...n});for(const [k,v] of Object.entries(n))if(x[k]==null&&v!=null)x[k]=v});g.edges.forEach(e=>{if(byId.has(e.source)&&byId.has(e.target))addEdge({...e})});
     const show=()=>{if(!byId.has(g.focus))return;select(g.focus);q.value=byId.get(g.focus).label;document.getElementById('graphtop').scrollIntoView({behavior:'smooth'})};
-    const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=`показати в графі (${g.nodes.length})`;b.onclick=()=>{if(PH())openChat(false);show()};d.appendChild(document.createElement('br'));d.appendChild(b);show()}
+    const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=`показати в графі (${g.nodes.length})`;b.onclick=()=>{if(PH())openChat(false);show()};d.appendChild(document.createElement('br'));d.appendChild(b);show();
+    if(g.focus&&g.focus.startsWith('person:'))profFor(byId.get(g.focus)?.label||g.focus.slice(7)).then(r=>{if(!r||!r.id)return;const p=document.createElement('button');p.type='button';p.className='chip';p.textContent=`профіль заяв (${r.n})`;p.onclick=()=>{if(PH())openChat(false);window.__show('factcheck');openPerson(r.id)};d.appendChild(p)})}
   form.onsubmit=async e=>{e.preventDefault();const t=ta.value.trim();if(!t)return;ta.value='';ex.hidden=true;add('me',t);hist.push({role:'user',content:t});btn.disabled=true;const wait=add('ai','Шукаю…');
     try{const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:hist})})).json();wait.remove();if(r.error){add('ai','Помилка: '+r.error)}else{const d=add('ai',r.answer||'(порожня відповідь)',r.trace);linkify(d);toGraph(r.graph,d);hist.push({role:'assistant',content:r.answer||''})}}
     catch(err){wait.remove();add('ai','Не вдалося звʼязатися з сервером.')}btn.disabled=false;};
@@ -672,9 +696,10 @@ const elOf=id=>document.getElementById(id)||document.querySelector('.'+id);
 const loaded={};
 function show(v,push=true){if(!VIEWS[v])v='home';for(const [k,ids] of Object.entries(VIEWS))ids.forEach(id=>{const el=elOf(id);if(el&&!(id==='chat'&&!CAN_QUEUE))el.hidden=k!==v});
   document.querySelectorAll('#side [data-view]').forEach(b=>b.tagName==='BUTTON'&&b.setAttribute('aria-current',b.dataset.view===v?'page':'false'));
-  if(push){const u=new URL(location.href);if(v==='home')u.searchParams.delete('view');else u.searchParams.set('view',v);if(v!=='graph')u.hash='';history.pushState({v},'',u)}
+  if(push){const u=new URL(location.href);if(v==='home')u.searchParams.delete('view');else u.searchParams.set('view',v);u.searchParams.delete('person');if(v!=='graph')u.hash='';history.pushState({v},'',u)}
   if(v==='graph')render();
-  if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet()}
+  if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet();if(CAN_QUEUE)loadTrust()}
+  if(v==='factcheck'&&CAN_QUEUE){const pid=new URL(location.href).searchParams.get('person');if(pid)openPerson(pid,false);else closePerson(false)}
   if(v==='prognoz'&&!loaded.pg){loaded.pg=1;loadPG()}
   if(v==='home')loadHome();window.scrollTo({top:0})}
 document.querySelectorAll('#side [data-view],#home [data-view]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();show(b.dataset.view)}));
@@ -710,6 +735,86 @@ async function loadRhet(){const box=document.getElementById('rhrows');box.innerH
   }catch(e){box.innerHTML='<p class="empty">Не вдалося завантажити: '+esc(e.message)+'</p>'}}
 document.querySelectorAll('#rhet .seg button').forEach(b=>b.onclick=()=>{rhGroup=b.dataset.g;if(rhGroup!=='actor')rhF={};document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x===b));loadRhet()});
 document.getElementById('rhq').onkeydown=e=>{if(e.key==='Enter'){if(e.target.value.trim()&&rhGroup!=='actor'){rhGroup='actor';document.querySelectorAll('#rhet .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.g==='actor'))}loadRhet()}};
+// ---------- trust levels (Країна · Групи · Людина) and the person page: ?view=factcheck&person=<actor id> ----------
+const CN2={UA:'Україна',RU:'Росія',US:'США',EU:'ЄС, НАТО, Європа',other:'Інші'};
+const STY={claim_fact:'твердження',denial:'заперечення',forecast:'прогноз',promise:'обіцянка',threat:'погроза',demand:'вимога',announce_action:'оголошена дія'};
+const VST={true:'підтверджено',false:'спростовано',partial:'частково',unresolvable:'не перевірено',pending:'ще не перевірялось'};
+const ETY={sanction:'санкції',aid:'допомога',weapons_delivery:'поставка зброї',mobilisation:'мобілізація',negotiation:'переговори',attack_on_russia:'атака на РФ',legal_act:'правовий акт',other:'інше'};
+const pct=x=>x==null?'—':Math.round(100*x)+'%',d10=x=>(x||'').slice(0,10);
+let trLv='country',trF=null,trAll=null,trMin=5;
+async function getJ(u){const r=await (await fetch(u)).json();if(r.error)throw new Error(r.error);return r}
+function trustCell(s){if(!s)return '<span class="meta">—</span>';const bar=`<span class="ci${s.enough?'':' weak'}" title="80% інтервал ${pct(s.lo)}–${pct(s.hi)}"><i style="left:${(100*s.lo).toFixed(1)}%;width:${Math.max(1,100*(s.hi-s.lo)).toFixed(1)}%"></i><b style="left:calc(${(100*s.mean).toFixed(1)}% - 1px)"></b></span>`;
+  return s.enough?`${bar}<b>${pct(s.mean)}</b> <span class="meta">${pct(s.lo)}–${pct(s.hi)} · з ${s.n}</span>`:`${bar}<span class="meta">недостатньо даних · перевірено ${s.n} з ${trMin}</span>`}
+const splitS=s=>s&&(s.n||s.unresolvable)?`<span class="meta">✓ ${s.true} · ✗ ${s.false} · ½ ${s.partial} · не перев. ${s.unresolvable}</span>`:'';
+function sparkP(tr,w=160,h=30){if(!tr||tr.length<2)return'';const st=w/(tr.length-1),y=v=>(h-2-(h-4)*v).toFixed(1);
+  return `<svg class="sp" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><line x1="0" x2="${w}" y1="${y(.5)}" y2="${y(.5)}" stroke="var(--line)" stroke-dasharray="3 3"/><polyline fill="none" stroke="var(--accent)" stroke-width="1.6" points="${tr.map((t,i)=>`${(i*st).toFixed(1)},${y(t.mean)}`).join(' ')}"/></svg>`}
+const trRow=(name,sub,all,s,btn)=>`<div class="row"><span><b>${name}</b>${sub?` <span class="meta">${sub}</span>`:''}</span><span>${all}</span><span class="hide-m">${s?s.n:0}</span><span>${trustCell(s)}<br>${splitS(s)}</span><span>${btn||''}</span></div>`;
+const trHead=k=>`<div class="row head"><span>${k}</span><span>заяв</span><span class="hide-m">перевірено</span><span>довіра · 80% інтервал</span><span></span></div>`;
+const gName=id=>(trAll?.groups||[]).find(g=>g.id===id)?.name||id;
+function pplRows(list){const f=document.getElementById('trq').value.trim().toLowerCase();const L=list.filter(p=>!f||(p.label||'').toLowerCase().includes(f)||p.id.includes(f));
+  return trHead('людина')+(L.slice(0,80).map(p=>trRow(esc(p.label||p.id),esc(gName(p.grp)),p.all,p.score,`<button type="button" class="chip" data-person="${esc(p.id)}">профіль</button>`)).join('')||'<p class="empty">Нікого не знайдено.</p>')}
+async function loadTrust(){const box=document.getElementById('trbody');box.innerHTML='<p class="empty">Завантаження…</p>';
+  document.querySelectorAll('#trust .seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.lv===trLv));
+  try{if(!trAll){trAll=await getJ('/api/factcheck?level=country');trMin=trAll.min_n}const A=trAll;let h='';
+    document.getElementById('trnote').innerHTML=`Довіра — частка перевірених заяв, що підтвердилися доказами (частково = ½), зі згладжуванням: мало перевірених заяв → оцінка ближча до середнього групи. Смужка — 80% інтервал. Менше ${A.min_n} перевірених — «недостатньо даних». Усього перевірено ${A.all.n}: ✓ ${A.all.true} · ✗ ${A.all.false} · ½ ${A.all.partial}; не вдалося перевірити ${A.all.unresolvable}, чекають ${A.all.pending}. Оцінюється відповідність доказам, не намір.`;
+    if(trF){const d=await getJ(`/api/factcheck?level=${trF.lv}&id=${encodeURIComponent(trF.id)}`);const nm=trF.lv==='country'?(CN2[trF.id]||trF.id):gName(trF.id);
+      h+=`<p class="meta">Лише: <b>${esc(nm)}</b> <button type="button" class="chip" id="trx">усі ×</button></p><div class="row"><span><b>${esc(nm)}</b> <span class="meta">разом</span></span><span>${d.node.all}</span><span class="hide-m">${d.node.score.n}</span><span>${trustCell(d.node.score)}<br>${splitS(d.node.score)}</span><span title="як змінювалась оцінка, по місяцях">${sparkP(d.trend)}</span></div>`;
+      if(d.groups&&d.groups.length)h+=`<h4 class="meta">Групи</h4>`+trHead('група')+d.groups.map(g=>trRow(esc(g.name),'',g.all,g.score,`<button type="button" class="chip" data-grp="${esc(g.id)}">люди</button>`)).join('');
+      h+=`<h4 class="meta">Люди й відомства</h4>`+pplRows(d.people||[]);
+      if(d.refuted&&d.refuted.length)h+=`<h4 class="meta">Останні спростовані / частково</h4><div class="fcl">${d.refuted.map(s=>stmtHTML(s,new Map((d.evidence||[]).map(e=>[e.id,e])),true)).join('')}</div>`}
+    else if(trLv==='country')h+=trHead('країна')+A.countries.map(c=>trRow(esc(CN2[c.id]||c.id),'',c.all,c.score,`<button type="button" class="chip" data-cty="${esc(c.id)}">групи й люди</button>`)).join('');
+    else if(trLv==='group')h+=trHead('група')+A.groups.map(g=>trRow(esc(g.name),esc(CN2[g.country]||g.country),g.all,g.score,`<button type="button" class="chip" data-grp="${esc(g.id)}">люди</button>`)).join('');
+    else h+=pplRows(A.people||[]);
+    box.innerHTML=h;
+    box.querySelectorAll('[data-person]').forEach(b=>b.onclick=()=>openPerson(b.dataset.person));
+    box.querySelectorAll('[data-cty]').forEach(b=>b.onclick=()=>{trF={lv:'country',id:b.dataset.cty};loadTrust()});
+    box.querySelectorAll('[data-grp]').forEach(b=>b.onclick=()=>{trF={lv:'group',id:b.dataset.grp};loadTrust()});
+    const x=document.getElementById('trx');if(x)x.onclick=()=>{trF=null;loadTrust()};
+  }catch(e){box.innerHTML='<p class="empty">Не вдалося завантажити: '+esc(e.message)+(/statements_x|actor/.test(e.message)?' (потрібна міграція 019)':'')+'</p>'}}
+if(!CAN_QUEUE)document.getElementById('trust').hidden=true;
+document.querySelectorAll('#trust .seg button').forEach(b=>b.onclick=()=>{trLv=b.dataset.lv;trF=null;loadTrust()});
+document.getElementById('trq').onkeydown=e=>{if(e.key==='Enter'){if(trLv!=='person'&&!trF)trLv='person';loadTrust()}};
+function stmtHTML(s,evm,withActor){const ev=(s.evidence_ids||[]).map(id=>evm&&evm.get(id)||(id.startsWith('gt:')?{gt:id}:null)).filter(Boolean);
+  return `<div class="fci"><div><span class="badge v-${s.status}">${VST[s.status]||s.status}</span> <span class="meta">${d10(s.ts_published)} · ${esc(STY[s.stype]||s.stype)}${withActor&&s.actor_name?' · '+esc(s.actor_name):''}${s.source_id?' · '+esc(s.source_id):''}${s.target_region?' · '+esc(s.target_region):''}</span></div>
+    <div class="q">«${esc(s.quote)}»${s.url?` <a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:''}</div>${s.predicted_event?`<div class="meta">Що мало статися: ${esc(s.predicted_event)}</div>`:''}${s.resolver_note?`<div class="meta">Висновок: ${esc(s.resolver_note)}</div>`:''}
+    ${ev.length?`<ul class="ev">${ev.map(e=>e.gt?`<li class="meta">структуровані дані: ${esc(e.gt.slice(3))}</li>`:`<li>${d10(e.ts_published)} · ${esc(e.source_id)} · ${esc(e.snippet)}${e.url?` <a href="${esc(e.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:''}</div>`}
+const lnk=u=>u?` <a href="${esc(u)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:'';
+function personHTML(r){const s=r.score,evm=new Map((r.evidence||[]).map(e=>[e.id,e]));const a=r.actor||{};const names=[...new Set((r.said||[]).map(x=>x.actor_name).filter(Boolean))].slice(0,8);
+  const did=r.did||{},posts=did.posts&&did.posts.items||[];const nDid=(r.events||[]).length+(did.roles||[]).length+(did.cases||[]).length+(did.decisions||[]).length+(did.edr_roles||[]).length;
+  return `<div><button type="button" class="chip" id="ppback">← рівні довіри</button> <button type="button" class="chip" id="ppgraph">шукати в графі</button></div>
+  <div class="card"><div class="meta">${esc(CN2[r.country]||r.country||'')}${r.group?' · '+esc(r.group.name):''}${a.role_uk?' · '+esc(a.role_uk):''}</div><h2>${esc(r.label)}</h2>${names.length?`<div class="meta">Як записано в джерелах: ${names.map(esc).join(' · ')}</div>`:''}</div>
+  <div class="card"><h3>Рівень довіри</h3>${s?`<div class="big">${s.enough?pct(s.mean):'недостатньо даних'}</div><div>${trustCell(s)}</div><div>${splitS(s)}</div>
+    <p class="meta">${s.enough?`80% інтервал ${pct(s.lo)}–${pct(s.hi)}. `:`Перевірено ${s.n} заяв, потрібно щонайменше ${r.min_n}. `}Сира частка: ${s.raw==null?'—':pct(s.raw)} з ${s.n}. Оцінка стягується до середнього групи${r.group?` «${esc(r.group.name)}» (${pct(r.group.score.mean)})`:''} з вагою ${r.k} заяв — чим більше перевірених заяв, тим менше важить група. Оцінюється відповідність доказам, не намір.</p>
+    ${r.trend&&r.trend.length>1?`<div class="meta">Як змінювалась оцінка (наростаючим підсумком, по місяцях ${esc(r.trend[0].m)}…${esc(r.trend.at(-1).m)}): ${sparkP(r.trend)}</div>`:''}`:'<p class="meta">Ще немає перевірених заяв.</p>'}
+    ${(r.types||[]).length?`<div class="meta" style="margin-top:6px">${r.types.map(t=>`${esc(STY[t.stype]||t.stype)}: ${t.n} (✓${t.t} ✗${t.f} ½${t.p} ?${t.u})`).join(' · ')}</div>`:''}</div>
+  <div class="grid2">
+  <div class="card"><h3>Що сказав · ${(r.said||[]).length}${(r.said||[]).length>=200?'+':''}</h3><div class="fcl" id="ppsaid">${(r.said||[]).slice(0,25).map(x=>stmtHTML(x,evm)).join('')||'<p class="empty">Заяв немає.</p>'}</div>${(r.said||[]).length>25?`<button type="button" class="chip" id="ppmore">показати всі ${(r.said||[]).length}</button>`:''}</div>
+  <div class="card"><h3>Що зробив · ${nDid}</h3>
+    ${(r.events||[]).length?`<ul class="tl">${r.events.map(e=>`<li><span class="meta">${esc(e.event_date||'')}</span> <b>${esc(ETY[e.event_type]||e.event_type)}</b> ${esc(e.details||'')} <span class="meta">${esc(e.actor||'')} · ${esc(e.source_id||'')}</span>${lnk(e.url)}</li>`).join('')}</ul>`:'<p class="meta">Дій (санкції, поставки, переговори, правові акти) у витягнутих подіях не знайдено.</p>'}
+    ${(did.roles||[]).length?`<h4 class="meta">Ролі в антикорупційних постах</h4><ul class="plain">${did.roles.map(x=>`<li>${esc(x.role)} ×${x.n} <span class="meta">${esc(x.d0)}…${esc(x.d1)} ${esc(x.position||'')}</span></li>`).join('')}</ul>`:''}
+    ${(did.cases||[]).length?`<h4 class="meta">Справи</h4><ul class="plain">${did.cases.map(c=>`<li>${esc(c.nickname||c.ref||'')} <span class="meta">${esc(c.agency||'')} · ${esc(c.stage||'')}</span></li>`).join('')}</ul>`:''}
+    ${(did.decisions||[]).length?`<h4 class="meta">Рішення судів зі згадкою</h4><ul class="plain">${did.decisions.map(d=>`<li>${esc(d.d||'')} · ${esc(d.f||'рішення')} · ${esc(d.cause_num||'')}${lnk(d.doc_url)}</li>`).join('')}</ul>`:''}
+    ${(did.edr_roles||[]).length?`<h4 class="meta">У ЄДР</h4><ul class="plain">${did.edr_roles.map(o=>`<li>${esc(o.short_name||o.edrpou)} <span class="meta">${esc(o.stan||'')}</span></li>`).join('')}</ul>`:''}
+    ${posts.length?`<h4 class="meta">Новини про нього · ${did.posts.found}${did.posts.more?'+':''}</h4><ul class="tl">${posts.slice(0,10).map(p=>`<li><span class="meta">${esc(p.date||'')} · ${esc(p.source||'')}</span> ${esc((p.snippet||'').slice(0,200))}${lnk(p.url)}</li>`).join('')}</ul>`:''}</div>
+  <div class="card"><h3>Де сказав неправду · ${(r.refuted||[]).length}</h3><p class="meta">Заяви, які докази спростували (✗) або підтвердили лише частково (½), з доказами.</p><div class="fcl">${(r.refuted||[]).map(x=>stmtHTML(x,evm)).join('')||'<p class="empty">Спростованих заяв немає'+(s&&s.n<r.min_n?' (перевірено замало)':'')+'.</p>'}</div></div>
+  <div class="card"><h3>Де суперечив сам собі · ${(r.contradictions||[]).length}</h3><div class="fcl">${(r.contradictions||[]).map(i=>`<div class="fci"><div><span class="badge v-partial">${{reversal:'розворот',contradiction:'суперечність',say_vs_do:'слова vs дії'}[i.kind]||esc(i.kind)}</span> <span class="meta">${esc(i.topic||'')} · ${Math.round((i.confidence||0)*100)}%</span></div><div class="q">${d10(i.a_date)}: «${esc(i.a_quote)}»${lnk(i.a_url)}</div><div class="q">${i.b_quote?`${d10(i.b_date)}: «${esc(i.b_quote)}»${lnk(i.b_url)}`:`${esc(i.e_date||'')}: дія — ${esc(ETY[i.e_type]||i.e_type||'')}, ${esc(i.e_details||'')}`}</div><div class="meta">${esc(i.explanation||'')}</div></div>`).join('')||'<p class="empty">Суперечностей не знайдено.</p>'}</div></div>
+  </div>`}
+async function openPerson(id,push=true){const pp=document.getElementById('pp');document.getElementById('factcheck').classList.add('pmode');pp.hidden=false;pp.innerHTML='<p class="empty">Завантаження профілю…</p>';
+  if(push){const u=new URL(location.href);u.searchParams.set('view','factcheck');u.searchParams.set('person',id);u.hash='';history.pushState({v:'factcheck',person:id},'',u)}
+  window.scrollTo({top:0});
+  try{const r=await getJ('/api/factcheck?level=person&id='+encodeURIComponent(id));pp.innerHTML=personHTML(r);
+    document.getElementById('ppback').onclick=()=>closePerson();
+    document.getElementById('ppgraph').onclick=()=>{show('graph');q.value=r.graph_name||r.label;q.dispatchEvent(new Event('input'));q.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))};
+    const m=document.getElementById('ppmore');if(m)m.onclick=()=>{const evm=new Map((r.evidence||[]).map(e=>[e.id,e]));document.getElementById('ppsaid').innerHTML=r.said.map(x=>stmtHTML(x,evm)).join('');m.remove()};
+  }catch(e){pp.innerHTML=`<div><button type="button" class="chip" id="ppback">← рівні довіри</button></div><p class="empty">Не вдалося завантажити профіль: ${esc(e.message)}</p>`;document.getElementById('ppback').onclick=()=>closePerson()}}
+function closePerson(push=true){document.getElementById('factcheck').classList.remove('pmode');document.getElementById('pp').hidden=true;
+  if(push){const u=new URL(location.href);if(u.searchParams.has('person')){u.searchParams.delete('person');history.pushState({v:'factcheck'},'',u)}}}
+window.__openPerson=openPerson;
+window.addEventListener('popstate',()=>{const u=new URL(location.href);if(u.searchParams.get('view')!=='factcheck')return;const pid=u.searchParams.get('person');if(pid)openPerson(pid,false);else closePerson(false)});
+// graph node card / chat: does this person have statements? -> «Профіль» button
+function profFor(label){const PROF=profFor.m||(profFor.m=new Map());if(!PROF.has(label))PROF.set(label,fetch('/api/factcheck?level=find&name='+encodeURIComponent(label)).then(r=>r.json()).catch(()=>({})));return PROF.get(label)}
+async function loadProf(n){const r=await profFor(n.label);const box=document.getElementById('nprof');if(!box||state.center!==n.id||!r||!r.id)return;
+  box.innerHTML=`<button type="button" class="chip">Профіль: що казав, де не підтвердилось · ${r.n} заяв${r.resolved?`, перевірено ${r.resolved}`:''}</button>`;box.querySelector('button').onclick=()=>{show('factcheck');openPerson(r.id)}}
 // forecast (was /prognoz.html)
 const PM={nat_massive_v1:{t:'Масований удар по Україні',k:'кандидат: згадки Віткоффа/Кушнера',vs:'nat_massive_base_v1'},nat_massive_base_v1:{t:'Масований удар по Україні',k:'база: власна історія'},
   kh_missile_v1:{t:'Ракетний день, Харківщина',k:'кандидат: погрози в RU-каналах',vs:'kh_missile_base_v1'},kh_missile_base_v1:{t:'Ракетний день, Харківщина',k:'база: власна історія'},

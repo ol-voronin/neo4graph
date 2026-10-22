@@ -3,6 +3,7 @@ official, regional and news sources; writes statements, events and a per-message
 Anthropic (ANTHROPIC_API_KEY, --provider anthropic).
 
 Usage: python src/extract_statements.py [--limit 60] [--provider gemini|anthropic] [--random] [--dry-run] [--since 2026-03-31]
+Bulk: src/statements_batch.py (same prompt, candidates and write path through the Message Batches API).
 """
 import argparse
 import json
@@ -18,18 +19,27 @@ sys.path.insert(0, str(ROOT / "src"))
 from label_messages import QuotaExceeded, anthropic_text, gemini_call, parse_json, claude  # noqa: E402
 
 PROMPT_VERSION = "st-v1"
-SOURCES = ["tg:MID_Russia", "tg:news_kremlin", "tg:medvedev_telegram", "tg:mod_russia",            # RU official
-           "tg:V_Zelenskiy_official", "tg:GeneralStaffZSU", "tg:kpszsu",                             # UA official
-           "tg:synegubov", "tg:kharkivoda", "tg:kyivoda", "tg:mykolaiv_ova", "tg:vinnytsiaoda",       # regional
-           "rss:whitehouse", "tg:golosameriki",                                                       # US
-           "tg:ukrpravda_news", "tg:kyivindependent", "tg:bbcukrainian", "tg:bbcrussian", "tg:radiosvoboda",
-           "tg:suspilnenews", "tg:censor_net", "tg:hromadske_ua", "tg:rian_ru", "tg:tass_agency"]     # media
-# Media posts are candidates only if they look like statements/actions/strikes (saves quota).
+# Key actors' own channels first (they speak as the actor), then wires/state media and Western media that quote named
+# officials. Source ids are case-sensitive and must match sources.id (tg:<channel as in channels.json>, rss:<feed>).
+ACTOR_SOURCES = ["tg:MID_Russia", "tg:news_kremlin", "tg:medvedev_telegram", "tg:mod_russia",                   # RU official
+                 "tg:V_Zelenskiy_official", "tg:GeneralStaffZSU", "tg:kpszsu",                                    # UA official
+                 "tg:synegubov", "tg:kharkivoda", "tg:kyivoda", "tg:mykolaiv_ova", "tg:vinnytsiaoda",              # regional
+                 "rss:whitehouse", "rss:state_dept", "rss:uk_mod", "rss:un_news"]                                  # US / UK / UN
+MEDIA_SOURCES = ["tg:SolovievLive", "tg:rian_ru", "tg:tass_agency", "tg:golosameriki",                            # RU state media, VOA
+                 "tg:ukrpravda_news", "tg:kyivindependent_official", "tg:BBCUkrainian", "tg:bbcrussian", "tg:radiosvoboda",
+                 "tg:suspilnenews", "tg:censor_net", "tg:hromadske_ua", "tg:meduzalive", "tg:kommersant", "tg:rbc_news",
+                 "rss:bbc", "rss:guardian", "rss:nytimes", "rss:ft", "rss:wsj", "rss:economist", "rss:politico_eu",
+                 "rss:dw", "rss:euronews", "rss:aljazeera"]
+SOURCES = ACTOR_SOURCES + MEDIA_SOURCES
+# Media posts are candidates only if they look like statements/actions/strikes or quote a named official (saves tokens).
 MEDIA_RE = (r"(заяви|заявил|заявля|погроз|пригроз|угрож|обіця|пообещ|обещ|попередив|предупред|ультимат|"
             r"санкці|санкци|допомог|помощь|пакет|поставк|постач|Patriot|ATACMS|Tomahawk|F-16|"
             r"Трамп|Trump|Венс|Vance|Рубіо|Рубио|Rubio|Пентагон|Білий дім|Белый дом|Конгрес|Сенат|сенатор|республіканц|республиканц|демократ|"
-            r"Путін|Путин|Лавров|Пєсков|Песков|Медвєдєв|Медведев|Кремл|"
-            r"ракет|дрон|шахед|Shahed|КАБ|балістич|баллистич|удар|обстріл|обстрел|загинул|погиб|поранен|ранен)")
+            r"Путін|Путин|Лавров|Пєсков|Песков|Медвєдєв|Медведев|Кремл|Соловь|Захаров|Шойгу|Зеленськ|Зеленск|Сибіг|Сирськ|Буданов|"
+            r"ракет|дрон|шахед|Shahed|КАБ|балістич|баллистич|удар|обстріл|обстрел|загинул|погиб|поранен|ранен|"
+            r"\m(said|says|told|warned|vowed|pledged|promised|threatened|denied|claimed|announced)\M.{0,80}"
+            r"(Putin|Peskov|Lavrov|Zakharova|Medvedev|Shoigu|Zelensky|Sybiha|Syrskyi|Trump|Vance|Rubio|Hegseth|Witkoff|Kellogg|"
+            r"Rutte|von der Leyen|Kallas|Macron|Merz|Starmer|Kremlin|White House|Pentagon|NATO))")
 SIDES = {"RU_official", "RU_milblogger", "RU_media", "UA_official", "UA_media", "US_admin", "US_right", "US_left",
          "US_congress_bipartisan", "US_other", "EU", "NATO", "other"}
 STYPES = {"threat", "promise", "forecast", "claim_fact", "demand", "denial", "announce_action"}
@@ -93,6 +103,38 @@ def clean(o: dict):
     return sts, evs
 
 
+def candidates(cur, limit, since, random=False, exclude=()):
+    """Unextracted posts: key actors' own channels first, then media posts that look like statements or quote officials."""
+    cur.execute("SELECT m.id, m.text, m.ts_published, m.source_id, s.country, s.type FROM messages m JOIN sources s ON s.id=m.source_id "
+                "LEFT JOIN statement_extractions x ON x.message_id = m.id "
+                "WHERE x.message_id IS NULL AND m.source_id = ANY(%s) AND length(m.text) >= 120 AND m.ts_published >= %s "
+                "AND (s.type IN ('official') OR m.text ~* %s) AND m.id <> ALL(%s) "
+                "ORDER BY " + ("random()" if random else "(m.source_id = ANY(%s)) DESC, m.ts_published DESC") + " LIMIT %s",
+                (SOURCES, since, MEDIA_RE, list(exclude)) + (() if random else (ACTOR_SOURCES,)) + (limit,))
+    return cur.fetchall()
+
+
+def user_msg(text, ts, sid, country, stype):
+    return json.dumps({"source": {"id": sid, "country": country, "type": stype}, "ts_published": ts.isoformat(),
+                       "text": text[:4000]}, ensure_ascii=False)
+
+
+def write(cur, mid, ts, sts, evs, model, pv):
+    """Statements + events + the per-message marker (statements.actor_id is set by a trigger, migration 019)."""
+    for s in sts:
+        cur.execute("INSERT INTO statements(message_id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, "
+                    "horizon_days, resolvable, model, prompt_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (mid, ts, s["actor_side"], s["actor_name"], s["stype"], s["quote"], s["predicted_event"], s["target_region"],
+                     s["horizon_days"], s["resolvable"], model, pv))
+    for e in evs:
+        cur.execute("INSERT INTO extracted_events(message_id, event_type, event_date, region, actor, missiles, drones, guided_bombs, killed, injured, "
+                    "details, confidence, model, prompt_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (mid, e["event_type"], e["event_date"], e["region"], e["actor"], e["missiles"], e["drones"], e["guided_bombs"],
+                     e["killed"], e["injured"], e["details"], e["confidence"], model, pv))
+    cur.execute("INSERT INTO statement_extractions(message_id, n_statements, n_events, model, prompt_version) VALUES (%s,%s,%s,%s,%s) "
+                "ON CONFLICT (message_id) DO NOTHING", (mid, len(sts), len(evs), model, pv))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=60)
@@ -117,13 +159,7 @@ def main():
     pv = f"{PROMPT_VERSION}-{a.provider}"
     conn = connect()
     cur = conn.cursor()
-    cur.execute("SELECT m.id, m.text, m.ts_published, m.source_id, s.country, s.type FROM messages m JOIN sources s ON s.id=m.source_id "
-                "LEFT JOIN statement_extractions x ON x.message_id = m.id "
-                "WHERE x.message_id IS NULL AND m.source_id = ANY(%s) AND length(m.text) >= 120 AND m.ts_published >= %s "
-                "AND (s.type IN ('official') OR m.text ~* %s) "
-                "ORDER BY " + ("random()" if a.random else "m.ts_published DESC") + " LIMIT %s",
-                (SOURCES, a.since, MEDIA_RE, a.limit))
-    rows = cur.fetchall()
+    rows = candidates(cur, a.limit, a.since, random=a.random)
     print(f"candidates: {len(rows)}")
     ok = bad = quota_hits = 0
     for mid, text, ts, sid, country, stype in rows:
@@ -132,8 +168,7 @@ def main():
         except Exception:  # noqa: BLE001
             conn = connect()
             cur = conn.cursor()
-        user = json.dumps({"source": {"id": sid, "country": country, "type": stype}, "ts_published": ts.isoformat(),
-                           "text": text[:4000]}, ensure_ascii=False)
+        user = user_msg(text, ts, sid, country, stype)
         try:
             if client:
                 resp = client.messages.create(model=a.model, max_tokens=6000, output_config={"effort": "low"}, system=sysmsg, messages=[{"role": "user", "content": user}])
@@ -158,18 +193,7 @@ def main():
         if a.dry_run:
             print(mid, sid, "|", json.dumps({"statements": sts, "events": [{**e, "event_date": str(e["event_date"])} for e in evs]}, ensure_ascii=False)[:900])
             continue
-        for s in sts:
-            cur.execute("INSERT INTO statements(message_id, ts_published, actor_side, actor_name, stype, quote, predicted_event, target_region, "
-                        "horizon_days, resolvable, model, prompt_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (mid, ts, s["actor_side"], s["actor_name"], s["stype"], s["quote"], s["predicted_event"], s["target_region"],
-                         s["horizon_days"], s["resolvable"], a.model, pv))
-        for e in evs:
-            cur.execute("INSERT INTO extracted_events(message_id, event_type, event_date, region, actor, missiles, drones, guided_bombs, killed, injured, "
-                        "details, confidence, model, prompt_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (mid, e["event_type"], e["event_date"], e["region"], e["actor"], e["missiles"], e["drones"], e["guided_bombs"],
-                         e["killed"], e["injured"], e["details"], e["confidence"], a.model, pv))
-        cur.execute("INSERT INTO statement_extractions(message_id, n_statements, n_events, model, prompt_version) VALUES (%s,%s,%s,%s,%s) "
-                    "ON CONFLICT (message_id) DO NOTHING", (mid, len(sts), len(evs), a.model, pv))
+        write(cur, mid, ts, sts, evs, a.model, pv)
         conn.commit()
     print(f"extracted {ok}, failed {bad}")
     if bad and not ok:
