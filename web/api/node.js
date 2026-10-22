@@ -75,6 +75,25 @@ export default async function handler(req, res) {
               : ` За звітом Офісу Генпрокурора з початку року по ${y.period_to.slice(0, 7)} зареєстровано ${y.value}${y.prev != null ? ` (торік за ті ж місяці — ${y.prev})` : ""}.`) +
           " На графі — найновіші записи розшуку за статтею." });
     }
+    if (kind === "erdr") {
+      const [d, items, arma] = await Promise.all([
+        sql`SELECT count(*)::int n, array_agg(DISTINCT cause_num) causes, min(adjudication_date)::text d0, max(adjudication_date)::text d1, string_agg(DISTINCT court, ' · ') courts
+            FROM court_decisions WHERE erdr @> ARRAY[${key}]::text[]`.catch(() => [{}]),
+        sql`SELECT kind, label, action, holder, cause_num, decision_date::text d FROM case_assets WHERE erdr @> ARRAY[${key}]::text[] ORDER BY decision_date DESC LIMIT 40`.catch(() => []),
+        sql`SELECT asset_id, description, kind, state, valuation::float valuation FROM arma_assets WHERE erdr @> ARRAY[${key}]::text[] LIMIT 40`.catch(() => []),
+      ]);
+      const x = d[0] || {};
+      return json(res, 200, { kind, decisions: x, items, arma,
+        explain: `Кримінальне провадження ${key} (номер у ЄРДР). Рішень у базі з цим номером: ${x.n || 0}${x.n ? ` (${x.d0}…${x.d1}; ${x.courts || ""})` : ""}. ` +
+          `Майно, назване в ухвалах: ${items.length}; активів у реєстрі АРМА: ${arma.length}. Підозрюваних реєстр знеособлює — привʼязка до людини лише через справу, в якій її названо.` });
+    }
+    if (kind === "arma") {
+      const r = (await sql`SELECT * FROM arma_assets WHERE asset_id = ${key}`.catch(() => []))[0];
+      if (!r) return json(res, 404, { error: "no such ARMA asset" });
+      return json(res, 200, { kind, record: r,
+        explain: `Актив у Єдиному державному реєстрі арештованих активів (АРМА): ${r.description || ""}${r.brand ? ", " + r.brand : ""}${r.model ? " " + r.model : ""}${r.year ? " " + r.year : ""}. ` +
+          `Стан: ${r.state || "?"}${r.valuation ? `; оцінка ${Math.round(r.valuation).toLocaleString("uk-UA")} грн` : ""}. Рішення: ${(r.docnums || []).join(", ")}; провадження: ${(r.erdr || []).join(", ")}. Власника реєстр не публікує.` });
+    }
     if (kind === "decision") {
       const r = (await sql`SELECT doc_id, cause_num, court, judgment_form, justice_kind, category, adjudication_date, receipt_date, date_publ, judge, doc_url, status, year,
                            length(text) AS text_len, left(text, 1200) AS head, text FROM court_decisions WHERE doc_id = ${key}`)[0];

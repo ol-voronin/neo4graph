@@ -5,6 +5,7 @@ import { byCode, byName, peopleOf, rolesOf, card } from "./registry.js";
 import { postMentions, decisionTexts, webFound } from "./_mentions.js";
 import { OBLASTS } from "./_text.js";
 import { declGraph, DECL_COLS } from "./_decl.js";
+import { assetGraph, assetsForCases } from "./_assets.js";
 
 // On-the-fly neighbourhood for an object the graph does not hold yet (a registry hit from /api/search, a judge, a «topic:»
 // of post mentions). Same wire format as /api/graph?around=, so the page merges it into what it already draws:
@@ -114,6 +115,24 @@ export async function expand(id, label = "", { judge = false } = {}) {
     for (const n of D.nodes) node(n);
     for (const e of D.edges) edge(e.source, e.target, e.rel, { detail: e.detail, src: e.src });
     out.declared = rows.length;
+  }
+
+  // ---- court cases the person is named in (summons notices, court register by name, media) and the property arrested in
+  // those proceedings (case_assets, ARMA): reached only through the case, the register depersonalises suspects ----
+  if (["person", "fop", "wanted"].includes(kind) && name.split(" ").length >= 2) {
+    const pid = out.person || id, nl = name.toLowerCase();
+    const cases = await soft(query(`SELECT DISTINCT lower(payload->>'cause_num') c, source, payload->>'court' court, payload->>'date' d FROM registry_hits
+        WHERE lower(query) = $1 AND source IN ('summons', 'reyestr') AND payload->>'cause_num' IS NOT NULL
+        UNION SELECT DISTINCT lower(cause_num), 'media', NULL, NULL FROM media_links WHERE lower(name_norm) = $1 LIMIT 40`, [nl]), 2500, []);
+    for (const c of cases) edge(pid, node({ id: "case:" + c.c, type: "case", label: "Справа " + c.c, ref: c.c }),
+      c.source === "summons" ? "summoned" : c.source === "media" ? "named_by_media" : "court_register_mention",
+      { detail: [c.court, c.d].filter(Boolean).join(" · "), src: c.source === "summons" ? "court.gov.ua (оголошення про виклик)" : c.source === "media" ? "ЗМІ" : "ЄДРСР" });
+    if (cases.length) {
+      const A = assetGraph(await soft(assetsForCases([...new Set(cases.map((c) => c.c))]), 3500, { links: [], items: [], arma: [] }));
+      for (const n of A.nodes) node(n);
+      for (const e of A.edges) edge(e.source, e.target, e.rel, { detail: e.detail, src: e.src });
+      out.case_assets = A.nodes.filter((n) => n.type === "asset").length;
+    }
   }
 
   // ---- what the texts say: posts and decision texts naming it ----

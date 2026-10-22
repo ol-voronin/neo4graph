@@ -1,6 +1,7 @@
 import { gunzipSync } from "node:zlib";
 import { sql } from "./_db.js";
 import { declGraph } from "./_decl.js";
+import { assetGraph, allAssets } from "./_assets.js";
 
 // Full entity graph (persons, orgs, cases, assets, ЄДР records, evidence posts), kept in memory per warm function instance.
 // /api/graph serves slices of it: a light overview and capped neighbourhoods (see graph.js).
@@ -83,7 +84,9 @@ async function loadRows(q, since = null) {
                             FROM decl_items WHERE created_at > ${S}`
                         : q`SELECT decl_id, year, declarant, step, kind, label, owner, rel_name, rel_code, rel_kind, value::float value, currency, since, region
                             FROM decl_items`).catch((e) => { console.warn("decl rows:", e.message); return []; });
-  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted, decl };
+  // property in court cases (migrations 024–025): proceedings named in decisions, items from arrest rulings, ARMA assets
+  const caseAssets = S ? { links: [], items: [], arma: [] } : await allAssets(q);
+  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted, decl, caseAssets };
 }
 
 // ---- assemble rows into a graph; with `base` the rows are merged into an existing graph (its node/edge objects are reused) ----
@@ -210,6 +213,13 @@ export function assemble(R, base = null) {
     } else if (h.source === "erb") {
       const eid = node("erb:" + h.ref, "registry", h.title, { text: h.snippet, org: p.executor, agency: p.publisher, year: p.birth_year ? null : null, src: "Єдиний реєстр боржників", url: h.url, category: p.category });
       edge(who, eid, "debtor_record", null, { detail: h.snippet, src: "erb.minjust.gov.ua" });
+    } else if (h.source === "summons") {
+      // a court's notice summoning the person (in-absentia proceedings): the case number ties them to its decisions
+      if (p.cause_num) {
+        const cid = node("case:" + String(p.cause_num).toLowerCase(), "case", "Справа " + p.cause_num, { ref: p.cause_num, court: p.court });
+        edge(who, cid, "summoned", null, { detail: [p.notice_type, p.court, p.date].filter(Boolean).join(" · "), src: "court.gov.ua (оголошення про виклик)" });
+        if (p.proc_num && /^\d{17}$/.test(p.proc_num)) edge(cid, node("erdr:" + p.proc_num, "case", "Провадження ЄРДР " + p.proc_num, { ref: p.proc_num, kind: "erdr" }), "proceeding", null);
+      }
     } else if (h.source === "edr_fop") {
       const fid = node("fop:" + h.ref, "registry", h.title, { stan: p.stan, text: h.snippet, src: "ЄДР (ФОП)" });
       edge(who, fid, "fop_record", null, { detail: h.snippet, src: "ЄДР" });
@@ -230,6 +240,12 @@ export function assemble(R, base = null) {
       "збіг за повним ПІБ — звіряйте дату народження"].filter(Boolean).join(" · "), src: "Нацполіція" });
     if (w.ovd) edge(node("org:" + norm(w.ovd).toLowerCase(), "org", norm(w.ovd), { kind: w.agency }), wid, "searches", null);
     if (w.article) edge(wid, node("article:" + w.article, "article", `ст. ${w.article} КК`), "article", null, { detail: w.article_crim });
+  }
+  // property in court cases: proceeding nodes, items from arrest rulings, ARMA's arrested assets
+  if (R.caseAssets) {
+    const A = assetGraph(R.caseAssets);
+    for (const n of A.nodes) { const { id, type, label, ...attrs } = n; node(id, type, label, attrs); }
+    for (const e of A.edges) edge(e.source, e.target, e.rel, null, { detail: e.detail, src: e.src });
   }
   // declarations' contents: real estate, vehicles, valuables as asset nodes; companies, income sources, lenders, family
   const D = declGraph(R.decl || []);
