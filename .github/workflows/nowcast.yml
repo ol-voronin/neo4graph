@@ -4,6 +4,8 @@ name: nowcast
 # Cron is UTC; the times below fall inside both models' issue windows in summer (UTC+3) and winter (UTC+2):
 #   national (feature cutoff 15:00, deadline 18:00 Kyiv on D-1) -> 13:10 / 14:10 UTC
 #   Kharkiv  (feature cutoff 21:00, deadline 24:00 Kyiv on D-1) -> 19:10 / 20:10 UTC (second run is a retry; inserts never overwrite)
+#   oblast panel ua_oblast_massive_* (cutoff 15:00, deadline 24:00 Kyiv on D-1) -> issued by the 13:10 run, later runs are no-ops;
+#     skipped with a message until db/migrations/015_oblast_daily.sql adds predictions.region_id
 #   evaluate after the morning summaries -> 09:30 UTC
 on:
   schedule:

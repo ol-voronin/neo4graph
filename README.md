@@ -24,6 +24,10 @@ Per single city: **7-10 missiles OR 20+ drones**. Main analysis uses 7 missiles 
 - `src/parse_kpszsu.py` - parses Air Force summaries into `waves`
 - `src/label_messages.py` - LLM labeling of rhetoric features (workflow `label`, needs ANTHROPIC_API_KEY)
 - `src/parse_kharkiv_daily.py` - parses the governor daily summaries into `kharkiv_daily` (Kharkiv ground truth)
+- `src/parse_oblast_daily.py`, `src/oblasts.py` - oblast administration summaries for every oblast into `oblast_daily`
+- `src/build_gazetteer.py`, `geo/` - national settlements list (KATOTTG) and the generated place->oblast regex
+- `src/features.py`, `src/nowcast.py`, `models/` - prospective forecasts (Kharkiv, national, pooled per-oblast);
+  `python src/test_oblast_pipeline.py` is a synthetic, DB-free check of the oblast pipeline
 - `channels.json` - verified channels (52 active incl. regional, plus low-tier candidates and a manual-review list)
 - `docs/ground_truth.md` - what ground truth we have and the per-city gap
 - `docs/factcheck.md` - claim extraction and fact-checking layer

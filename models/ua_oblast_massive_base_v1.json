@@ -1,0 +1,18 @@
+{
+  "name": "ua_oblast_massive_base_v1",
+  "role": "baseline",
+  "panel": "oblast",
+  "target": "ob_massive",
+  "target_doc": "oblast massed-strike day D (Kyiv calendar day): missiles >= 7 or strike drones >= 20 in the oblast (FPV excluded), max over the OVA summary and LLM-extracted strike events (view oblast_daily_gt). Negative only when a complete OVA summary exists or the events extractor read >= ee_min_extracted posts of D; otherwise unknown",
+  "cutoff_hour": 15,
+  "deadline_hour": 24,
+  "deadline": "D 00:00 Europe/Kyiv",
+  "signals": [],
+  "region_signals": [],
+  "features_doc": "region indicators, region base rate shrunk toward the all-oblast rate (shrink = pseudo-days), own target at D-2 and its 7-day mean",
+  "shrink": 20,
+  "ee_min_extracted": 100,
+  "C": 1.0,
+  "min_train": 60,
+  "frozen": "2026-10-22"
+}

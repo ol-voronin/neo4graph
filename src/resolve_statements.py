@@ -75,10 +75,19 @@ def main():
         ev = cur.fetchall()
         # structured ground truth around the statement date (strikes, intercept claims) as extra evidence rows
         try:
-            cur.execute("SELECT date, missiles, drones, guided_bombs, city_attacked FROM kharkiv_daily WHERE date BETWEEN %s AND %s ORDER BY date", (t0.date(), t1.date()))
-            for d, mi, dr, kab, city in cur.fetchall():
-                ev.append((f"gt:kharkiv:{d}", "ground_truth:kharkiv_daily", ts.__class__.fromisoformat(f"{d}T12:00:00+03:00"),
-                           f"Зведення по Харківщині за {d}: ракети {mi}, дрони {dr}, КАБ {kab}, місто атаковано: {city}"))
+            cur.execute("SELECT to_regclass('oblast_daily_gt') IS NOT NULL")
+            if cur.fetchone()[0] and region and region not in ("ukraine",) and not region.startswith("russia"):
+                # per-oblast ground truth (migration 015): administration summaries + extracted strike events
+                cur.execute("SELECT date, missiles, drones, kab, attacked, sources FROM oblast_daily_gt WHERE region_id = %s AND date BETWEEN %s AND %s "
+                            "AND (attacked OR missiles IS NOT NULL OR drones IS NOT NULL) ORDER BY date", (region, t0.date(), t1.date()))
+                for d, mi, dr, kab, att, srcs in cur.fetchall():
+                    ev.append((f"gt:oblast:{region}:{d}", "ground_truth:oblast_daily", ts.__class__.fromisoformat(f"{d}T12:00:00+03:00"),
+                               f"Зведення по області {region} за {d}: ракети {mi}, дрони {dr}, КАБ {kab}, атаковано: {att} (джерела: {', '.join(srcs or [])})"))
+            else:
+                cur.execute("SELECT date, missiles, drones, guided_bombs, city_attacked FROM kharkiv_daily WHERE date BETWEEN %s AND %s ORDER BY date", (t0.date(), t1.date()))
+                for d, mi, dr, kab, city in cur.fetchall():
+                    ev.append((f"gt:kharkiv:{d}", "ground_truth:kharkiv_daily", ts.__class__.fromisoformat(f"{d}T12:00:00+03:00"),
+                               f"Зведення по Харківщині за {d}: ракети {mi}, дрони {dr}, КАБ {kab}, місто атаковано: {city}"))
             cur.execute("SELECT date, drones FROM ru_attacks_daily WHERE date BETWEEN %s AND %s ORDER BY date", (t0.date(), t1.date()))
             for d, dr in cur.fetchall():
                 ev.append((f"gt:ru:{d}", "ground_truth:ru_mod_claims", ts.__class__.fromisoformat(f"{d}T12:00:00+03:00"), f"МО РФ заявило про {dr} перехоплених українських дронів за {d} (заява сторони, не підтвердження)"))

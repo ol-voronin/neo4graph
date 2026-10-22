@@ -3,6 +3,7 @@
 Usage:
   python src/load_to_db.py alerts   --dataset path/to/ukrainian-air-raid-sirens-dataset/datasets [--official] [--dry-run]
   python src/load_to_db.py messages [--dry-run]            # data/telegram/*.jsonl -> messages
+  python src/load_to_db.py oblast   [--dry-run]            # data/oblast_daily.jsonl -> oblast_daily
 
 Alerts source: github.com/Vadimkin/ukrainian-air-raid-sirens-dataset (volunteer data from eTryvoga: oblast level,
 2022-02-25 .. today; official data: raion/hromada level since Dec 2025). All times UTC.
@@ -139,6 +140,37 @@ def cmd_kharkiv(a):
         conn.commit()
 
 
+OBLAST_COLS = ["region_id", "date", "source", "missiles", "drones", "fpv", "kab", "mlrs", "artillery", "attacks_n", "settlements_n",
+               "shot_down", "killed", "injured", "attacked", "city_attacked", "complete", "msg_ids", "url", "parser"]
+
+
+def cmd_oblast(a):
+    """Load data/oblast_daily.jsonl (parse_oblast_daily.py) into oblast_daily (migration 015).
+    Each cron run only sees the last few pages of a channel, so a day may be re-parsed from fewer posts: merge with MAX
+    per count and OR per flag (same rule as parse_oblast_daily.merge) instead of overwriting."""
+    path = ROOT / "data" / "oblast_daily.jsonl"
+    rows = [json.loads(l) for l in path.open(encoding="utf-8")] if path.exists() else []
+    print(f"parsed {len(rows)} oblast-days")
+    if a.dry_run or not rows:
+        return
+    nums = ["missiles", "drones", "fpv", "kab", "mlrs", "artillery", "attacks_n", "settlements_n", "shot_down", "killed", "injured"]
+    upd = ", ".join([f"{c}=GREATEST(oblast_daily.{c}, EXCLUDED.{c})" for c in nums]
+                    + [f"{c}=oblast_daily.{c} OR EXCLUDED.{c}" for c in ("attacked", "complete")]
+                    + ["city_attacked=CASE WHEN oblast_daily.city_attacked IS NULL THEN EXCLUDED.city_attacked "
+                       "ELSE oblast_daily.city_attacked OR coalesce(EXCLUDED.city_attacked, false) END",
+                       "msg_ids=ARRAY(SELECT DISTINCT unnest(oblast_daily.msg_ids || EXCLUDED.msg_ids) ORDER BY 1)",
+                       "url=coalesce(oblast_daily.url, EXCLUDED.url)", "parser=EXCLUDED.parser", "updated_at=now()"])
+    sql = (f"INSERT INTO oblast_daily({','.join(OBLAST_COLS)}) VALUES ({','.join(['%s'] * len(OBLAST_COLS))}) "
+           f"ON CONFLICT (region_id, date, source) DO UPDATE SET {upd}")
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('oblast_daily') IS NOT NULL")
+        if not cur.fetchone()[0]:
+            print("oblast_daily does not exist yet (apply db/migrations/015_oblast_daily.sql): skipping")
+            return
+        cur.executemany(sql, [tuple(r.get(c) for c in OBLAST_COLS) for r in rows])
+        conn.commit()
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -148,6 +180,9 @@ if __name__ == "__main__":
     pk = sub.add_parser("kharkiv")
     pk.add_argument("--dry-run", action="store_true")
     pk.set_defaults(fn=cmd_kharkiv)
+    po = sub.add_parser("oblast")
+    po.add_argument("--dry-run", action="store_true")
+    po.set_defaults(fn=cmd_oblast)
     pa = sub.add_parser("alerts")
     pa.add_argument("--dataset", required=True)
     pa.add_argument("--official", action="store_true", help="also load raion/hromada-level official data")
