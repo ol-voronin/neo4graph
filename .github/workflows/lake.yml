@@ -1,7 +1,8 @@
 name: lake
 
-# Nightly: open-data dumps (ЄДР ФОП, ЄДР юросіб, реєстр боржників) -> Parquet, published as release "lake-latest".
-# The UA worker and the cloud chain download these files instead of grepping zipped dumps per query.
+# Nightly: open-data dumps (ЄДР ФОП, ЄДР юросіб, реєстр боржників), the ProZorro increment and the site's search index
+# -> Parquet, published as release "lake-latest". The UA worker and the cloud chain download these files instead of
+# grepping zipped dumps per query; web/api/registry.js reads the registry_* index files with HTTP range requests.
 on:
   schedule:
     - cron: "17 2 * * *"
@@ -9,10 +10,13 @@ on:
     inputs:
       only:
         description: "tables to rebuild"
-        default: "fop,uo,erb,edrsr"
+        default: "fop,uo,erb,edrsr,prozorro,index"
       edrsr_years:
         description: "ЄДРСР years for the edrsr table, e.g. 2026 or 2021-2025"
         default: ""
+      prozorro_minutes:
+        description: "ProZorro time budget in minutes (today's changes first, then history backwards)"
+        default: "60"
 
 permissions:
   contents: write
@@ -24,7 +28,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,10 +40,23 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EDRSR_YEARS: ${{ github.event.inputs.edrsr_years }}
-        run: python src/lake.py build --only "${{ github.event.inputs.only || 'fop,uo,erb,edrsr' }}"
+          PROZORRO_MINUTES: ${{ github.event.inputs.prozorro_minutes || '60' }}
+        run: python src/lake.py build --only "${{ github.event.inputs.only || 'fop,uo,erb,edrsr,prozorro,index' }}"
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view lake-latest >/dev/null 2>&1 || gh release create lake-latest --title "Data lake (nightly)" --notes "Parquet tables built from data.gov.ua dumps. Rebuilt nightly by .github/workflows/lake.yml."
+          gh release view lake-latest >/dev/null 2>&1 || gh release create lake-latest --title "Data lake (nightly)" --notes "Parquet tables built from data.gov.ua dumps and the ProZorro API. Rebuilt nightly by .github/workflows/lake.yml."
+          shopt -s nullglob
           gh release upload lake-latest data/lake/*.parquet --clobber
+          [ -f data/lake/prozorro_state.json ] && gh release upload lake-latest data/lake/prozorro_state.json --clobber
+          # the manifest goes last: it points at the versioned registry_* files uploaded above
+          if [ -f data/lake/registry_manifest.json ]; then
+            gh release upload lake-latest data/lake/registry_manifest.json --clobber
+            # keep the current and the previous index build (readers may hold yesterday's manifest for a few minutes)
+            keep=$(gh release view lake-latest --json assets -q '.assets[].name' | grep -oE '^registry_[a-z]+_[0-9]{12}\.parquet$' | grep -oE '[0-9]{12}' | sort -u | tail -2)
+            for a in $(gh release view lake-latest --json assets -q '.assets[].name' | grep -E '^registry_[a-z]+_[0-9]{12}\.parquet$'); do
+              stamp=$(echo "$a" | grep -oE '[0-9]{12}')
+              echo "$keep" | grep -qx "$stamp" || gh release delete-asset lake-latest "$a" --yes
+            done
+          fi
