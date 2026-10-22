@@ -124,11 +124,11 @@ export async function expand(id, label = "", { judge = false } = {}) {
     const cases = await soft(query(`SELECT DISTINCT lower(payload->>'cause_num') c, source, payload->>'court' court, payload->>'date' d FROM registry_hits
         WHERE lower(query) = $1 AND source IN ('summons', 'reyestr') AND payload->>'cause_num' IS NOT NULL
         UNION SELECT DISTINCT lower(cause_num), 'media', NULL, NULL FROM media_links WHERE lower(name_norm) = $1 LIMIT 40`, [nl]), 2500, []);
-    for (const c of cases) edge(pid, node({ id: "case:" + c.c, type: "case", label: "Справа " + c.c, ref: c.c }),
+    for (const c of cases.filter((x) => (x.c || "").trim().length > 3)) edge(pid, node({ id: "case:" + c.c, type: "case", label: "Справа " + c.c, ref: c.c }),
       c.source === "summons" ? "summoned" : c.source === "media" ? "named_by_media" : "court_register_mention",
       { detail: [c.court, c.d].filter(Boolean).join(" · "), src: c.source === "summons" ? "court.gov.ua (оголошення про виклик)" : c.source === "media" ? "ЗМІ" : "ЄДРСР" });
     if (cases.length) {
-      const A = assetGraph(await soft(assetsForCases([...new Set(cases.map((c) => c.c))]), 3500, { links: [], items: [], arma: [] }));
+      const A = assetGraph(await soft(assetsForCases([...new Set(cases.map((c) => c.c).filter((c) => (c || "").trim().length > 3))]), 3500, { links: [], items: [], arma: [] }));
       for (const n of A.nodes) node(n);
       for (const e of A.edges) edge(e.source, e.target, e.rel, { detail: e.detail, src: e.src });
       out.case_assets = A.nodes.filter((n) => n.type === "asset").length;
