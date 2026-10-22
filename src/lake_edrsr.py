@@ -3,7 +3,7 @@ plus small statistics tables in Postgres for the chat (`court_stats`).
 
 One year is ~7.5 M decisions / ~3.6 M cases: far too much for Neon (0.5 GB), so
   - the full metadata goes to Parquet: data/lake/edrsr_<year>.parquet (published with the nightly lake release);
-  - Postgres gets only aggregates: edrsr_stats (decisions by kind × category × region × form) and
+  - Postgres gets only aggregates (coded, names in edrsr_dict, views with names): edrsr_stats (decisions by kind × category × region × form) and
     edrsr_case_stats (cases by kind × category × region: how many reached a verdict / decision, median duration).
 The dump has no party names: court, judge, category, dates, form and the URL of the text only.
 
@@ -23,14 +23,18 @@ from pathlib import Path
 from edrsr_index import dump_url
 from lake import LAKE, UA
 
+# Category/region/form names live once in edrsr_dict; the tables keep smallint codes (names repeated in every row were
+# ~100 MB). Views edrsr_stats / edrsr_case_stats with the old columns are in db/migrations/016_edrsr_compact.sql.
 DDL = """
-CREATE TABLE IF NOT EXISTS edrsr_stats (
-  year int NOT NULL, justice_kind text, category text, region text, form text, n int NOT NULL);
-CREATE INDEX IF NOT EXISTS edrsr_stats_idx ON edrsr_stats (year, justice_kind);
-CREATE TABLE IF NOT EXISTS edrsr_case_stats (
-  year int NOT NULL, justice_kind text, category text, region text,
+CREATE TABLE IF NOT EXISTS edrsr_dict (
+  id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, field "char" NOT NULL, value text NOT NULL, UNIQUE (field, value));
+CREATE TABLE IF NOT EXISTS edrsr_stats_c (
+  year smallint NOT NULL, jk smallint, cat smallint, reg smallint, frm smallint, n int NOT NULL);
+CREATE INDEX IF NOT EXISTS edrsr_stats_c_idx ON edrsr_stats_c (year, jk);
+CREATE TABLE IF NOT EXISTS edrsr_case_stats_c (
+  year smallint NOT NULL, jk smallint, cat smallint, reg smallint,
   cases int NOT NULL, with_verdict int, with_decision int, with_court_order int, median_days real, p75_days real);
-CREATE INDEX IF NOT EXISTS edrsr_case_stats_idx ON edrsr_case_stats (year, justice_kind);"""
+CREATE INDEX IF NOT EXISTS edrsr_case_stats_c_idx ON edrsr_case_stats_c (year, jk);"""
 
 
 def years(spec):
@@ -96,18 +100,29 @@ def aggregates(year, con):
     return stats, cases
 
 
+def codes(cur, rows, fields):
+    """name -> smallint code per field ('k', 'c', 'r', 'f'), adding names not yet in edrsr_dict."""
+    vals = {(f, r[i]) for r in rows for i, f in enumerate(fields) if f and i < len(r) and isinstance(r[i], str)}
+    cur.executemany("INSERT INTO edrsr_dict (field, value) VALUES (%s, %s) ON CONFLICT DO NOTHING", sorted(vals))
+    cur.execute("SELECT field, value, id FROM edrsr_dict")
+    d = {(f, v): i for f, v, i in cur.fetchall()}
+    return lambda f, v: None if v is None else d[(f, v)]
+
+
 def write_db(year, stats, cases):
     from load_to_db import connect
     with connect() as conn, conn.cursor() as cur:
         cur.execute(DDL)
-        cur.execute("DELETE FROM edrsr_stats WHERE year = %s", (year,))
-        cur.execute("DELETE FROM edrsr_case_stats WHERE year = %s", (year,))
-        with cur.copy("COPY edrsr_stats (year, justice_kind, category, region, form, n) FROM STDIN") as cp:
-            for r in stats:
-                cp.write_row((year, *r))
-        with cur.copy("COPY edrsr_case_stats (year, justice_kind, category, region, cases, with_verdict, with_decision, with_court_order, median_days, p75_days) FROM STDIN") as cp:
+        code = codes(cur, [*stats, *(r[:3] for r in cases)], ("k", "c", "r", "f"))
+        cur.execute("DELETE FROM edrsr_stats_c WHERE year = %s", (year,))
+        cur.execute("DELETE FROM edrsr_case_stats_c WHERE year = %s", (year,))
+        with cur.copy("COPY edrsr_stats_c (year, jk, cat, reg, frm, n) FROM STDIN") as cp:
+            for k, c, r, f, n in stats:
+                cp.write_row((year, code("k", k), code("c", c), code("r", r), code("f", f), n))
+        with cur.copy("COPY edrsr_case_stats_c (year, jk, cat, reg, cases, with_verdict, with_decision, with_court_order, median_days, p75_days) FROM STDIN") as cp:
             for r in cases:
-                cp.write_row((year, *r[:7], None if r[7] is None else float(r[7]), None if r[8] is None else float(r[8])))
+                cp.write_row((year, code("k", r[0]), code("c", r[1]), code("r", r[2]), *r[3:7],
+                              None if r[7] is None else float(r[7]), None if r[8] is None else float(r[8])))
         conn.commit()
     print(f"[edrsr {year}] Postgres: {len(stats):,} stats rows, {len(cases):,} case-stats rows", flush=True)
 
