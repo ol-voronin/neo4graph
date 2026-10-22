@@ -24,7 +24,7 @@ from edrsr_index import dump_url
 from lake import LAKE, UA
 
 # Category/region/form names live once in edrsr_dict; the tables keep smallint codes (names repeated in every row were
-# ~100 MB). Views edrsr_stats / edrsr_case_stats with the old columns are in db/migrations/016_edrsr_compact.sql.
+# ~100 MB). Views edrsr_stats / edrsr_case_stats with the old columns are in db/migrations/017_edrsr_compact.sql.
 DDL = """
 CREATE TABLE IF NOT EXISTS edrsr_dict (
   id smallint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, field "char" NOT NULL, value text NOT NULL, UNIQUE (field, value));
