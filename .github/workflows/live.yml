@@ -1,0 +1,58 @@
+name: live
+
+# Near-continuous collection + hourly current estimate + the registry queue. GitHub runs the 30-minute cron of collect.yml only every few hours,
+# so this job keeps one runner busy for ~5.8 h: every 30 min a collection pass (scripts/collect_once.sh) and the live
+# estimate (src/nowcast.py live -> live_estimates). Four starts a day keep it going; it shares the "collect" concurrency
+# group, so collect.yml waits while it runs instead of collecting twice. The frozen daily forecast (nowcast.yml) is unchanged.
+
+on:
+  schedule:
+    - cron: "3 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long to keep looping"
+        default: "345"
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write   # gh workflow run queue.yml
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install "psycopg[binary]" python-dotenv pandas numpy scikit-learn feedparser
+      - name: Loop
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+          MINUTES: ${{ github.event.inputs.minutes || '345' }}
+        run: |
+          end=$(( $(date +%s) + MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            start=$(date +%s)
+            echo "== pass $(date -u +%H:%M)"
+            bash scripts/collect_once.sh 2>&1 | tail -5
+            (cd src && python nowcast.py live 2>&1 | grep -v Warning | cut -c1-300) || echo "live estimate failed"
+            # registry chains from the site («Шукати в реєстрах», «Черга запитів»): start queue.yml (which drains with its
+            # secrets and refreshes the graph snapshot) whenever something waits, instead of its cron running every few hours
+            n=$(python -c "import sys; sys.path.insert(0, 'src'); from load_to_db import connect; print(connect().execute(\"SELECT count(*) FROM query_queue WHERE status = 'queued'\").fetchone()[0])" 2>/dev/null || echo 0)
+            if [ "${n:-0}" -gt 0 ] && [ -z "$(gh run list --workflow queue.yml --status in_progress --json databaseId -q '.[].databaseId')" ] && [ -z "$(gh run list --workflow queue.yml --status queued --json databaseId -q '.[].databaseId')" ]; then
+              echo "queue: $n waiting -> queue.yml"; gh workflow run queue.yml || true
+            fi
+            # next pass 30 min after this one started (a pass itself takes ~10 min)
+            left=$(( start + 1800 - $(date +%s) ))
+            [ "$left" -gt 0 ] && [ $(( $(date +%s) + left )) -lt "$end" ] && sleep "$left" || true
+            [ $(( $(date +%s) + 600 )) -ge "$end" ] && break
+          done

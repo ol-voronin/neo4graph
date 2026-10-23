@@ -8,6 +8,7 @@ that cannot be fitted after the fact. It is research output, not an air-raid war
   python src/nowcast.py backtest [--model kh_missile_v1]              # same code path over history (expanding window)
   python src/nowcast.py backtest --model ua_oblast_massive_v1 --controls 50   # + shuffled-date control for the signals
   python src/nowcast.py report                                        # prospective scores so far, candidate vs baseline
+  python src/nowcast.py live [--now ...] [--dry-run]                  # hourly current estimate (live_estimates, not the test)
 
 Model specs: models/*.json (frozen; a change means a new file with a new name, the old history stays).
 A spec with "panel": "oblast" is a pooled model over all oblasts (long format, features.design_long): one forecast per
@@ -137,6 +138,33 @@ def cmd_predict(a):
                     conn.execute("INSERT INTO predictions(model, target_date, p, n_train, features, features_hash, spec_hash) VALUES (%s,%s,%s,%s,%s,%s,%s) "
                                  "ON CONFLICT (model, target_date) DO NOTHING",
                                  (s["name"], target.date(), float(pr), n, json.dumps(feats), fh, s["spec_hash"]))
+        conn.commit()
+
+
+LIVE_MODELS = ("ua_oblast_massive3_v1", "ua_oblast_massive3_base_v1")
+
+
+def cmd_live(a):
+    """Current estimate for the next Kyiv day: the frozen v3 specs refitted with the rhetoric window ending at this hour
+    (cutoff = current hour), trained on days with a known outcome. Written to live_estimates; predictions are untouched."""
+    now = pd.Timestamp(a.now) if a.now else pd.Timestamp.now(tz=KYIV).tz_localize(None)
+    target, cutoff = (now + pd.Timedelta(days=1)).normalize(), max(1, now.hour)
+    with connect() as conn:
+        for s in specs():
+            if s["name"] not in LIVE_MODELS:
+                continue
+            df = get_frame(conn, s, until=target, cutoff=cutoff)
+            F, y = get_design(df, s), df[s["target"]]
+            rows = [r for r in df.index[df.d == target] if not F.loc[r].isna().any()]
+            p, n = fit_predict_rows(F, y, (df.d < target - pd.Timedelta(days=1)) & y.notna(), rows, s["C"]) if rows else (None, 0)
+            if p is None:
+                print(f"{s['name']}: not enough data (n_train {n}) or missing features for {target.date()}")
+                continue
+            vals = [(s["name"], df.region_id[r], target.date(), cutoff, float(pr), n, json.dumps(_feats(F, r)[0])) for r, pr in zip(rows, p)]
+            print(f"{s['name']} {target.date()} cutoff {cutoff}:00 n_train {n}: " + ", ".join(f"{v[1]} {v[4]:.0%}" for v in sorted(vals, key=lambda v: -v[4])))
+            if not a.dry_run:
+                with conn.cursor() as cur:
+                    cur.executemany("INSERT INTO live_estimates(model, region_id, target_date, cutoff_hour, p, n_train, features) VALUES (%s,%s,%s,%s,%s,%s,%s)", vals)
         conn.commit()
 
 
@@ -309,10 +337,10 @@ def cmd_report(a):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["predict", "evaluate", "backtest", "report"])
+    ap.add_argument("cmd", choices=["predict", "evaluate", "backtest", "report", "live"])
     ap.add_argument("--model")
     ap.add_argument("--now", help="Kyiv local time, for testing the issue window")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--controls", type=int, default=0, help="backtest: number of shuffled-date control runs per candidate")
     a = ap.parse_args()
-    {"predict": cmd_predict, "evaluate": cmd_evaluate, "backtest": cmd_backtest, "report": cmd_report}[a.cmd](a)
+    {"predict": cmd_predict, "evaluate": cmd_evaluate, "backtest": cmd_backtest, "report": cmd_report, "live": cmd_live}[a.cmd](a)
