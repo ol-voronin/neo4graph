@@ -219,6 +219,20 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .kpi b{font-size:22px;font-weight:600;line-height:1.1}.kpi .k{font-size:12px;color:var(--muted)}.kpi .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
 .fxnote{font-size:12px;color:var(--muted);margin:0}
+#fxctx .about{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:4px 18px;font-size:12px;color:var(--muted);margin:2px 0 8px}
+#fxctx .about b{color:var(--fg);font-weight:500}
+#fxctx .sum{font-size:14px;line-height:1.5;margin:6px 0 8px;max-width:80ch}
+#fxctx .nums{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:10px}
+#fxctx .nums .chip{cursor:default}
+#fxctx .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+#fxctx h4{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 6px}
+#fxctx ol{list-style:none;margin:0;padding:0;border-left:2px solid var(--line)}
+#fxctx ol li{position:relative;padding:0 0 8px 12px;font-size:13px;line-height:1.4}
+#fxctx ol li::before{content:"";position:absolute;left:-5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--panel);border:2px solid var(--muted)}
+#fxctx .dt{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);margin-right:6px}
+#fxctx .side{font-size:13px;line-height:1.4;margin:0 0 6px}#fxctx .side b{display:inline-block;min-width:44px}
+#fxctx .ck{font-size:13px;line-height:1.4;margin:0 0 6px}
+#fxctx .foot{font-size:11px;color:var(--muted);margin-top:8px}
 .fxgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.fxgrid .wide{grid-column:1/-1}
 .rh h3{margin:0;font-size:14px}.rh .how{font-size:12px;color:var(--muted);margin:0}
 .lgd{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}.lgd i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
@@ -320,6 +334,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
     <span class="sp"></span>
     <label class="lbl" for="fxper">Період:</label><select id="fxper"><option value="3">3 місяці</option><option value="6" selected>6 місяців</option><option value="12">12 місяців</option><option value="24">2 роки</option></select>
   </div>
+  <div class="rh" id="fxctx"><p class="empty">Завантаження…</p></div>
   <div class="kpis" id="fxkpi"></div>
   <p class="fxnote" id="fxkpinote"></p>
   <div class="fxgrid" id="fxcharts">
@@ -1010,6 +1025,31 @@ document.querySelectorAll('#trust .seg button').forEach(b=>b.onclick=()=>{trLv=b
 document.getElementById('trq').onkeydown=e=>{if(e.key==='Enter'){if(trLv!=='person'&&!trF)trLv='person';loadTrust()}};
 // ---------- fact-check dashboard: topic / period filters, KPIs, overview charts, mood by topic ----------
 const TOPIC={pow:'полонені',exchange:'обміни',ceasefire:"перемир'я",tcc:'ТЦК і мобілізація',law:'закони',corruption:'корупція',promise:'обіцянки'};
+// what a topic covers and how its claims are checked (src/topics.py classes, resolve_statements.py rules)
+const TOPIC_ABOUT={
+  '':['усі зібрані заяви політиків, відомств і медіа UA, RU, США, ЄС та інших: факти, прогнози, обіцянки, погрози, вимоги','кожну заяву звіряємо з незалежними джерелами за її період: інші медіа й відомства, зведення ударів по областях, хвилі Повітряних сил, тривоги'],
+  pow:['полонені й військовополонені: умови утримання, списки, повернення, звернення родин, заяви омбудсменів','незалежне джерело іншої сторони або офіційні повідомлення Координаційного штабу, омбудсмена, МКЧХ'],
+  exchange:['обміни полоненими й тілами загиблих: домовленості, кількість, посередники (ОАЕ, Туреччина, Ватикан)','обмін підтверджують повідомлення обох сторін; невідповідність кількості — «частково»; обіцяний до дати, але не зафіксований — «спростовано»'],
+  ceasefire:["перемир'я, енергетичні та інші мораторії, переговори про припинення вогню, «режим тиші»","зведення ударів по областях, хвилі Повітряних сил і заяви МО РФ за дні дії: удари відповідного типу спростовують «дотримується»"],
+  tcc:['ТЦК, мобілізація, повістки, відстрочки, Резерв+, демобілізація, ухилянти','рішення уряду й Ради, повідомлення Міноборони, ТЦК, омбудсмена, незалежних медіа; обіцянки — лише ухваленим актом у строк'],
+  law:['законопроєкти, закони, укази, постанови уряду: хто подав, ухвалив, підписав, ветував','«ухвалить/підпише до дати» підтверджує лише повідомлення про ухвалення чи підпис, не реєстрація чи розгляд'],
+  corruption:['підозри, затримання, обвинувачення, вироки: НАБУ, САП, ВАКС, НАЗК, журналістські розслідування','процесуальні кроки за повідомленнями НАБУ, САП, НАЗК, суду; обіцянки покарати — лише процесуальним кроком у строк'],
+  promise:['обіцянки будь-якої теми: «зробимо», «надамо», «підпишемо» з очікуваною подією','настала чи ні обіцяна подія до строку за незалежними джерелами']};
+function renderCtx(){const box=document.getElementById('fxctx');if(!box)return;const [what,how]=TOPIC_ABOUT[fxTopic]||TOPIC_ABOUT[''];
+  const B=OV&&OV.brief,name=fxTopic?(TOPIC[fxTopic]||fxTopic):'усі теми';
+  let h=`<h3>Контекст: ${esc(name)}</h3><div class="about"><span><b>Що входить:</b> ${esc(what)}</span><span><b>Як перевіряємо:</b> ${esc(how)}</span></div>`;
+  if(!B){box.innerHTML=h+`<p class="empty">${fxTopic==='promise'?'Обіцянки — це тип заяв, а не тема: огляду немає, дивіться графіки нижче.':'Огляд теми ще не сформовано — він оновлюється щодня.'}</p>`;return}
+  const b=B.body||{},st=B.stats||{},R=B.refs||{};
+  const link=r=>R[r]&&R[r].url?` <a href="${esc(R[r].url)}" target="_blank" rel="noopener" title="${esc(R[r].source||'джерело')}">↗</a>`:'';
+  const dn=st.n_prev?Math.round(100*(st.n-st.n_prev)/st.n_prev):null,v=st.verdicts||{};
+  h+=b.summary?`<p class="sum">${esc(b.summary)}</p>`:'';
+  h+=`<div class="nums"><span>за ${B.days} днів: <b>${nf(st.n)}</b> заяв${dn!=null?` (${dn>0?'+':dn<0?'−':''}${Math.abs(dn)}% до попередніх ${B.days})`:''} · ✓ ${nf(v.t)} · ✗ ${nf(v.f)} · ½ ${nf(v.p)} · ? ${nf(v.u)}</span>${(st.actors||[]).length?'<span>· найчастіше говорять:</span>'+st.actors.map(a=>`<span class="chip">${esc(a.name)} · ${nf(a.n)}</span>`).join(''):''}</div>`;
+  const ev=(b.events||[]).map(e=>`<li><span class="dt">${esc(e.date)}</span>${esc(e.text)}${link(e.ref)}</li>`).join('');
+  const sd=[['UA','Україна'],['RU','Росія'],['other','Інші']].filter(([k])=>b.sides&&b.sides[k]).map(([k,l])=>`<p class="side"><b>${l}</b> ${esc(b.sides[k])}</p>`).join('');
+  const ck=(b.checked||[]).map(c=>{const s=(R[c.ref]||{}).status;return `<p class="ck">${s&&VST[s]?`<span class="badge v-${esc(s)}">${VST[s]}</span> `:''}${esc(c.text)}${link(c.ref)}</p>`}).join('');
+  h+=`<div class="cols">${ev?`<div><h4>Ключові події</h4><ol>${ev}</ol></div>`:''}<div>${sd?`<h4>Позиції сторін</h4>${sd}`:''}${ck?`<h4 style="margin-top:10px">Що перевірили</h4>${ck}`:''}${b.watch?`<h4 style="margin-top:10px">Далі</h4><p class="side">${esc(b.watch)}</p>`:''}</div></div>`;
+  h+=`<p class="foot">Огляд складено моделлю лише з наших даних (заяви, вердикти, події з новин) · кожен пункт має посилання на джерело · оновлено ${esc(String(B.generated_at||'').slice(0,16).replace('T',' '))}</p>`;
+  box.innerHTML=h}
 const VK=[['t','підтверджено','✓','--v-t'],['p','частково','½','--v-p'],['f','спростовано','✗','--v-f'],['u','не вдалося перевірити','?','--v-u'],['q','ще чекає','…','--v-q'],['x','нема що перевіряти','–','--v-x']];
 const FXC=['UA','RU','US','EU','other'],STN={official:'офіційні',media:'медіа',independent:'незалежні',analyst:'аналітики',milblogger:'воєнкори',state_media:'держмедіа',other:'інші'};
 const RAMP=['#cde2fb','#b7d3f6','#9ec5f4','#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281','#0d366b'];
@@ -1034,14 +1074,14 @@ document.getElementById('fxper').onchange=e=>{fxPer=+e.target.value||6;renderMon
   fc.addEventListener('pointerleave',()=>tip.hidden=true);
   fc.addEventListener('focusin',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(!t){tip.hidden=true;return}const r=t.getBoundingClientRect();tip.innerHTML=t.dataset.tip;tip.hidden=false;place(r.left+r.width/2,r.bottom)});
   fc.addEventListener('focusout',()=>tip.hidden=true)}}
-async function loadOverview(){['fxverdb','fxmatb','fxmonb','fxstb','fxrefb'].forEach(i=>document.getElementById(i).innerHTML='<p class="empty">Завантаження…</p>');
+async function loadOverview(){const cx=document.getElementById('fxctx');if(cx)cx.innerHTML='<p class="empty">Завантаження…</p>';['fxverdb','fxmatb','fxmonb','fxstb','fxrefb'].forEach(i=>document.getElementById(i).innerHTML='<p class="empty">Завантаження…</p>');
   document.getElementById('fxlgd1').innerHTML=document.getElementById('fxlgd2').innerHTML=lgd();
   try{OV=await getJ('/api/factcheck?level=overview'+fxQ());renderOverview()}
-  catch(e){OV=null;document.getElementById('fxkpi').innerHTML='';document.getElementById('fxkpinote').textContent='';
+  catch(e){OV=null;renderCtx();document.getElementById('fxkpi').innerHTML='';document.getElementById('fxkpinote').textContent='';
     ['fxverdb','fxmatb','fxmonb','fxstb','fxrefb'].forEach(i=>document.getElementById(i).innerHTML='<p class="empty">Не вдалося завантажити: '+esc(e.message)+'</p>')}}
 function byCountry(){if(Array.isArray(OV.countries)&&OV.countries.length&&OV.countries[0].n!=null)return OV.countries.map(c=>({...addS(S0(),c),country:c.country||c.id}));
   const m=new Map();(OV.matrix||[]).forEach(r=>addS(m.get(r.country)||m.set(r.country,S0()).get(r.country),r));return [...m].map(([country,c])=>({...c,country}))}
-function renderOverview(){const T=OV.totals&&OV.totals.n!=null?addS(S0(),OV.totals):byCountry().reduce((a,c)=>addS(a,c),S0());const chk=T.t+T.f+T.p,tp=fxTopic?` · тема «${esc(TOPIC[fxTopic])}»`:'';
+function renderOverview(){renderCtx();const T=OV.totals&&OV.totals.n!=null?addS(S0(),OV.totals):byCountry().reduce((a,c)=>addS(a,c),S0());const chk=T.t+T.f+T.p,tp=fxTopic?` · тема «${esc(TOPIC[fxTopic])}»`:'';
   const share=(v,of)=>of?Math.round(100*v/of)+'%':'—';
   const K=[['Заяв зібрано',T.n,null,'усього в базі'+tp],['Перевірено (є вердикт)',chk,null,share(chk,T.n)+' від зібраних'],['Підтверджено',T.t,'--v-t',share(T.t,chk)+' перевірених','✓'],['Спростовано',T.f,'--v-f',share(T.f,chk)+' перевірених','✗'],
     ['Частково',T.p,'--v-p',share(T.p,chk)+' перевірених','½'],['Не вдалося перевірити',T.u,'--v-u',share(T.u,T.n)+' від зібраних','?'],['Ще чекають перевірки',T.q,'--v-q',share(T.q,T.n)+' від зібраних','…'],['Нема що перевіряти',T.x,'--v-x',share(T.x,T.n)+' — думки, вимоги без події','–']];
@@ -1166,7 +1206,7 @@ function renderMood(){const box=document.getElementById('moodb'),r=MD||{},ser=r.
       ${GR.length?`<div class="meta">Українські джерела за типом</div><div class="dv">${GR.map(x=>dvRow(`${STN[x.stype]||x.stype} · ${nf(x.n)}`,x.avg,x.n,`<b>${esc(STN[x.stype]||x.stype)}</b><br>тон ${sgn(x.avg)} · ${nf(x.n)} постів${x.neg!=null?' · негативних '+Math.round(100*x.neg)+'%':''}`)).join('')}</div>`:''}
       ${O.length?`<div class="meta">Що обговорюють</div><div class="dv">${O.map(x=>dvRow(`${x.object} · ${nf(x.n)}`,x.avg,x.n,`<b>${esc(x.object)}</b><br>тон ${sgn(x.avg)} · ${nf(x.n)} постів`)).join('')}</div>`:''}</div>`};
   box.innerHTML=note+`<div class="mgrid">${pick.map(card).join('')}</div>${cov.first?`<p class="how" style="margin-top:6px">Розмітка тону з ${d10(cov.first)} · оцінено постів: ${nf(cov.labeled)}.</p>`:''}`}
-if(!CAN_QUEUE)['fxcharts','fxkpi','fxkpinote','mood','wanted','crime'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});
+if(!CAN_QUEUE)['fxctx','fxcharts','fxkpi','fxkpinote','mood','wanted','crime'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});
 function stmtHTML(s,evm,withActor){const ev=(s.evidence_ids||[]).map(id=>evm&&evm.get(id)||(id.startsWith('gt:')?{gt:id}:null)).filter(Boolean);
   return `<div class="fci"><div><span class="badge v-${s.status}">${VST[s.status]||s.status}</span> <span class="meta">${d10(s.ts_published)} · ${esc(STY[s.stype]||s.stype)}${withActor&&s.actor_name?' · '+esc(s.actor_name):''}${s.source_id?' · '+esc(s.source_id):''}${s.target_region?' · '+esc(s.target_region):''}</span></div>
     <div class="q">«${esc(s.quote)}»${s.url?` <a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--accent)">↗</a>`:''}</div>${s.predicted_event?`<div class="meta">Що мало статися: ${esc(s.predicted_event)}</div>`:''}${s.resolver_note?`<div class="meta">Висновок: ${esc(s.resolver_note)}</div>`:''}

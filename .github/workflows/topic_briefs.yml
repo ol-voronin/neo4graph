@@ -1,0 +1,34 @@
+name: topic_briefs
+
+# Topic context on the fact-check page (src/topic_briefs.py, migration 032): 7 briefs (all + 6 topics) of the last 30 days,
+# Haiku 5.5, ~90k input tokens a day in total (~$0.03). Daily after the morning statements run.
+on:
+  schedule:
+    - cron: "50 9 * * *"
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "one topic (pow|exchange|ceasefire|tcc|law|corruption) or empty = all"
+        default: ""
+
+concurrency:
+  group: topic-briefs
+  cancel-in-progress: false
+
+jobs:
+  briefs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.PR_ANTH_KEY || secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "psycopg[binary]" python-dotenv anthropic
+      - run: |
+          T="${{ github.event.inputs.topic }}"
+          python src/topic_briefs.py build ${T:+--topic "$T"}
