@@ -32,6 +32,13 @@ FEEDS = {
     "state_dept": ["https://www.state.gov/rss-feed/press-releases/feed/"],
     "uk_mod": ["https://www.gov.uk/government/organisations/ministry-of-defence.atom"],
     "un_news": ["https://news.un.org/feed/subscribe/en/news/region/europe/feed/rss.xml"],
+    # Ukrainian national & regional media from OSINT catalog
+    "unian": ["https://rss.unian.net/site/news_ukr.rss"],
+    "interfax_ua": ["https://ua.interfax.com.ua/news/last.rss"],
+    "liga": ["https://www.liga.net/news/all/rss.xml"],
+    "kyiv_independent": ["https://kyivindependent.com/news-archive/rss/"],
+    "zaxid": ["https://zaxid.net/rss/all.xml"],
+    "dumskaya": ["https://dumskaya.net/rss/"],
 }
 # source_id suffix -> (name, country, type); tier B like the other media
 SOURCES = {
@@ -42,11 +49,15 @@ SOURCES = {
     "dw": ("Deutsche Welle", "DE", "state_media"), "euronews": ("Euronews", "FR", "independent"),
     "aljazeera": ("Al Jazeera", "QA", "state_media"), "state_dept": ("U.S. Department of State", "US", "official"),
     "uk_mod": ("UK Ministry of Defence", "GB", "official"), "un_news": ("UN News", "UN", "official"),
+    "unian": ("UNIAN", "UA", "media"), "interfax_ua": ("Interfax-Ukraine", "UA", "media"),
+    "liga": ("LIGA.net", "UA", "media"), "kyiv_independent": ("The Kyiv Independent", "UA", "media"),
+    "zaxid": ("Zaxid.net", "UA", "regional_media"), "dumskaya": ("Dumskaya (Odesa)", "UA", "regional_media"),
 }
-ALL_ITEMS = {"whitehouse", "guardian"}  # topical already: keep everything
+ALL_ITEMS = {"whitehouse", "guardian", "kyiv_independent"}  # topical already: keep everything
 TOPIC_RE = re.compile(r"ukrain|kyiv|kiev|russia|kremlin|putin|zelensk|moscow|nato|crimea|donbas|kharkiv|odesa|odessa|"
                       r"dnipro|zaporizh|kherson|missile|drone|ballistic|ceasefire|peace talks|sanction|nuclear|belarus|"
-                      r"україн|росі|путін|зеленськ|україн|россия|украин|путин", re.I)
+                      r"україн|росі|путін|зеленськ|россия|украин|путин|"
+                      r"шахед|ракета|обстріл|тривог|ппо|удар|пуск|вибух|генштаб", re.I)
 UA = {"User-Agent": "Mozilla/5.0 (research; rhetoric-strikes)"}
 TAG_RE = re.compile(r"<[^>]+>")
 

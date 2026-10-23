@@ -12,6 +12,8 @@ Usage:
 Limits: the preview shows ~20 posts per page; pagination goes back via ?before=<id>.
 Deep history (years) is slow here; for that use Telethon with your own API keys (src/collect_telethon.py, TODO).
 """
+from __future__ import annotations
+
 import argparse
 import hashlib
 import html

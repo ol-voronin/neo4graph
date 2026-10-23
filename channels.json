@@ -550,6 +550,35 @@
       "type": "state_media",
       "title": "Голос Америки (ru)",
       "role": "US statements/actions in Russian; US domestic politics coverage"
+    },
+    {
+      "name": "uniannet",
+      "country": "UA",
+      "type": "media",
+      "title": "УНІАН",
+      "role": "national breaking news and operational war coverage"
+    },
+    {
+      "name": "ukrinform_news",
+      "country": "UA",
+      "type": "state_media",
+      "title": "Укрінформ",
+      "role": "national official news agency"
+    },
+    {
+      "name": "liganet",
+      "country": "UA",
+      "type": "independent",
+      "title": "LIGA.net",
+      "role": "national news, policy and military analysis"
+    },
+    {
+      "name": "zaxidnet",
+      "country": "UA",
+      "type": "independent",
+      "region": "Lvivska",
+      "title": "ZAXID.NET",
+      "role": "regional western Ukraine news (closing Lvivska gap)"
     }
   ],
   "inactive_or_unavailable": [
@@ -895,7 +924,6 @@
   ],
   "_note2": "Regional channels discovered 2026-10-17 by handle probing (src/discover_channels.py). Tier A >=5K subs, B 1-5K, C <1K (not collected: may be clones/impostors; verify manually).",
   "regional_gaps": [
-    "Lvivska",
     "Khmelnytska",
     "Chernivetska",
     "Zakarpatska",
