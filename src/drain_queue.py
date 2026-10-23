@@ -56,6 +56,7 @@ def main():
             cur = conn.cursor()
         cur.execute("UPDATE query_queue SET status=%s, finished_at=now(), note=%s WHERE id=%s", ("done" if r.returncode == 0 else "failed", tail[-600:], qid))
         conn.commit()
+    print(f"queued: {len(items)}")  # queue.yml greps this to refresh the graph snapshot
     if items:
         from load_to_db import refresh_search_names
         refresh_search_names(conn)
