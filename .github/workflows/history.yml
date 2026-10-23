@@ -1,0 +1,95 @@
+name: history
+
+# Panel rhetoric history before the live panel (2026-03-31) without raw rows in Neon (src/history.py):
+# per channel t.me/s -> jsonl (resumes below the oldest post already in release history-latest) -> panel_posts.parquet
+# in the release -> daily aggregates (rhetoric_daily_hist) + weekly per-oblast aggregates (rhetoric_weekly).
+# A channel that hits the job timeout still uploads what it collected; re-running continues below it.
+
+on:
+  push:
+    branches: [history-run]   # a push to this branch runs it with the defaults (works before the file is on main)
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Go back until this date (YYYY-MM-DD)"
+        default: "2022-02-24"
+      skip_collect:
+        description: "Only rebuild the aggregates from the published Parquet"
+        type: boolean
+        default: false
+
+concurrency:
+  group: history
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    if: github.event.inputs.skip_collect != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 4   # polite to t.me
+      matrix:
+        ch: [boris_rozhin, RVvoenkor, meduzalive, MID_Russia, ukrpravda_news, dva_majors, voenkorKotenok, rybar, sashakots, wargonzo, GeneralStaffZSU, V_Zelenskiy_official]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas pyarrow python-dotenv requests
+      - name: Published history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mkdir -p data/history && gh release download history-latest -p panel_posts.parquet -D data/history
+      - name: Collect ${{ matrix.ch }}
+        timeout-minutes: 330
+        run: python src/history.py collect --channel ${{ matrix.ch }} --since "${{ github.event.inputs.since || '2022-02-24' }}" --chunks 80
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hist-${{ matrix.ch }}
+          path: data/history/${{ matrix.ch }}.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build:
+    if: always()
+    needs: collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas pyarrow "psycopg[binary]" python-dotenv
+      - uses: actions/download-artifact@v4
+        if: github.event.inputs.skip_collect != 'true'
+        with:
+          pattern: hist-*
+          path: /tmp/hist
+      - name: Pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/history
+          gh release download history-latest -p panel_posts.parquet -D data/history
+          if [ "${{ github.event.inputs.skip_collect }}" != "true" ]; then
+            find /tmp/hist -name '*.jsonl' -exec cp {} data/history/ \;
+            python src/history.py pack
+            gh release upload history-latest data/history/panel_posts.parquet --clobber
+          fi
+      - name: Aggregates into Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python src/history.py aggregate
+          python src/history.py weekly
+      - name: Verify rules (Python vs SQL view)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/history.py verify
