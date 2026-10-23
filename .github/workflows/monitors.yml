@@ -1,0 +1,81 @@
+name: monitors
+
+# Explosion / alert monitoring channels back to 2022 (src/history.py --set monitors -> monitors/monitor_posts.parquet in
+# release history-latest) and the daily per-oblast explosion labels (src/explosions.py -> explosion_daily, migration 030).
+# Each channel resumes below its oldest published post; a channel that hits the job timeout uploads what it has, and the
+# next run continues (povitryanatrivogaaa, ~230 k posts, needs two runs).
+
+on:
+  push:
+    branches: [monitors-run]   # a push here runs it with the defaults (works before the file is on main)
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Go back until this date (YYYY-MM-DD)"
+        default: "2022-02-24"
+
+concurrency:
+  group: monitors
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 2   # the panel history may be collecting at the same time: stay polite to t.me
+      matrix:
+        ch: [povitryanatrivogaaa, eRadarrua, war_monitor, vanek_nikolaev]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas pyarrow python-dotenv
+      - name: Published monitor history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mkdir -p data/history/monitors && (gh release download history-latest -p monitor_posts.parquet -D data/history/monitors || echo "no monitor history yet")
+      - name: Collect ${{ matrix.ch }}
+        timeout-minutes: 335
+        run: python src/history.py collect --set monitors --channel ${{ matrix.ch }} --since "${{ github.event.inputs.since || '2022-02-24' }}" --chunks 120
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mon-${{ matrix.ch }}
+          path: data/history/monitors/${{ matrix.ch }}.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build:
+    if: always()
+    needs: collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas pyarrow "psycopg[binary]" python-dotenv
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mon-*
+          path: /tmp/mon
+      - name: Pack and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data/history/monitors
+          gh release download history-latest -p monitor_posts.parquet -D data/history/monitors || echo "no monitor history yet"
+          find /tmp/mon -name '*.jsonl' -exec cp {} data/history/monitors/ \;
+          python src/history.py pack --set monitors
+          gh release upload history-latest data/history/monitors/monitor_posts.parquet --clobber
+      - name: Explosion labels into Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/explosions.py build

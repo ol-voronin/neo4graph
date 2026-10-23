@@ -31,6 +31,10 @@ from features import ENVOY_RE, IRAN_RE, PANEL, PANEL_START, PEACE_RE  # noqa: E4
 
 HIST = ROOT / "data" / "history"
 PARQUET = HIST / "panel_posts.parquet"
+# --set monitors: the alert / explosion monitoring channels (src/explosions.py), their own folder and Parquet in the same
+# release, so `pack` never mixes them into the panel history
+MONITORS = ["povitryanatrivogaaa", "war_monitor", "eRadarrua", "vanek_nikolaev"]
+SETS = {"panel": (HIST, PARQUET), "monitors": (HIST / "monitors", HIST / "monitors" / "monitor_posts.parquet")}
 CUTOFFS = (15, 21, 24)
 # sources.country of the panel channels (none of them is type 'osint', so the live osint filter is a no-op here)
 COUNTRY = {"tg:MID_Russia": "RU", "tg:rybar": "RU", "tg:dva_majors": "RU", "tg:boris_rozhin": "RU", "tg:voenkorKotenok": "RU",
@@ -102,18 +106,19 @@ def daily(posts: pd.DataFrame, cutoff_hour: int) -> pd.DataFrame:
 # ---------------------------------------------------------------- collect / pack
 def cmd_collect(a):
     import collect_telegram as ct
-    ct.OUT_DIR = HIST  # never data/telegram: load_to_db.py messages globs that folder into Neon
-    HIST.mkdir(parents=True, exist_ok=True)
-    f = HIST / f"{a.channel}.jsonl"
+    out, parquet = SETS[a.set]
+    out.mkdir(parents=True, exist_ok=True)
+    f = out / f"{a.channel}.jsonl"
     since = datetime.fromisoformat(a.since).replace(tzinfo=timezone.utc)
     last = None
     start = a.before
-    if start is None and PARQUET.exists():  # continue below the oldest post already published in history-latest
-        old = pd.read_parquet(PARQUET, columns=["source_id", "msg_num"])
+    if start is None and parquet.exists():  # continue below the oldest post already published in history-latest
+        old = pd.read_parquet(parquet, columns=["source_id", "msg_num"])
         old = old[old.source_id == "tg:" + a.channel]
         start = int(old.msg_num.min()) if len(old) else None
-    if start is None:
-        sys.exit(f"{a.channel}: no --before and no posts of it in {PARQUET}")
+    if start is None and a.set == "panel":
+        sys.exit(f"{a.channel}: no --before and no posts of it in {parquet}")
+    # monitors without a published history start from the newest post (start_before=None)
     for chunk in range(a.chunks):
         rows = [json.loads(l) for l in f.open(encoding="utf-8")] if f.exists() and f.stat().st_size else []
         before = min((r["msg_num"] for r in rows), default=start)
@@ -121,26 +126,28 @@ def cmd_collect(a):
         if oldest and oldest[:10] < a.since:
             print(f"{a.channel}: reached {oldest[:10]} ({len(rows)} posts)")
             return
-        if before == last:  # no progress: t.me reset or the channel start
+        if before == last and chunk:  # no progress: t.me reset or the channel start
             print(f"{a.channel}: no progress below {before}, stopping ({len(rows)} posts, oldest {oldest})")
             return
         last = before
         print(f"{a.channel} chunk {chunk}: before {before}, oldest {oldest}", flush=True)
-        ct.collect(a.channel, a.pages, since, a.delay, start_before=before, out_dir=HIST)  # out_dir explicitly: its default is bound at import
+        # out_dir explicitly: its default (data/telegram, which load_to_db.py globs into Neon) is bound at import
+        ct.collect(a.channel, a.pages, since, a.delay, start_before=before, out_dir=out)
         time.sleep(15)
 
 
 def cmd_pack(a):
-    frames = [pd.read_parquet(PARQUET)] if PARQUET.exists() else []  # the published history stays; new jsonl rows add to it
-    for f in sorted(HIST.glob("*.jsonl")):
+    out, parquet = SETS[a.set]
+    frames = [pd.read_parquet(parquet)] if parquet.exists() else []  # the published history stays; new jsonl rows add to it
+    for f in sorted(out.glob("*.jsonl")):
         rows = [json.loads(l) for l in f.open(encoding="utf-8")]
         frames.append(pd.DataFrame(rows)[["id", "source_id", "msg_num", "ts_published", "text", "url", "views"]])
     df = pd.concat(frames).drop_duplicates("id").sort_values(["source_id", "msg_num"])
     df = df[df.ts_published.notna()]
-    df.to_parquet(PARQUET, index=False, compression="zstd")
+    df.to_parquet(parquet, index=False, compression="zstd")
     s = df.groupby("source_id").ts_published.agg(["min", "max", "count"])
     print(s.to_string())
-    print(f"{len(df)} posts -> {PARQUET} ({PARQUET.stat().st_size / 1e6:.1f} MB)")
+    print(f"{len(df)} posts -> {parquet} ({parquet.stat().st_size / 1e6:.1f} MB)")
 
 
 # ---------------------------------------------------------------- aggregate / verify
@@ -281,13 +288,16 @@ if __name__ == "__main__":
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("collect")
     c.add_argument("--channel", required=True)
+    c.add_argument("--set", default="panel", choices=list(SETS))
     c.add_argument("--before", type=int, default=None, help="start below this message id (default: the oldest post of the channel in the Parquet)")
     c.add_argument("--since", default="2025-01-01")
     c.add_argument("--pages", type=int, default=300)
     c.add_argument("--chunks", type=int, default=40)
     c.add_argument("--delay", type=float, default=0.7)
     c.set_defaults(fn=cmd_collect)
-    sub.add_parser("pack").set_defaults(fn=cmd_pack)
+    k = sub.add_parser("pack")
+    k.add_argument("--set", default="panel", choices=list(SETS))
+    k.set_defaults(fn=cmd_pack)
     g = sub.add_parser("aggregate")
     g.add_argument("--dry-run", action="store_true")
     g.set_defaults(fn=cmd_aggregate)
