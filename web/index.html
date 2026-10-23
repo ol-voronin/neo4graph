@@ -207,9 +207,9 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 @media (max-width:760px){.pp .grid2{grid-template-columns:1fr}}
 /* fact-check dashboard: verdicts wear the status palette (with ✓ ✗ ½ ? labels, never colour alone); UA/RU series = categorical slots 1/2;
    trust heat = one-hue blue ramp; mood = diverging blue (+) / grey 0 / red (−) */
-#factcheck,#fxtip{--v-t:#0ca30c;--v-p:#fab219;--v-f:#d03b3b;--v-u:#898781;--v-q:#c9c8c1;--s-ua:#2a78d6;--s-ru:#eb6834;--d-pos:#2a78d6;--d-neg:#e34948;--d-mid:#f0efec;--grid:#e1e0d9;--tip:#1b2024;--tipfg:#fff}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #factcheck,:root:not([data-theme="light"]) #fxtip{--v-q:#4a4a46;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}}
-:root[data-theme="dark"] #factcheck,:root[data-theme="dark"] #fxtip{--v-q:#4a4a46;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}
+#factcheck,#fxtip{--v-t:#0ca30c;--v-p:#fab219;--v-f:#d03b3b;--v-u:#898781;--v-q:#c9c8c1;--v-x:#ebeae4;--s-ua:#2a78d6;--s-ru:#eb6834;--d-pos:#2a78d6;--d-neg:#e34948;--d-mid:#f0efec;--grid:#e1e0d9;--tip:#1b2024;--tipfg:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #factcheck,:root:not([data-theme="light"]) #fxtip{--v-q:#4a4a46;--v-x:#2d2d2a;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}}
+:root[data-theme="dark"] #factcheck,:root[data-theme="dark"] #fxtip{--v-q:#4a4a46;--v-x:#2d2d2a;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}
 #factcheck.fc{background:none;border:0;padding:0;gap:12px}
 .fxhead{display:flex;flex-direction:column;gap:6px}.fxhead h2{margin:2px 0 0;font-size:20px}.fxhead .lead{margin:0;color:var(--muted);max-width:820px}
 .fxbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;position:sticky;top:0;z-index:12;background:var(--bg);padding:6px 0;border-bottom:1px solid var(--line)}
@@ -323,7 +323,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
   <div class="kpis" id="fxkpi"></div>
   <p class="fxnote" id="fxkpinote"></p>
   <div class="fxgrid" id="fxcharts">
-    <div class="rh" id="fxverd"><h3>Вердикти по країнах</h3><p class="how">Як читати: кожна смуга — усі заяви країни (100%); зелений — підтверджено, жовтий — частково, червоний — спростовано, сірий — не вдалося перевірити або ще чекає.</p><div class="lgd" id="fxlgd1"></div><div id="fxverdb"><p class="empty">Завантаження…</p></div></div>
+    <div class="rh" id="fxverd"><h3>Вердикти по країнах</h3><p class="how">Як читати: кожна смуга — усі заяви країни (100%); зелений — підтверджено, жовтий — частково, червоний — спростовано, темно-сірий — не вдалося перевірити, сірий — ще чекає, найсвітліший — нема що перевіряти (думка, вимога без події).</p><div class="lgd" id="fxlgd1"></div><div id="fxverdb"><p class="empty">Завантаження…</p></div></div>
     <div class="rh" id="fxmatrix"><h3>Довіра: тема × країна</h3><p class="how">Як читати: темніше — більша частка заяв, що підтвердилися (зі згладжуванням). Заштриховано — перевірено менше мінімуму, оцінки ще немає.</p><div id="fxmatb"><p class="empty">Завантаження…</p></div></div>
     <div class="rh wide" id="fxmonth"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"><h3>Заяви по місяцях і їхні вердикти</h3><span class="seg" id="fxmcty" role="group" aria-label="Країна"></span></div><p class="how">Як читати: висота стовпця — кількість заяв за місяць (дата заяви); кольори — чим закінчилась перевірка. Свіжі місяці майже сірі: строки обіцянок ще не настали.</p><div class="lgd" id="fxlgd2"></div><div class="vchart" id="fxmonb"><p class="empty">Завантаження…</p></div></div>
     <div class="rh" id="fxstype"><h3>Що саме кажуть: типи заяв</h3><p class="how">Як читати: довжина — кількість заяв цього типу; кольори — вердикти. Вимоги не мають істинності і в довіру не входять.</p><div id="fxstb"><p class="empty">Завантаження…</p></div></div>
@@ -1010,14 +1010,14 @@ document.querySelectorAll('#trust .seg button').forEach(b=>b.onclick=()=>{trLv=b
 document.getElementById('trq').onkeydown=e=>{if(e.key==='Enter'){if(trLv!=='person'&&!trF)trLv='person';loadTrust()}};
 // ---------- fact-check dashboard: topic / period filters, KPIs, overview charts, mood by topic ----------
 const TOPIC={pow:'полонені',exchange:'обміни',ceasefire:"перемир'я",tcc:'ТЦК і мобілізація',law:'закони',corruption:'корупція',promise:'обіцянки'};
-const VK=[['t','підтверджено','✓','--v-t'],['p','частково','½','--v-p'],['f','спростовано','✗','--v-f'],['u','не вдалося перевірити','?','--v-u'],['q','ще чекає','…','--v-q']];
+const VK=[['t','підтверджено','✓','--v-t'],['p','частково','½','--v-p'],['f','спростовано','✗','--v-f'],['u','не вдалося перевірити','?','--v-u'],['q','ще чекає','…','--v-q'],['x','нема що перевіряти','–','--v-x']];
 const FXC=['UA','RU','US','EU','other'],STN={official:'офіційні',media:'медіа',independent:'незалежні',analyst:'аналітики',milblogger:'воєнкори',state_media:'держмедіа',other:'інші'};
 const RAMP=['#cde2fb','#b7d3f6','#9ec5f4','#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281','#0d366b'];
 let fxTopic=(()=>{try{const t=new URL(location.href).searchParams.get('topic')||'';return TOPIC[t]?t:''}catch(_){return ''}})(),fxPer=6,fxMC='',OV=null,MD=null;
 const fxQ=()=>fxTopic?'&topic='+encodeURIComponent(fxTopic):'';
 const fxWeeks=()=>Math.min(104,Math.round(fxPer*4.35));
 const nf=x=>(+x||0).toLocaleString('uk-UA'),sgn=v=>v==null||isNaN(v)?'—':(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(1);
-const S0=()=>({n:0,t:0,f:0,p:0,u:0,q:0}),addS=(a,b)=>{for(const k of ['n','t','f','p','u','q'])a[k]+=(+b?.[k]||0);return a};
+const S0=()=>({n:0,t:0,f:0,p:0,u:0,q:0,x:0}),addS=(a,b)=>{for(const k of ['n','t','f','p','u','q','x'])a[k]+=(+b?.[k]||0);return a};
 const tipA=h=>esc(h);  // tooltip HTML goes into a data-tip attribute
 const vSum=c=>`заяв ${nf(c.n)}: `+VK.map(([k,l,i])=>`${i} ${l} ${nf(c[k])}`).join(' · ');
 const lgd=()=>VK.map(([,l,i,v])=>`<span><i style="background:var(${v})"></i>${i} ${l}</span>`).join('');
@@ -1044,7 +1044,7 @@ function byCountry(){if(Array.isArray(OV.countries)&&OV.countries.length&&OV.cou
 function renderOverview(){const T=OV.totals&&OV.totals.n!=null?addS(S0(),OV.totals):byCountry().reduce((a,c)=>addS(a,c),S0());const chk=T.t+T.f+T.p,tp=fxTopic?` · тема «${esc(TOPIC[fxTopic])}»`:'';
   const share=(v,of)=>of?Math.round(100*v/of)+'%':'—';
   const K=[['Заяв зібрано',T.n,null,'усього в базі'+tp],['Перевірено (є вердикт)',chk,null,share(chk,T.n)+' від зібраних'],['Підтверджено',T.t,'--v-t',share(T.t,chk)+' перевірених','✓'],['Спростовано',T.f,'--v-f',share(T.f,chk)+' перевірених','✗'],
-    ['Частково',T.p,'--v-p',share(T.p,chk)+' перевірених','½'],['Не вдалося перевірити',T.u,'--v-u',share(T.u,T.n)+' від зібраних','?'],['Ще чекають перевірки',T.q,'--v-q',share(T.q,T.n)+' від зібраних','…']];
+    ['Частково',T.p,'--v-p',share(T.p,chk)+' перевірених','½'],['Не вдалося перевірити',T.u,'--v-u',share(T.u,T.n)+' від зібраних','?'],['Ще чекають перевірки',T.q,'--v-q',share(T.q,T.n)+' від зібраних','…'],['Нема що перевіряти',T.x,'--v-x',share(T.x,T.n)+' — думки, вимоги без події','–']];
   document.getElementById('fxkpi').innerHTML=K.map(([l,v,c,s,i])=>`<div class="kpi"><span class="k">${c?`<span class="sw" style="background:var(${c})"></span>`:''}${i?i+' ':''}${l}</span><b>${nf(v)}</b><span class="meta">${s}</span></div>`).join('');
   document.getElementById('fxkpinote').textContent=`Довіра рахується лише з вердиктів ✓ ✗ ½. «Не вдалося перевірити» означає, що незалежні докази мовчать: зараз це ${share(T.u,T.n)} заяв — що більша ця частка, то менше заяв реально оцінено і то ширші інтервали довіри нижче.`;
   // (a) verdict mix per country, 100% bars
