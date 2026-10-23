@@ -92,8 +92,9 @@ def submit_resolve(a):
     seen = {int(x) for x in pending("resolve")}
     system = [{"type": "text", "text": R.SYSTEM, "cache_control": {"type": "ephemeral"}}]
     reqs, ids, left = [], {}, a.limit
-    for mode, share in (("due", .5), ("facts", .3), ("retry", 1.0)):
-        take = max(0, min(left, int(a.limit * share)))
+    # due forecasts up to half; claims of fact take what is left except a 10% reserve for retries; retries take the rest
+    for mode in ("due", "facts", "retry"):
+        take = {"due": min(left, a.limit // 2), "facts": max(0, left - a.limit // 10), "retry": left}[mode]
         if not take:
             continue
         rows = R.due(cur, mode, take, exclude=seen)

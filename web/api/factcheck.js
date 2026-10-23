@@ -13,12 +13,16 @@ export const TOPICS = ["pow", "exchange", "ceasefire", "tcc", "law", "corruption
 const topicOf = (t) => (TOPICS.includes(t) || t === "promise" ? t : "");
 // '' = all statements; 'promise' is a statement type, the rest are statements.topic
 const TOPIC_SQL = (p) => `(${p} = '' OR (${p} = 'promise' AND stype = 'promise') OR topic = ${p})`;
+// pending splits in two: q = waits for a check (facts, due or future forecasts); x = never checked (no checkable event: opinion,
+// demand without a deadline; extraction set resolvable = false)
+const CHECKABLE = `(resolvable OR stype IN ('claim_fact', 'denial'))`;
 const VERD = `count(*)::int n, count(*) FILTER (WHERE status = 'true')::int t, count(*) FILTER (WHERE status = 'false')::int f,
-    count(*) FILTER (WHERE status = 'partial')::int p, count(*) FILTER (WHERE status = 'unresolvable')::int u, count(*) FILTER (WHERE status = 'pending')::int q`;
+    count(*) FILTER (WHERE status = 'partial')::int p, count(*) FILTER (WHERE status = 'unresolvable')::int u,
+    count(*) FILTER (WHERE status = 'pending' AND ${CHECKABLE})::int q, count(*) FILTER (WHERE status = 'pending' AND NOT ${CHECKABLE})::int x`;
 const COUNTS = `SELECT country, grp, actor_id, mode() WITHIN GROUP (ORDER BY actor_name) label, count(*)::int "all",
     count(*) FILTER (WHERE status = 'true' AND stype = ANY($1))::int t, count(*) FILTER (WHERE status = 'false' AND stype = ANY($1))::int f,
     count(*) FILTER (WHERE status = 'partial' AND stype = ANY($1))::int p, count(*) FILTER (WHERE status = 'unresolvable')::int u,
-    count(*) FILTER (WHERE status = 'pending')::int q
+    count(*) FILTER (WHERE status = 'pending' AND ${CHECKABLE})::int q
   FROM statements_x WHERE ${TOPIC_SQL("$2")} GROUP BY 1, 2, 3`;
 const COL = { country: "country", group: "grp", person: "actor_id" };
 const soft = (p, ms, d = null) => withTimeout(Promise.resolve(p), ms).catch(() => d);
