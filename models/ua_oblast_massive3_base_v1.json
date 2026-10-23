@@ -1,0 +1,20 @@
+{
+  "name": "ua_oblast_massive3_base_v1",
+  "role": "baseline",
+  "panel": "oblast",
+  "target": "ob_massive3",
+  "target_doc": "oblast massed-strike day D (Kyiv calendar day): missiles >= 7 or strike drones >= 20 in the oblast (FPV excluded), as ob_massive2. Known negatives: those of ob_massive2 (complete OVA summary; no oblast alert while the alert feed was alive) plus every day of an ACLED week with no strike, shelling or interception event in the oblast (features.label_oblast3, table acled_weekly). Otherwise unknown",
+  "lag_target": "ob_massive2",
+  "acled": true,
+  "cutoff_hour": 15,
+  "deadline_hour": 24,
+  "deadline": "D 00:00 Europe/Kyiv",
+  "signals": [],
+  "region_signals": [],
+  "features_doc": "region indicators, region base rate shrunk toward the all-oblast rate (shrink = pseudo-days), own target at D-2 and its 7-day mean; base/y2/y2_m7 from the real-time target ob_massive2 (lag_target), plus acled_l (log1p ACLED strike events of the oblast, latest week published before the cutoff) and acled_m8 (its 8-week mean): the oblast's real strike rate",
+  "shrink": 20,
+  "ee_min_extracted": 100,
+  "C": 1.0,
+  "min_train": 60,
+  "frozen": "2026-10-23"
+}
