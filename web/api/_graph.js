@@ -13,8 +13,11 @@ import { assetGraph, allAssets } from "./_assets.js";
 //   3. a full build from Neon, only when the snapshot is missing or its manifest is older than 24 h.
 export const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
 // ЄДР and extracted names carry placeholders ("НЕМАЄ", "відсутній", "-") that must not become one giant node
-export const PLACEHOLDER = /^(немає|нема|немає даних|відсутн[а-яії]*|не встановлено|не визначено|не вказано|невідом[а-яії]*|нет|нету|отсутству[а-яє]*|не указан[а-я]*|неизвест[а-я]*|н\/?а|n\/?a|none|null|unknown|[-–—.х_x0 ]+)$/i;
+// (also phrases: «Невідома особа - керівник», «Причина відсутності: відсутні фізичні особи…» from ЄДР beneficiary fields)
+export const PLACEHOLDER = /^(немає|нема|немає даних|відсутн[а-яії]*(\s.*)?|причин[аи] відсутн.*|не встановлено|не визначено|не вказано|невідом(а|ий|ого|ому|ої|і|е|о)(\s.*)?|нет|нету|отсутству[а-яє]*(\s.*)?|не указан[а-я]*|неизвестн(ый|ая|ое|ые|ого|о)(\s.*)?|н\/?а|n\/?a|none|null|unknown|[-–—.х_x0 ]+)[.!]?$/i;
 export const isPlaceholder = (s) => !norm(s) || PLACEHOLDER.test(norm(s).replace(/[«»"“”„]/g, "").replace(/^(тов|пп|фоп)\s+/i, ""));
+// a person/org node that is a placeholder, or whose label is a raw id («person:кравченко олександр» as an org): never drawn
+export const isJunk = (n) => (n.type === "person" || n.type === "org") && (isPlaceholder(n.label) || isPlaceholder(n.id.slice(n.id.indexOf(":") + 1)) || /^(person|org):/.test(n.label));
 export const caseKey = (label) => "case:" + norm(label).replace(/[«»"“”„]/g, "").replace(/^(операція|операция|справа)\s+/i, "").toLowerCase();
 
 // ---- rows: everything (since = null) or only rows written after `since` (a delta on top of a snapshot) ----
@@ -139,7 +142,8 @@ export function assemble(R, base = null) {
   }
   for (const e of R.edr) {
     const rk = node("registry:" + e.edrpou, "registry", `ЄДР ${e.edrpou} · ${e.name}`, { stan: e.stan, full: e.full, edrpou: e.edrpou });
-    for (const q of e.q || []) { if (isPlaceholder(q)) continue; const ok = node("org:" + norm(q).toLowerCase(), "org", norm(q)); nodes.get(ok).edrpou = e.edrpou; edge(ok, rk, "registry_record", null); }
+    // matched_queries carry person queries as «person:<name>» (handled by the founders pass below), not org names
+    for (const q of e.q || []) { if (/^person:/.test(q) || isPlaceholder(q)) continue; const on = norm(q.replace(/^org:/, "")); const ok = node("org:" + on.toLowerCase(), "org", on); nodes.get(ok).edrpou = e.edrpou; edge(ok, rk, "registry_record", null); }
     // Founders are kept under their FULL name (surname, name, patronymic): two people who share surname and name are
     // different nodes. A person query ("Кравченко Дмитро") is linked to each full-name match with a "namesake" edge,
     // so the user sees the candidates and picks by patronymic instead of the graph merging strangers into one person.
@@ -266,6 +270,9 @@ export function assemble(R, base = null) {
     const e = edge(pid, rk, "paid_public_money", null);
     if (e) Object.assign(e, { detail: `${r.n} платежів на ${Math.round(r.total).toLocaleString("uk-UA")} грн, ${r.d0}…${r.d1} (spending.gov.ua)`, src: "spending.gov.ua", date: r.d1 });
   }
+  // placeholders that slipped in through paths without a check (objFor of a queued «НЕМАЄ», a delta on an older snapshot)
+  for (const [id, n] of nodes) if (isJunk(n)) nodes.delete(id);
+  for (const [k, e] of edges) if (!nodes.has(e.source) || !nodes.has(e.target)) edges.delete(k);
   const srcSet = [...new Set([...(base?.sources || []), ...R.msgs.map((x) => x.s)])].sort();
   return { nodes: [...nodes.values()], edges: [...edges.values()], sources: srcSet, generated: new Date().toISOString().slice(0, 10) };
 }
@@ -350,6 +357,8 @@ export function getGraph(fresh = false, q = sql) {  // q: query function (tests 
   return pending[i];
 }
 export function index(g, origin = "neon") {
+  // snapshots built before the junk sweep in assemble() still carry placeholder nodes
+  if (g.nodes.some(isJunk)) { const nodes = g.nodes.filter((n) => !isJunk(n)), keep = new Set(nodes.map((n) => n.id)); g = { ...g, nodes, edges: g.edges.filter((e) => keep.has(e.source) && keep.has(e.target)) }; }
   const byId = new Map(g.nodes.map((n) => [n.id, n])), adj = new Map();
   for (const e of g.edges) for (const x of [e.source, e.target]) (adj.get(x) || adj.set(x, []).get(x)).push(e);
   for (const n of g.nodes) n.deg = (adj.get(n.id) || []).length;
@@ -359,8 +368,11 @@ const wire = (e) => (e.msgs.length > 5 ? { ...e, msgs: e.msgs.slice(0, 5), nmsgs
 const lite = ({ text, summary, ...n }) => (summary ? { ...n, summary: summary.slice(0, 160) } : n);
 
 // overview: the n most connected non-post nodes and the edges between them
+// (placeholders dropped, and nodes with no edge to another candidate: otherwise half the first screen is unconnected dots)
 export function overview(g, n = 300) {
-  const top = g.nodes.filter((x) => x.type !== "post").sort((a, b) => b.deg - a.deg).slice(0, n), ids = new Set(top.map((x) => x.id)), edges = [];
+  const cand = g.nodes.filter((x) => x.type !== "post" && !isJunk(x)).sort((a, b) => b.deg - a.deg).slice(0, n * 2), cids = new Set(cand.map((x) => x.id)), linked = new Set();
+  for (const x of cand) for (const e of g.adj.get(x.id) || []) if (e.source === x.id && cids.has(e.target)) { linked.add(e.source); linked.add(e.target); }
+  const top = cand.filter((x) => linked.has(x.id)).slice(0, n), ids = new Set(top.map((x) => x.id)), edges = [];
   for (const x of top) for (const e of g.adj.get(x.id) || []) if (e.source === x.id && ids.has(e.target)) edges.push(wire(e));
   return { nodes: top.map(lite), edges: edges.slice(0, 4000), sources: g.sources, generated: g.generated, total: { nodes: g.nodes.length, edges: g.edges.length } };
 }

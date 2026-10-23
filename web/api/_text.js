@@ -68,9 +68,12 @@ export function stem(w) {
 }
 
 // Words worth searching for: stop words and 1-2 letter tokens dropped, stems kept (digits and case numbers intact)
+// -ов/-ев/-ів/-їв are mostly surname suffixes in a query, not endings: «Андреев» -> «андре» matched every «Андрей» (wordRe's
+// alternating vowel already covers Андреєв / Андреева / Харкова)
+const keepSurname = (w) => (/^[^\d]{3,}(ов|ев|єв|ів|їв)$/i.test(w) ? w.toLowerCase() : stem(w));
 export function queryWords(q) {
   return norm(q).replace(/[«»"“”„()?!,.:;]+/g, " ").split(" ")
-    .filter((w) => w && !isStop(w) && (w.length >= 3 || /^\d+$/.test(w))).map(stem).filter(Boolean);
+    .filter((w) => w && !isStop(w) && (w.length >= 3 || /^\d+$/.test(w))).map(keepSurname).filter(Boolean);
 }
 
 // Postgres ARE (no backslashes, no locale dependence): a word starting with `w` in any case and in Russian or Ukrainian

@@ -32,6 +32,7 @@ export function detect(q) {
   if (/^https?:\/\//i.test(q)) return "url";
   if (/^\d{1,4}\/\d*(?:\/[\w/-]*)?$/.test(q)) return "case";
   if (/^\d{8}$|^\d{10}$/.test(q)) return "code";
+  if (/^\d{17}$/.test(q)) return "erdr";
   return "all";
 }
 
@@ -119,7 +120,7 @@ const SCOPE = {
   all: ["graph", "registry", "wanted", "courts", "mentions", "places", "channels"],
   person: ["graph", "registry", "wanted", "courts", "mentions"], org: ["graph", "registry", "courts", "mentions"], fop: ["graph", "registry", "mentions"],
   code: ["graph", "registry", "mentions"], case: ["courts", "graph", "mentions"], place: ["places", "registry", "mentions"],
-  channel: ["channels", "mentions"], post: ["mentions"],
+  channel: ["channels", "mentions"], post: ["mentions"], erdr: ["graph", "courts", "mentions"],
 };
 const ADDRESS = /(^|\s)(вул\.?|вулиця|просп\.?|проспект|пров\.?|провулок|бульв\.?|бульвар|площа|пл\.|ул\.|улица|шосе|набережна)(\s|$)|\d+\s*(кв|оф)\.?\s*\d/i;
 const rank = (a, b) => a.tier - b.tier || (b.sim || 0) - (a.sim || 0) || (b.n || 0) - (a.n || 0);
@@ -140,7 +141,27 @@ export function personMatch(query, name) {
   return { ok, partial: ok && b.length < a.length };
 }
 
+// a 17-digit ЄРДР number: the proceeding node itself first (erdr:<n>, built from decisions that cite it and ARMA), then the
+// court cases whose decisions carry it (GIN indexes on court_decisions.erdr / arma_assets.erdr, migrations 024–025)
+const erdrSeen = new Map();
+function erdrLookup(n) {
+  if (erdrSeen.size > 200) erdrSeen.clear();
+  if (!erdrSeen.has(n)) erdrSeen.set(n, Promise.all([
+    query(`SELECT cause_num, count(*)::int n, min(adjudication_date)::text d0, max(adjudication_date)::text d1 FROM court_decisions WHERE erdr @> ARRAY[$1]::text[] GROUP BY 1 ORDER BY 2 DESC LIMIT 12`, [n]).catch(() => []),
+    query(`SELECT count(*)::int n FROM arma_assets WHERE erdr @> ARRAY[$1]::text[]`, [n]).then((r) => r[0]?.n || 0).catch(() => 0),
+  ]).then(([cases, arma]) => ({ cases, arma })).catch((e) => { erdrSeen.delete(n); throw e; }));
+  return erdrSeen.get(n);
+}
+async function erdrItems(q) {
+  const n = norm(q), g = peekGraph(), have = g?.byId?.get("erdr:" + n), { cases, arma } = await erdrLookup(n);
+  if (!have && !cases.length && !arma) return [];
+  const dec = cases.reduce((a, c) => a + c.n, 0);
+  return [{ id: "erdr:" + n, type: "case", label: "Провадження ЄРДР " + n, tier: 0, exact: true, in_graph: !!have || undefined,
+    sub: [dec ? `${dec} рішень у ${cases.length} справах` : "", arma ? `активів в АРМА: ${arma}` : "", have ? `зв'язків у графі: ${have.deg}` : ""].filter(Boolean).join(" · ") }];
+}
+
 async function graphGroup(q, kind, C) {
+  if (kind === "erdr") return { items: await erdrItems(q) };
   const S = (v) => sources(v, C);
   const variants = /^(all|person|org|fop)$/.test(kind) ? ukVariants(q) : [q];
   const jobs = [];
@@ -207,6 +228,8 @@ const ROLE = { founder: "засновник", beneficiary: "бенефіціар
 
 // case numbers (exact / prefix), judges by name, decision texts (trigram index) that contain the words
 async function courtsGroup(q, kind, C) {
+  if (kind === "erdr") return { items: (await erdrLookup(norm(q))).cases.map((r) => ({ id: "case:" + r.cause_num.toLowerCase(), type: "case", label: "Справа " + r.cause_num,
+    cause_num: r.cause_num, n: r.n, sub: `${r.n} рішень · ${r.d0 || "?"}…${r.d1 || "?"} · провадження ${norm(q)}`, tier: 1 })) };
   const isCase = /^\d{1,4}\/\d*/.test(q);
   const [cases, judges, texts] = await Promise.all([
     isCase ? sources(q, C).cases().catch(() => []) : [],
@@ -246,6 +269,8 @@ async function placesGroup(q, C) {
 
 async function mentionsGroup(q) {
   const [posts, web] = await Promise.all([postMentions(q, { limit: 5, ms: 2400 }), soft(webFound(q), 2000).catch(() => ({ items: [] }))]);
+  // several words: only posts that carry all of them (as the graph's expand does); the first word alone is a namesake flood
+  if ((posts.words || []).length > 1) { posts.items = (posts.items || []).filter((p) => p.all_words); posts.total = posts.all || 0; posts.capped = posts.capped && posts.total >= 1000; }
   const topic = posts.total ? { id: "topic:" + norm(q).toLowerCase(), type: "topic", label: norm(q), sub: `згадок у постах: ${posts.total}${posts.capped ? "+" : ""}`, tier: 3, n: posts.total } : null;
   return { items: posts.items.map((p) => ({ ...p, type: "post", label: p.snippet, sub: `${p.src} · ${p.date}`, tier: 3 })), count: posts.total, capped: posts.capped,
     words: posts.words, topic, web: web.items, note: posts.skipped };

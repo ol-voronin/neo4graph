@@ -144,8 +144,8 @@ export async function expand(id, label = "", { judge = false } = {}) {
     isTopic || kind === "article" ? { items: [] } : soft(decisionTexts(textQ, { limit: 8 }), 3000, { items: [] }),
     kind === "article" || kind === "wanted" ? { items: [] } : soft(webFound(label || name), 2000, { items: [] }),
   ]);
-  // a named object: only posts that carry every word of the name (surname + first name; «Рошен-Чернігів»), not the surname alone
-  if (!isTopic && (posts.words || []).length > 1) { posts.items = (posts.items || []).filter((p) => p.all_words); posts.total = posts.all || posts.items.length; }
+  // a named object or a topic: only posts that carry every word of the name (surname + first name; «Рошен-Чернігів»), not the surname alone
+  if ((posts.words || []).length > 1) { posts.items = (posts.items || []).filter((p) => p.all_words); posts.total = posts.all || posts.items.length; }
   const ev = {};
   for (const p of posts.items || []) {
     const pid = node({ id: p.id, type: "post", label: (p.snippet || "").slice(0, 70) + "…", src: p.source, date: p.date, url: p.url, text: p.snippet });

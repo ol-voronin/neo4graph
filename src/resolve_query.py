@@ -87,6 +87,7 @@ def expand(cur, conn, q, kind, log, py):
         targets += [("person", r[0]) for r in cur.fetchall()]
         cur.execute("SELECT DISTINCT name FROM ee_orgs o JOIN messages m ON m.id = o.message_id WHERE m.source_id = 'edrsr:court' AND m.text LIKE %s AND o.kind = 'company'", ("Справа " + q + "%",))
         targets += [("org", r[0]) for r in cur.fetchall()]
+    conn.commit()  # before the hop-2 steps: the connection is not used again, it may be dropped while they run
     seen = set()
     targets = [t for t in targets if not re.match(r"^(ОСОБА|НОМЕР|АДРЕСА|ІНФОРМАЦІЯ)_\d+", t[1] or "") and not (t in seen or seen.add(t))][:12]
     print(f"\n== hop 2: {len(targets)} linked objects: {targets}")
@@ -97,7 +98,6 @@ def expand(cur, conn, q, kind, log, py):
         if k == "org":
             run([py, "src/edr_match.py", "--download", "--names", t], log, f"hop2 ЄДР: {t}")
             run([py, "src/spending.py", "--from-db", "--query", t, "--quarters", "4"], log, f"hop2 spending.gov.ua: {t}")
-    conn.commit()
 
 
 def main():
@@ -112,10 +112,8 @@ def main():
     kind = a.kind or classify(q)
     print(f"query: {q!r} -> {kind}")
     from load_to_db import connect
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS query_log (id bigserial PRIMARY KEY, query text, kind text, steps jsonb, created_at timestamptz DEFAULT now())")
-    conn.commit()
+    with connect() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS query_log (id bigserial PRIMARY KEY, query text, kind text, steps jsonb, created_at timestamptz DEFAULT now())")
     log = []
     py = sys.executable
     if kind == "case":
@@ -140,10 +138,17 @@ def main():
     else:
         run([py, "src/corpus_mentions.py", q], log, "corpus: full-text search")
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
+    # the steps run for up to half an hour; a connection held across them is dropped by the Neon pooler and the final
+    # COMMIT fails ("received 2 results"), which marked whole chains failed after all their steps had written. Fresh ones.
     if a.hops >= 1:
-        expand(cur, conn, q, kind, log, py)
-    cur.execute("INSERT INTO query_log(query, kind, steps) VALUES (%s,%s,%s)", (q, kind, json.dumps(log, ensure_ascii=False)))
-    conn.commit()
+        conn = connect()  # not `with`: its exit commits, after the hop-2 steps the connection may be gone
+        expand(conn.cursor(), conn, q, kind, log, py)
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+    with connect() as conn:
+        conn.execute("INSERT INTO query_log(query, kind, steps) VALUES (%s,%s,%s)", (q, kind, json.dumps(log, ensure_ascii=False)))
     print("\nsummary:", json.dumps([{k: s[k] for k in ("step", "rc", "secs")} for s in log], ensure_ascii=False, indent=1))
 
 

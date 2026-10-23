@@ -17,13 +17,21 @@ def main():
     cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS query_queue (id bigserial PRIMARY KEY, query text NOT NULL, kind text, status text NOT NULL DEFAULT 'queued', "
                 "created_at timestamptz DEFAULT now(), started_at timestamptz, finished_at timestamptz, note text)")
+    # a job killed by its timeout leaves its item 'running' forever: give those back after 3 h (once; then failed)
+    cur.execute("UPDATE query_queue SET status = CASE WHEN note LIKE 'requeued:%%' THEN 'failed' ELSE 'queued' END, "
+                "note = 'requeued: the run that took it did not finish' WHERE status = 'running' AND started_at < now() - interval '3 hours'")
     conn.commit()
-    cur.execute("SELECT id, query, kind FROM query_queue WHERE status='queued' ORDER BY created_at LIMIT %s", (a.max,))
-    items = cur.fetchall()
-    print(f"queued: {len(items)}")
-    for qid, query, kind in items:
-        cur.execute("UPDATE query_queue SET status='running', started_at=now() WHERE id=%s", (qid,))
+    items = []
+    for _ in range(a.max):
+        # claim one item atomically: queue.yml and the live loop (live.yml) may drain at the same time
+        cur.execute("UPDATE query_queue SET status='running', started_at=now() WHERE id = (SELECT id FROM query_queue WHERE status='queued' "
+                    "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, query, kind")
+        row = cur.fetchone()
         conn.commit()
+        if not row:
+            break
+        items.append(row)
+        qid, query, kind = row
         yr = "20" + query.split("/")[2][:2] if kind == "case" and query.count("/") == 2 else "2021"
         if kind == "category_index":  # "2025|земел" or "2025|земел|Вирок"
             parts = query.split("|")
@@ -48,6 +56,7 @@ def main():
             cur = conn.cursor()
         cur.execute("UPDATE query_queue SET status=%s, finished_at=now(), note=%s WHERE id=%s", ("done" if r.returncode == 0 else "failed", tail[-600:], qid))
         conn.commit()
+    print(f"queued: {len(items)}")  # queue.yml greps this to refresh the graph snapshot
     if items:
         from load_to_db import refresh_search_names
         refresh_search_names(conn)
