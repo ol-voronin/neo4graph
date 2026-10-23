@@ -18,7 +18,7 @@ function json(res, status, body) {
   res.setHeader("Cache-Control", status === 200 ? "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400" : "no-store");
   res.end(JSON.stringify(body));
 }
-const SRC = { edr: "ЄДР (data.gov.ua)", prozorro: "ProZorro", erb: "Єдиний реєстр боржників" };
+const SRC = { edr: "ЄДР (data.gov.ua)", prozorro: "ProZorro", erb: "Єдиний реєстр боржників", erau: "Єдиний реєстр адвокатів (НААУ)" };
 
 export function card(r, m) {
   const sources = (r.src || "").split(",").filter(Boolean).map((s) => SRC[s] || s);

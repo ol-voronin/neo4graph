@@ -197,7 +197,9 @@ async function registryGroup(q, kind) {
     const c = card(r, m);
     const person = c.id?.startsWith("person:");
     return { id: c.id, type: person ? "person" : "registry", label: c.name, lake: true, in_graph: !!g?.byId?.has(c.id),
-      sub: [c.kind === "fop" ? "ФОП" : "", c.code_type && c.code ? `${c.code_type === "edrpou" ? "ЄДРПОУ" : "РНОКПП"} ${c.code}` : "", c.stan, c.region, c.contracts ? `ProZorro: ${c.contracts.won}/${c.contracts.placed}` : ""].filter(Boolean).join(" · "),
+      sub: [c.kind === "fop" ? "ФОП" : "", c.kind === "lawyer" ? c.full_name || "" : "",
+        c.code_type && c.code ? (c.code_type === "cert" ? `свідоцтво № ${c.code}` : `${c.code_type === "edrpou" ? "ЄДРПОУ" : "РНОКПП"} ${c.code}`) : "",
+        c.stan, c.locality || c.region, c.contracts ? `ProZorro: ${c.contracts.won}/${c.contracts.placed}` : ""].filter(Boolean).join(" · "),
       tier: 2, ...extra };
   };
   if (kind === "code" || /^\d{8}$|^\d{10}$/.test(digits)) {

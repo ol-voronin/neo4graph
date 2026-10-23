@@ -13,6 +13,8 @@ Tables (all have `name_key` = upper-case, single-spaced, ё/ї/і-normalised nam
   uo    — ЄДР юридичні особи: edrpou, name, short_name, opf, stan, founders[], beneficiaries[], signers[], capital, registration
   erb   — Єдиний реєстр боржників: name, birth_date, code, publisher, executor, vp, category
   people_roles — exploded: every founder/beneficiary/signer of `uo` as (name_key, edrpou, role) — company → people and back
+  lawyers — Єдиний реєстр адвокатів України (НААУ via data.gov.ua, quarterly): name, council, certificate, status
+            (діє / зупинено / припинено), disciplinary sanctions, city, organisational form. No contacts or street addresses
   pz_contracts — ProZorro contracts x suppliers (src/lake_prozorro.py, incremental): the only open source with a ФОП's РНОКПП
 Search index for the site (`build --only index`, read by web/api/registry.js over HTTP range requests, see docs/registries.md):
   registry_names / registry_ids / registry_addr .parquet + registry_manifest.json
@@ -162,6 +164,71 @@ def build_uo(zpath):
     return n
 
 
+LAWYERS_DATASET = "e1af20b8-c80b-4f2c-bf82-566567ef936e"  # «Єдиний реєстр адвокатів» on data.gov.ua (the file name changes each quarter)
+
+
+def download_lawyers(max_age_h=24 * 7):
+    """The newest JSON resource of the dataset (CKAN package_show), ~230 MB."""
+    p = LAKE / "raw" / "lawyers.json"
+    if p.exists() and time.time() - p.stat().st_mtime < max_age_h * 3600:
+        return p
+    meta = json.loads(urllib.request.urlopen(urllib.request.Request(
+        f"https://data.gov.ua/api/3/action/package_show?id={LAWYERS_DATASET}", headers={"User-Agent": UA}), timeout=60).read())
+    res = [r for r in meta["result"]["resources"] if (r.get("format") or "").upper() == "JSON"]
+    url = max(res, key=lambda r: r.get("last_modified") or r.get("created") or "")["url"]
+    p.parent.mkdir(parents=True, exist_ok=True)
+    print(f"[lawyers] downloading {url.rsplit('/', 1)[-1]} …", flush=True)
+    tmp = p.with_suffix(".part")
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=900) as r, open(tmp, "wb") as f:
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+    tmp.replace(p)
+    return p
+
+
+def lawyer_status(flag, events):
+    """The register's `status` is TRUE when the right to practise is restricted; the last event says how.
+    >>> lawyer_status("FALSE", []), lawyer_status("TRUE", ["Право ... зупинено згідно п.1 ч.1 ст.31"]), lawyer_status("TRUE", ["... припинено ..."])
+    ('діє', 'зупинено', 'припинено')
+    """
+    if flag != "TRUE":
+        return "діє"
+    last = str(events[-1]).lower() if events else ""
+    return "припинено" if "припинено" in last else "зупинено" if "зупинено" in last else "обмежено"
+
+
+def build_lawyers(path):
+    import pyarrow as pa
+    schema = pa.schema([("erau_id", pa.string()), ("name", pa.string()), ("name_key", pa.string()), ("council", pa.string()),
+                        ("certificate", pa.string()), ("certificate_date", pa.string()), ("decision_date", pa.string()),
+                        ("authority", pa.string()), ("status", pa.string()), ("status_note", pa.string()), ("sanctions", pa.int32()),
+                        ("region", pa.string()), ("city", pa.string()), ("org_type", pa.string()), ("org_name", pa.string())])
+    out, w = _writer("lawyers", schema)
+    rows = []
+    for x in json.loads(Path(path).read_text(encoding="utf-8")):
+        name = " ".join(t for t in (x.get("familyName"), x.get("name"), x.get("additionalName")) if t).strip()
+        if not name:
+            continue
+        ev = x.get("statusDescription") or []
+        addr = (x.get("workAddress") or [{}])[0] or {}
+        # one row per organisational form (individual practice, bureau, association): the link to ЄДР goes through org_name
+        forms = [f for f in (x.get("orgforms") or []) if f] or [{}]
+        for f in forms:
+            org = (f.get("orgFormName") or "").strip()
+            rows.append({"erau_id": str(x.get("ID")), "name": name, "name_key": name_key(name), "council": x.get("raName"),
+                         "certificate": x.get("certificateNum"), "certificate_date": x.get("certificateDate"), "decision_date": x.get("decisionDate"),
+                         "authority": x.get("authorityName"), "status": lawyer_status(x.get("status"), ev),
+                         "status_note": str(ev[-1]).strip()[:300] if ev else None,
+                         "sanctions": sum("стягнення" in str(e).lower() for e in ev), "region": addr.get("workAddressRegion"),
+                         "city": addr.get("workAddressCity"), "org_type": f.get("orgFormType"),
+                         "org_name": org if org and f.get("orgFormType") != "Індивідуальна адвокатська діяльність" else None})
+    n = len(rows)  # _flush empties the list
+    _flush(w, schema, rows)
+    w.close()
+    out.replace(LAKE / "lawyers.parquet")
+    return n
+
+
 def build_erb(zpath):
     import pyarrow as pa
     schema = pa.schema([("name", pa.string()), ("name_key", pa.string()), ("birth_date", pa.string()), ("code", pa.string()),
@@ -235,6 +302,8 @@ def find(q, limit=50):
         out["fop"] = con.execute("SELECT * FROM fop WHERE name_key LIKE ? LIMIT ?", [like, limit]).fetchdf()
     if "erb" in tables:
         out["erb"] = con.execute("SELECT * FROM erb WHERE name_key LIKE ? LIMIT ?", [like, limit]).fetchdf()
+    if "lawyers" in tables:
+        out["lawyers"] = con.execute("SELECT * FROM lawyers WHERE name_key LIKE ? LIMIT ?", [like, limit]).fetchdf()
     if "people_roles" in tables:
         out["roles"] = con.execute("SELECT r.name, r.role, r.edrpou, u.short_name, u.stan FROM people_roles r LEFT JOIN uo u USING (edrpou) "
                                    "WHERE r.name_key LIKE ? LIMIT ?", [like, limit]).fetchdf()
@@ -312,7 +381,7 @@ def build_index():
     """
     import duckdb
     import pyarrow.parquet as pq
-    for t in ("uo", "fop", "erb", "pz_contracts"):
+    for t in ("uo", "fop", "erb", "pz_contracts", "lawyers"):
         if not (LAKE / f"{t}.parquet").exists():
             fetch_release(f"{t}.parquet")
     have = {p.stem for p in LAKE.glob("*.parquet")}
@@ -325,7 +394,7 @@ def build_index():
                     '[''’ʼ`´‘]', '', 'g'), '[^0-9A-ZА-ЯЄІЇҐ]+', ' ', 'g'))""")
     con.execute(f"CREATE MACRO ckey(k) AS coalesce(nullif(trim(regexp_replace(k || ' ', '^(?:(?:{'|'.join(FORMS)}) )+', '')), ''), k)")
     con.execute("""CREATE MACRO pname(s) AS trim(regexp_replace(regexp_replace(s, '^\\s*(ФОП|ФО-П|ФІЗИЧНА ОСОБА[- ]ПІДПРИЄМЕЦЬ)[\\s"«]+', '', 'i'), '["«»]', '', 'g'))""")
-    for t in ("uo", "fop", "erb", "pz_contracts"):
+    for t in ("uo", "fop", "erb", "pz_contracts", "lawyers"):
         if t in have:
             con.execute(f"CREATE VIEW {t} AS SELECT * FROM read_parquet('{LAKE / t}.parquet')")
     # ProZorro parties: one row per code with the latest name/address and the number of contracts won and placed
@@ -366,6 +435,12 @@ def build_index():
                name, code, code_type, NULL, NULL, region, locality,
                concat_ws(', ', nullif(postal, ''), nullif(region, ''), nullif(locality, ''), nullif(street, '')), n_won, n_bought, 0, 'prozorro', NULL
         FROM pz WHERE code NOT IN (SELECT edrpou FROM uo)""")
+    # lawyers (ЄРАУ): a person node per lawyer; stan carries the right-to-practise status, code the certificate number,
+    # full_name the bureau / association. Not in registry_ids (a certificate is not a tax code)
+    if "lawyers" in have:
+        con.execute("""INSERT INTO ent SELECT DISTINCT ON (erau_id) 'person:' || lower(regexp_replace(trim(name), '\\s+', ' ', 'g')), 'lawyer', name,
+                         org_name, certificate, 'cert', 'адвокат: ' || status, certificate_date, region, city, NULL, 0, 0, 0, 'erau', NULL
+                       FROM lawyers ORDER BY erau_id, org_name IS NULL""")
     cols = "id, kind, name, full_name, code, code_type, stan, since, region, locality, address, n_won, n_bought, debts, src"
     order = "stan IS DISTINCT FROM 'зареєстровано', n_won + n_bought DESC, id"  # active first inside one key, then public-money ties
     queries = {
@@ -374,7 +449,7 @@ def build_index():
                        UNION ALL SELECT ckey(skey(full_name)), * FROM ent WHERE kind = 'org' AND full_name IS NOT NULL
                        UNION ALL SELECT ckey(regexp_replace(skey(full_name), '^' || skey(opf) || ' ', '')), * FROM ent WHERE opf <> '')
                      WHERE key <> '' ORDER BY key, {order}""",
-        "ids": f"SELECT {cols} FROM ent WHERE code IS NOT NULL ORDER BY code, {order}",
+        "ids": f"SELECT {cols} FROM ent WHERE code IS NOT NULL AND code_type <> 'cert' ORDER BY code, {order}",
         "addr": f"""SELECT DISTINCT ON (token, id) token, {cols} FROM (
                       SELECT unnest(string_split(skey(concat_ws(' ', locality, address)), ' ')) AS token, * FROM ent WHERE address <> '' OR locality <> '')
                     WHERE length(token) >= 3 AND NOT regexp_full_match(token, '\\d+') AND token NOT IN ({', '.join(f"'{w}'" for w in STOP)})
@@ -386,8 +461,20 @@ def build_index():
         con.execute(f"CREATE VIEW people_roles AS SELECT * FROM read_parquet('{LAKE / 'people_roles'}.parquet')")
         queries["people"] = """SELECT edrpou AS code, role, name, left(detail, 200) AS detail FROM people_roles
                                WHERE regexp_full_match(edrpou, '\\d{8}') ORDER BY code, role, name"""
-        queries["roles"] = """SELECT skey(r.name) AS key, r.name, r.role, r.edrpou AS code, e.name AS org, e.stan
-                              FROM people_roles r LEFT JOIN ent e ON e.id = 'registry:' || r.edrpou
+        lawyer_roles = ""
+        if "lawyers" in have:
+            # a lawyer's bureau / association matched to its ЄДР record by the name (the register has no ЄДРПОУ)
+            con.execute("""CREATE TABLE lorg AS SELECT ckey(skey(name)) AS k, any_value(edrpou) AS edrpou FROM uo
+                           WHERE regexp_full_match(edrpou, '\\d{8}') AND (upper(name) LIKE '%АДВОКАТ%' OR upper(coalesce(opf, '')) LIKE '%АДВОКАТ%')
+                           GROUP BY 1 HAVING count(DISTINCT edrpou) = 1""")
+            con.execute("""CREATE TABLE lroles AS SELECT DISTINCT l.name, CASE l.org_type WHEN 'Адвокатське бюро' THEN 'адвокат бюро' ELSE 'адвокат об''єднання' END AS role,
+                             o.edrpou FROM lawyers l JOIN lorg o ON o.k = ckey(skey(l.org_name)) WHERE l.org_name IS NOT NULL""")
+            lawyer_roles = " UNION ALL SELECT name, role, edrpou FROM lroles"
+            queries["people"] = f"""SELECT code, role, name, detail FROM (
+                                      SELECT edrpou AS code, role, name, left(detail, 200) AS detail FROM people_roles WHERE regexp_full_match(edrpou, '\\d{{8}}')
+                                      UNION ALL SELECT edrpou, role, name, NULL FROM lroles) ORDER BY code, role, name"""
+        queries["roles"] = f"""SELECT skey(r.name) AS key, r.name, r.role, r.edrpou AS code, e.name AS org, e.stan
+                              FROM (SELECT name, role, edrpou FROM people_roles{lawyer_roles}) r LEFT JOIN ent e ON e.id = 'registry:' || r.edrpou
                               WHERE skey(r.name) <> '' ORDER BY key, e.stan IS DISTINCT FROM 'зареєстровано', code"""
     # versioned names: a reader holding the previous manifest keeps reading the previous files while new ones upload
     stamp = time.strftime("%Y%m%d%H%M")
@@ -440,7 +527,7 @@ def main():
             if kind == "index":
                 print(f"[index] {build_index():,} rows in {time.time() - t0:.0f}s", flush=True)
                 continue
-            n = {"fop": build_fop, "uo": build_uo, "erb": build_erb}[kind](download(kind))
+            n = build_lawyers(download_lawyers()) if kind == "lawyers" else {"fop": build_fop, "uo": build_uo, "erb": build_erb}[kind](download(kind))
             print(f"[{kind}] {n:,} rows → {kind}.parquet ({(LAKE / f'{kind}.parquet').stat().st_size / 1e6:.0f} MB) in {time.time() - t0:.0f}s", flush=True)
         import duckdb
         print("inbox:", build_inbox(duckdb.connect()))

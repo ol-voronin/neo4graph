@@ -195,3 +195,20 @@ Structured extraction script: `src/osint_ukraine.py` → `data/osint_sources.jso
 - **Військовий квиток**: `^[А-ЯІЇЄA-Z]{2}\d{6,8}$`
 - **Мобільні номери**: `^(?:\+?380|0)\d{9}$` (Kyivstar: 67/68/96/97/98, Vodafone: 50/66/95/99, Lifecell: 63/73/93)
 
+
+## Єдиний реєстр адвокатів України (ЄРАУ)
+
+Source: НААУ open data on data.gov.ua (dataset `e1af20b8-c80b-4f2c-bf82-566567ef936e`, JSON ~230 MB, quarterly; the file
+name changes each quarter, so `src/lake.py` takes the newest JSON resource from CKAN). Built nightly into
+`lawyers.parquet` (`lake.py build --only lawyers`): name, council, certificate number/date, status, last status event,
+number of disciplinary sanctions, work city / oblast, organisational form (individual practice, bureau, association).
+Contacts and street addresses are left out on purpose.
+
+- The register's `status` is TRUE when the right to practise is restricted; the last `statusDescription` event says
+  whether it is `зупинено` or `припинено`. On the 2026-07-06 file: 74 000 lawyers — 53 581 active, 17 856 suspended,
+  2 545 terminated, 122 with disciplinary sanctions.
+- Site search («Реєстри»): every lawyer as `person:<ПІБ>`, kind `lawyer`, with the bureau / association, certificate,
+  status and city. Certificates are not tax codes and are kept out of `registry_ids`.
+- Bureaus and associations carry no ЄДРПОУ in the register; they are matched to ЄДР legal entities by the normalised
+  name (only names / ОПФ containing «адвокат», only unambiguous matches): 7 597 lawyer → company links, shown in
+  `registry_roles` / `registry_people` as «адвокат бюро» / «адвокат об'єднання».
