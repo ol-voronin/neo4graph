@@ -108,7 +108,7 @@ async function overview(topic) {
   // scored counts (demands excluded, as in the levels): st / sf / sp
   const SC = `count(*) FILTER (WHERE status = 'true' AND stype = ANY($2))::int st, count(*) FILTER (WHERE status = 'false' AND stype = ANY($2))::int sf,
     count(*) FILTER (WHERE status = 'partial' AND stype = ANY($2))::int sp`;
-  const [totals, byTopic, matrix, stypes, months, refuted] = await Promise.all([
+  const [totals, byTopic, matrix, stypes, months, refuted, brief] = await Promise.all([
     query(`SELECT ${VERD}, ${SC} FROM statements_x WHERE ${T}`, [topic, SCORED]),
     query(`SELECT topic, ${VERD}, ${SC} FROM statements_x WHERE $1::text IS NOT NULL GROUP BY 1`, [topic, SCORED]),
     query(`SELECT country, topic, ${VERD}, ${SC} FROM statements_x WHERE ${T} GROUP BY 1, 2`, [topic, SCORED]),
@@ -117,13 +117,15 @@ async function overview(topic) {
       WHERE ${T} AND ts_published >= now() - interval '18 months' GROUP BY 1, 2 ORDER BY 1`, [topic]),
     query(`SELECT id, ts_published, actor_name, actor_id, country, topic, stype, quote, predicted_event, resolver_note, url, status
       FROM statements_x WHERE status IN ('false', 'partial') AND ${T} ORDER BY resolved_at DESC NULLS LAST LIMIT 15`, [topic]),
+    // topic context (migration 032, src/topic_briefs.py); 'promise' is a type, not a topic: no brief
+    soft(query(`SELECT topic, generated_at, days, body, stats, refs FROM topic_briefs WHERE topic = $1`, [topic]), 1500, []),
   ]);
   // prior for every cell: all statements pooled under a flat Beta(1,1), as at the top of hierarchy()
   const pool = byTopic.reduce((a, r) => ({ t: a.t + r.st, f: a.f + r.sf, p: a.p + r.sp }), { t: 0, f: 0, p: 0 });
   const m0 = score(pool, 0.5, 2).mean;
   const out = ({ st, sf, sp, ...r }) => ({ ...r, score: score({ t: st, f: sf, p: sp, u: r.u, q: r.q }, m0) });
   const { st, sf, sp, ...tot } = totals[0];
-  return { topic, min_n: MIN_N, totals: tot, topics: byTopic.map(out), matrix: matrix.map(out), stypes, monthly: months, recent_refuted: refuted };
+  return { topic, min_n: MIN_N, totals: tot, topics: byTopic.map(out), matrix: matrix.map(out), stypes, monthly: months, recent_refuted: refuted, brief: brief?.[0] || null };
 }
 
 // graph label / any spelling -> canonical actor with statements
