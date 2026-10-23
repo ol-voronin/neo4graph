@@ -1,6 +1,6 @@
 """Національна поліція open data from data.gov.ua (migration 021):
   wanted   — «Інформація про осіб, які переховуються від органів влади» (PersonsWanted.json, ~75 k records, daily): every
-             record into wanted_persons with first_seen / last_seen; records gone from the file get removed = today;
+             record into wanted_persons with first_seen / last_seen (last change); records gone from the file get removed = today;
              a per-day snapshot of totals into wanted_daily.
   missing  — «Інформація про осіб, зниклих безвісти» (BezvistiWanted.json): counts only (month, oblast, sex, age band)
              into missing_monthly; names and appearance are not stored.
@@ -130,7 +130,11 @@ def load_wanted(conn, data, dry):
         for r in rows:
             cp.write_row(r)
     sets = ", ".join(f"{c} = EXCLUDED.{c}" for c in COLS.split(", ")[1:])
-    cur.execute(f"INSERT INTO wanted_persons ({COLS}) SELECT {COLS} FROM w ON CONFLICT (id) DO UPDATE SET {sets}, last_seen = current_date, removed = NULL")
+    # only rows that changed (or came back) are rewritten: touching all ~75 k rows daily left half the table as dead space
+    # (107 MB heap for 51 MB of rows). last_seen is therefore the last day a record changed; the snapshot date is wanted_daily.
+    cols = COLS.split(", ")[1:]
+    changed = f"({', '.join('wanted_persons.' + c for c in cols)}) IS DISTINCT FROM ({', '.join('EXCLUDED.' + c for c in cols)}) OR wanted_persons.removed IS NOT NULL"
+    cur.execute(f"INSERT INTO wanted_persons ({COLS}) SELECT {COLS} FROM w ON CONFLICT (id) DO UPDATE SET {sets}, last_seen = current_date, removed = NULL WHERE {changed}")
     cur.execute("UPDATE wanted_persons SET removed = current_date WHERE removed IS NULL AND NOT EXISTS (SELECT 1 FROM w WHERE w.id = wanted_persons.id)")
     gone = cur.rowcount
     cur.execute("""INSERT INTO wanted_daily (date, art_group, region, active, added, removed)

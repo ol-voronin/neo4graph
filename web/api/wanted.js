@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       query(`SELECT month::text AS month, sex, age_band, sum(n)::int n FROM missing_monthly WHERE snapshot = (SELECT max(snapshot) FROM missing_monthly)
              AND month >= '2021-01-01' GROUP BY 1, 2, 3 ORDER BY 1`),
       query(`SELECT region, sum(n)::int n FROM missing_monthly WHERE snapshot = (SELECT max(snapshot) FROM missing_monthly) AND month >= '2022-02-01' GROUP BY 1 ORDER BY 2 DESC`),
-      query(`SELECT count(*)::int total, count(*) FILTER (WHERE removed IS NULL)::int active, min(first_seen)::text since, max(last_seen)::text updated,
+      query(`SELECT count(*)::int total, count(*) FILTER (WHERE removed IS NULL)::int active, min(first_seen)::text since, (SELECT max(date)::text FROM wanted_daily) updated,
              (SELECT max(snapshot)::text FROM missing_monthly) missing_snapshot FROM wanted_persons`),
     ]);
     return json(res, 200, { meta: meta[0], groups, agencies, regions, flow, daily, missing, missing_regions: missingRegions });

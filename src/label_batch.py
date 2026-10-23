@@ -151,8 +151,10 @@ def write_bulk(cur, rows, model):
     cur.execute("UPDATE messages m SET event_kind=lb.event_kind, threat_level=lb.threat_level, novelty=lb.novelty, target_mentioned=lb.target_mentioned, "
                 "timeframe_mentioned=lb.timeframe_mentioned, is_scheduled_context=lb.is_scheduled_context, tone_amplification=lb.tone_amplification, "
                 "llm_confidence=lb.llm_confidence, narrative_id=lb.nid, prompt_version=%s, labeled_at=now() FROM lb WHERE m.id = lb.id", (pv,))
-    cur.execute("INSERT INTO message_labels(message_id, prompt_version, model, raw) SELECT id, %s, %s, raw FROM lb "
-                "ON CONFLICT (message_id) DO UPDATE SET raw=EXCLUDED.raw, model=EXCLUDED.model, prompt_version=EXCLUDED.prompt_version, labeled_at=now()",
+    cur.execute("INSERT INTO message_labels(message_id, prompt_version, model, raw, topics) SELECT id, %s, %s, raw, "
+                "CASE WHEN jsonb_typeof(raw->'topics') = 'array' THEN raw->'topics' END FROM lb "
+                "ON CONFLICT (message_id) DO UPDATE SET raw=EXCLUDED.raw, topics=EXCLUDED.topics, model=EXCLUDED.model, "
+                "prompt_version=EXCLUDED.prompt_version, labeled_at=now(), archived_at=NULL",
                 (pv, model))
 
 
