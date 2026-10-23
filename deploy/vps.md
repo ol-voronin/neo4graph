@@ -17,6 +17,7 @@ Why: a Ukrainian IP for the registry worker (the cloud cannot reach reyestr.cour
 | `neo4graph-collect.timer` → `.service` | `scripts/collect_once.sh`: Telegram, RSS, Air Force / oblast summaries → Neon | 10 min after the previous pass ends (~20 min cycle) |
 | `neo4graph-live.timer` → `.service` | `src/nowcast.py live` + `src/explosions.py build` | :05 and :35 |
 | `neo4graph-update.timer` | `git pull --ff-only` + `pip install -r requirements.txt` | daily 04:20 |
+| `neo4graph-nightly.timer` → `.service` | `src/person_cases.py build`: lawyers named in decision texts → person_case_links (fresh lawyers.parquet from the lake release) | daily 05:10 |
 
 GitHub keeps what needs the repository secrets: the frozen daily forecast (nowcast.yml), the registry queue's cloud
 leg (queue.yml, started by the live.yml watcher whenever queries wait), lake, history backfills. collect.yml is manual only.
