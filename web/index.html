@@ -1118,17 +1118,26 @@ async function loadPG(){try{const PG=await (await fetch('/api/predictions')).jso
   const pairOf=r=>{const o=PM[r.model]?.vs||Object.keys(PM).find(k=>PM[k].vs===r.model);return o?rows.find(x=>x.model===o&&x.d===r.d&&x.region===r.region):null};
   const tipA2=r=>esc(pgTip(r,pairOf(r),PG));
   const cur=rows.filter(r=>r.d===last),reg={};cur.forEach(r=>{(reg[r.region]??={})[r.model===C?'c':'b']=r});
+  // live: the current estimate of the v3 candidate (recomputed every 30 min on the newest posts), shown for its own target day
+  const LV=(PG.live||[]).filter(r=>r.model==='ua_oblast_massive3_v1'),lvd=LV[0]?.d;LV.forEach(r=>{(reg[r.region]??={}).l={...r,live:1}});
+  const liveTip=r=>{const sr=(PG.live_series||{})[r.region]||[],ps=sr.map(x=>x[1]),fz=reg[r.region]?.c;
+    return esc(`<b>${pct1(r.p)}</b> — поточна оцінка, що в області «${esc(rn(r.region))}» ${esc(r.d)} буде масований удар. Перераховано ${esc(new Date(r.at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))} за постами останніх 24 годин; оновлюється кожні 30 хвилин.<br><br>`+
+      (ps.length>1?`За добу: від ${pct1(Math.min(...ps))} до ${pct1(Math.max(...ps))} (${ps.length} перерахунків).<br>`:'')+
+      (fz&&fz.d===r.d?`Зафіксований прогноз на цей день (о 15:00 напередодні, не змінюється): ${pct1(fz.p)}.<br>`:'')+
+      `<br>Це та сама модель v3, лише з вікном риторики, що закінчується зараз. Для перевірки гіпотези рахується тільки зафіксований прогноз.<br><br><span style="opacity:.8">Дослідження, не попередження про загрозу.</span>`)};
   document.getElementById('pgregh').textContent=last?`Масований удар по областях (≥7 ракет або ≥20 ударних дронів), ${last}`:'Масований удар по областях: прогнозів ще немає';
+  const H0=document.getElementById('pgregh').textContent;
   const regMap=async which=>{const G=UAMAP||(UAMAP=await (await fetch('/ua-oblasts.json')).json()),box=document.getElementById('pgregs');
+    document.getElementById('pgregh').textContent=which==='l'?`Масований удар по областях: поточна оцінка на ${lvd} (оновлюється кожні 30 хв)`:H0;
     const fill=p=>{const i=Math.max(0,Math.min(RAMP.length-1,Math.round(p*(RAMP.length-1))));return [RAMP[i],i>=6?'#fff':'#0b0b0b']};
     const shape=(k,g)=>{const v=reg[k],r=v&&v[which];if(!r)return g.d?`<path class="na" d="${g.d}"><title>${esc(rn(k)==k?'Крим':rn(k))}: прогнозу немає</title></path>`:'';
-      const [bg]=fill(r.p),attr=`class="o" fill="${bg}" tabindex="0" role="img" aria-label="${esc(rn(k))}: ${pct1(r.p)}" data-tip="${tipA2(r)}"`;
+      const [bg]=fill(r.p),attr=`class="o" fill="${bg}" tabindex="0" role="img" aria-label="${esc(rn(k))}: ${pct1(r.p)}" data-tip="${r.live?liveTip(r):tipA2(r)}"`;
       return g.circle?`<circle ${attr} cx="${g.circle[0]}" cy="${g.circle[1]}" r="${g.circle[2]+3}"/>`:`<path ${attr} d="${g.d}"/>`};
     const label=(k,g)=>{const r=reg[k]?.[which];if(!r)return'';const [,fg]=fill(r.p),[x,y]=k==='kyiv-city'?[g.c[0]+16,g.c[1]-10]:g.c;
       return k==='kyiv-city'?`<text class="halo" x="${x}" y="${y}">${pct1(r.p)}</text>`:`<text x="${x}" y="${y}" fill="${fg}">${pct1(r.p)}</text>`};
     const E=Object.entries(G.regions),order=E.filter(([k])=>k!=='kyiv-city').concat(E.filter(([k])=>k==='kyiv-city'));
     box.innerHTML=`<svg viewBox="${G.viewBox}" role="group" aria-label="Карта ймовірностей масованого удару по областях" style="color:var(--fg)">${order.map(([k,g])=>shape(k,g)).join('')}${order.map(([k,g])=>label(k,g)).join('')}</svg>
-      <div class="side2"><div role="group" aria-label="Модель" style="display:flex;gap:6px"><button type="button" class="chip" data-m="c" aria-pressed="${which==='c'}">з риторикою</button><button type="button" class="chip" data-m="b" aria-pressed="${which==='b'}">база</button></div>
+      <div class="side2"><div role="group" aria-label="Модель" style="display:flex;gap:6px"><button type="button" class="chip" data-m="c" aria-pressed="${which==='c'}">з риторикою</button><button type="button" class="chip" data-m="b" aria-pressed="${which==='b'}">база</button>${LV.length?`<button type="button" class="chip" data-m="l" aria-pressed="${which==='l'}">зараз · ${esc(lvd)}</button>`:''}</div>
       <div class="ramp">0%${RAMP.filter((_,i)=>i%2===0).map(c=>`<span style="background:${c}"></span>`).join('')}100%</div>
       <span>Колір і число — ймовірність масованого удару за добу. Наведіть або виберіть область клавішею Tab — пояснення, звідки число і як модель влучала досі.</span>
       <span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--line);margin-right:4px;vertical-align:-1px"></i>прогнозу немає</span>

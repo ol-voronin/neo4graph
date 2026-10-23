@@ -1,0 +1,47 @@
+name: live
+
+# Near-continuous collection + hourly current estimate. GitHub runs the 30-minute cron of collect.yml only every few hours,
+# so this job keeps one runner busy for ~5.8 h: every 30 min a collection pass (scripts/collect_once.sh) and the live
+# estimate (src/nowcast.py live -> live_estimates). Four starts a day keep it going; it shares the "collect" concurrency
+# group, so collect.yml waits while it runs instead of collecting twice. The frozen daily forecast (nowcast.yml) is unchanged.
+
+on:
+  schedule:
+    - cron: "3 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long to keep looping"
+        default: "345"
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install "psycopg[binary]" python-dotenv pandas numpy scikit-learn feedparser
+      - name: Loop
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MINUTES: ${{ github.event.inputs.minutes || '345' }}
+        run: |
+          end=$(( $(date +%s) + MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            start=$(date +%s)
+            echo "== pass $(date -u +%H:%M)"
+            bash scripts/collect_once.sh 2>&1 | tail -5
+            (cd src && python nowcast.py live 2>&1 | grep -v Warning | cut -c1-300) || echo "live estimate failed"
+            # next pass 30 min after this one started (a pass itself takes ~10 min)
+            left=$(( start + 1800 - $(date +%s) ))
+            [ "$left" -gt 0 ] && [ $(( $(date +%s) + left )) -lt "$end" ] && sleep "$left" || true
+            [ $(( $(date +%s) + 600 )) -ge "$end" ] && break
+          done

@@ -31,32 +31,11 @@ jobs:
           python-version: "3.12"
       - name: Install deps
         run: pip install "psycopg[binary]" python-dotenv
-      - name: Collect channels
-        run: python src/collect_telegram.py --all --pages "${{ github.event.inputs.pages || '3' }}" --delay 1.0
-      - name: Collect RSS sources (US official)
-        run: python src/collect_rss.py --all
-      - name: Collect Air Force summaries (waves)
-        run: |
-          python src/collect_telegram.py --channels kpszsu --query "ЗБИТО/ПОДАВЛЕНО" --tag _summaries --pages 3 --delay 1.0
-          python src/parse_kpszsu.py
-          python src/parse_kharkiv_daily.py
-      - name: Collect oblast administration summaries (oblast_daily ground truth)
-        # into data/ova (runner disk only): parsed into oblast_daily, never loaded into messages (keeps Neon small)
-        run: |
-          python src/collect_telegram.py --channels $(python src/oblasts.py --handles) --out-dir data/ova --pages 3 --delay 1.0
-          python src/parse_oblast_daily.py
-      - name: Load into Neon
+      - name: Collect and load (scripts/collect_once.sh, shared with live.yml)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -n "$DATABASE_URL" ]; then
-            python src/load_to_db.py messages
-            python src/load_to_db.py waves
-            python src/load_to_db.py kharkiv
-            python src/load_to_db.py oblast   # skips with a message until migration 015 is applied
-          else
-            echo "DATABASE_URL secret is not set: skipping DB load"
-          fi
+          PAGES: ${{ github.event.inputs.pages || '3' }}
+        run: bash scripts/collect_once.sh
       - name: Load air-raid alerts (manual runs with load_alerts=true)
         if: ${{ github.event.inputs.load_alerts == 'true' }}
         env:

@@ -20,15 +20,23 @@ export default async function handler(req, res) {
           .catch((e2) => (missing(e2) ? [] : Promise.reject(e2)));
         return old.map((r) => ({ ...r, region: r.model.startsWith("kh_") ? "kharkivska" : "ukraine" }));
       });
-    const [calib, coverage] = await Promise.all([
+    // live: the hourly current estimate (src/nowcast.py live, migration 029) for the newest target day — the latest value
+    // per model and region, plus the candidate's intraday series; not part of the prospective test
+    const [calib, coverage, live] = await Promise.all([
       sql`SELECT model, least(4, floor(p * 5))::int AS bin, count(*)::int n, sum(outcome)::int hits FROM predictions
           WHERE outcome IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2`.catch(() => []),
       sql`SELECT region_id AS region, count(*)::int days, count(*) FILTER (WHERE complete)::int complete,
             count(*) FILTER (WHERE missiles IS NOT NULL OR drones IS NOT NULL)::int known,
             count(*) FILTER (WHERE coalesce(missiles, 0) >= 7 OR coalesce(drones, 0) >= 20)::int massive
           FROM oblast_daily_gt WHERE date >= current_date - 260 GROUP BY 1`.catch(() => []),
+      sql`SELECT model, region_id AS region, target_date::text AS d, p, computed_at AS at, cutoff_hour FROM live_estimates
+          WHERE target_date = (SELECT max(target_date) FROM live_estimates) ORDER BY computed_at`.catch(() => []),
     ]);
-    return json(res, 200, { rows, calib, coverage });
+    const latest = new Map();
+    for (const r of live) latest.set(r.model + "|" + r.region, r);
+    const series = {};
+    for (const r of live) if (r.model === "ua_oblast_massive3_v1") (series[r.region] ??= []).push([r.at, r.p]);
+    return json(res, 200, { rows, calib, coverage, live: [...latest.values()], live_series: series });
   } catch (e) {
     return json(res, 500, { error: String(e.message || e) });
   }
