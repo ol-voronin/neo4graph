@@ -4,8 +4,7 @@ name: collect
 # Requires repository secret DATABASE_URL (Neon connection string). Without it the job only uploads an artifact.
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"
+  # collection runs on the VPS every ~20 min (systemd neo4graph-collect, deploy/vps.md); this stays for manual backfills
   workflow_dispatch:
     inputs:
       pages:
