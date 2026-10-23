@@ -41,7 +41,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EDRSR_YEARS: ${{ github.event.inputs.edrsr_years }}
           PROZORRO_MINUTES: ${{ github.event.inputs.prozorro_minutes || '60' }}
-        run: python src/lake.py build --only "${{ github.event.inputs.only || 'fop,uo,erb,edrsr,prozorro,index' }}"
+        run: python src/lake.py build --only "${{ github.event.inputs.only || 'fop,uo,erb,lawyers,edrsr,prozorro,index' }}"
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
