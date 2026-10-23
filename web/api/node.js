@@ -3,6 +3,7 @@ import { lookup } from "./_lake.js";
 import { peopleOf } from "./registry.js";
 import { expand } from "./_expand.js";
 import { postMentions, webFound } from "./_mentions.js";
+import { lawyerRows, lawyerList } from "./_lawyers.js";
 
 // GET /api/node?id=<graph node id>&q=<name to highlight>
 // GET /api/node?id=<id>&expand=1&label=<name>[&judge=1] -> an on-the-fly neighbourhood for an object not in the graph yet
@@ -146,29 +147,37 @@ export default async function handler(req, res) {
                                string_agg(DISTINCT court, ' · ') court_list FROM court_decisions WHERE lower(cause_num) = ${key}`)[0];
       const media = await sql`SELECT name_norm, role, position, quote, url, confidence FROM media_links WHERE lower(cause_num) = ${key} ORDER BY confidence DESC LIMIT 20`.catch(() => []);
       const timeline = await sql`SELECT doc_id, judgment_form f, adjudication_date d, court, judge FROM court_decisions WHERE lower(cause_num) = ${key} ORDER BY adjudication_date DESC LIMIT 40`;
-      return json(res, 200, { kind, forms: decisions, summary: span, media, timeline,
-        explain: span.n ? `Справа ${key}: ${span.n} рішень з ${ymd(span.d0)} по ${ymd(span.d1)}, ${span.courts} суд(ів): ${span.court_list}. Текстів завантажено: ${span.texts}.` : `Справа ${key}: рішень у базі ще немає.` });
+      // lawyers named in the texts (person_case_links): 'можливо' = the only one of that name in the register (linked),
+      // 'неоднозначно' = several candidates, 'немає в реєстрі' = none (both shown as text only)
+      const lawyers = lawyerList(await lawyerRows({ cases: [key] }));
+      const probable = lawyers.filter((l) => l.certainty === "можливо").length;
+      return json(res, 200, { kind, forms: decisions, summary: span, media, timeline, lawyers,
+        explain: (span.n ? `Справа ${key}: ${span.n} рішень з ${ymd(span.d0)} по ${ymd(span.d1)}, ${span.courts} суд(ів): ${span.court_list}. Текстів завантажено: ${span.texts}.` : `Справа ${key}: рішень у базі ще немає.`) +
+          (lawyers.length ? ` У текстах рішень названо адвокатів: ${lawyers.length}${probable ? ` (з них ${probable} — можливо ті самі, що в реєстрі адвокатів: єдиний збіг за ПІБ)` : ""}.` : "") });
     }
     if (kind === "person" || kind === "org") {
       const name = key;
       const like = "%" + name + "%";
-      const [roles, hits, orgs, mentions, texts] = await Promise.all([
+      const [roles, hits, orgs, mentions, texts, lrows] = await Promise.all([
         sql`SELECT role, count(*)::int n FROM ee_persons WHERE lower(name_norm) = ${name} GROUP BY 1 ORDER BY 2 DESC`.catch(() => []),
         sql`SELECT source, count(*)::int n FROM registry_hits WHERE lower(query) = ${name} GROUP BY 1`.catch(() => []),
         sql`SELECT edrpou, short_name, stan FROM edr_orgs WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(founders) f WHERE lower(f) LIKE ${like})
              OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(signers) f WHERE lower(f) LIKE ${like}) LIMIT 30`.catch(() => []),
         sql`SELECT count(*)::int n, min(mm.ts_published)::date d0, max(mm.ts_published)::date d1 FROM query_hits h JOIN messages mm ON mm.id = h.message_id WHERE lower(h.query) = ${name}`.catch(() => [{ n: 0 }]),
         sql`SELECT doc_id, cause_num, judgment_form f, adjudication_date d, court FROM court_decisions WHERE text IS NOT NULL AND text ILIKE ${like} ORDER BY adjudication_date DESC LIMIT 15`.catch(() => []),
+        kind === "person" ? lawyerRows({ persons: [id] }) : [],
       ]);
+      const lawyer_cases = lawyerList(lrows);
       const parts = [];
       if (roles.length) parts.push("ролі у справах за текстами: " + roles.map((r) => `${r.role} ×${r.n}`).join(", "));
       for (const h of hits) parts.push(({ reyestr: "рішень судів з цим імʼям", nazk_decl: "декларацій НАЗК", edr_fop: "записів ФОП" }[h.source] || h.source) + ": " + h.n);
       if (orgs.length) parts.push("компаній у ЄДР (засновник/підписант): " + orgs.length);
       if (mentions[0]?.n) parts.push(`згадок у постах: ${mentions[0].n} (${ymd(mentions[0].d0)}…${ymd(mentions[0].d1)})`);
       if (texts.length) parts.push("текстів рішень, де зустрічається імʼя: " + texts.length);
+      if (lawyer_cases.length) parts.push(`адвокат у справах (за текстами рішень; можливо та сама особа — єдиний збіг за ПІБ у реєстрі адвокатів): ${new Set(lawyer_cases.map((l) => l.cause_num)).size}`);
       const explain = (kind === "person" ? "Особа" : "Організація") + ` «${name}». ` + (parts.length ? parts.join("; ") + "." : "Поки лише імʼя з запиту — реєстри нічого не повернули або ще не запитувались.") +
         (kind === "person" && name.split(" ").length < 3 ? " Імʼя без по батькові: усе, що нижче, може належати різним людям." : "");
-      return json(res, 200, { kind, roles, hits, orgs, mentions: mentions[0], texts, explain });
+      return json(res, 200, { kind, roles, hits, orgs, mentions: mentions[0], texts, lawyer_cases, explain });
     }
     if (kind === "web") {
       const r = (await sql`SELECT query, url, title, snippet, engine, domain, fetched_at FROM web_mentions WHERE url = ${key} ORDER BY fetched_at DESC LIMIT 1`)[0];
