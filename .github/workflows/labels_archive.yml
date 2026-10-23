@@ -1,0 +1,44 @@
+name: labels-archive
+
+# Weekly: raw LLM label JSON older than 14 days -> Parquet part in release "labels-archive", then raw = NULL in Neon
+# (src/labels_archive.py, migration 027). Prune runs only after the upload is confirmed; plain VACUUM lets new rows reuse
+# the freed space (a one-off VACUUM FULL shrank the table when this started).
+
+on:
+  schedule:
+    - cron: "50 4 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: labels-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyarrow "psycopg[binary]" python-dotenv
+      - name: Export
+        id: export
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/labels_archive.py export --days 14 --github-output "$GITHUB_OUTPUT"
+      - name: Upload and prune
+        if: steps.export.outputs.file != ''
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_TOKEN: ${{ github.token }}
+          FILE: ${{ steps.export.outputs.file }}
+        run: |
+          gh release view labels-archive >/dev/null 2>&1 || gh release create labels-archive --title "Raw LLM labels (archive)" --notes "Raw JSON of the labeling prompt per message, moved out of Neon after 14 days. Parquet parts; the newest part wins. Written by .github/workflows/labels_archive.yml."
+          gh release upload labels-archive "$FILE"
+          python src/labels_archive.py prune "$FILE"
+          sudo apt-get install -y -qq postgresql-client >/dev/null
+          psql "$DATABASE_URL" -c "VACUUM (ANALYZE) message_labels"

@@ -1,7 +1,7 @@
 """Finish the LLM labeling for free: embed every rule-flagged panel post with an open multilingual model, train a small
 classifier on the posts Haiku already labeled (5.8k), and predict the labels for the rest (~21k).
 
-Labels learned (from message_labels.raw, prompt v2):
+Labels learned (from the label columns of messages, which mirror the LLM output; raw JSON is archived, migration 027):
   t2  threat_level >= 2            l2  t2 and (target or timeframe mentioned) and not scheduled context
   t3  threat_level >= 3            rh  event_kind == rhetoric          op  event_kind == operational
 Output:
@@ -33,8 +33,9 @@ TARGETS = ["t2", "l2", "t3", "rh", "op"]
 
 def load_posts(cur):
     cur.execute(
-        "SELECT m.id, m.text, m.ts_published, s.country, l.raw FROM messages m JOIN sources s ON s.id=m.source_id "
-        "LEFT JOIN message_labels l ON l.message_id=m.id "
+        "SELECT m.id, m.text, m.ts_published, s.country, CASE WHEN m.labeled_at IS NOT NULL THEN jsonb_build_object("
+        "'threat_level', m.threat_level, 'target_mentioned', m.target_mentioned, 'timeframe_mentioned', m.timeframe_mentioned, "
+        "'is_scheduled_context', m.is_scheduled_context, 'event_kind', m.event_kind) END AS raw FROM messages m JOIN sources s ON s.id=m.source_id "
         "WHERE s.id = ANY(%s) AND m.ts_published >= '2026-03-31' AND m.id IN (SELECT message_id FROM rule_features WHERE r_threat) "
         "AND length(m.text) >= 40 AND s.id <> ALL(%s) AND s.type <> ALL(%s) ORDER BY m.id" % (PANEL_SQL, "%s", "%s"),
         (list(SKIP_SOURCES), list(SKIP_TYPES)))

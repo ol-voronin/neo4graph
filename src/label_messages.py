@@ -198,9 +198,11 @@ def main():
                 "is_scheduled_context=%(is_scheduled_context)s, tone_amplification=%(tone_amplification)s, "
                 "llm_confidence=%(llm_confidence)s, narrative_id=%(nid)s, prompt_version=%(pv)s, labeled_at=now() WHERE id=%(id)s",
                 {**f, "nid": nid, "pv": pv, "id": mid})
-            cur.execute("INSERT INTO message_labels(message_id, prompt_version, model, raw) VALUES (%s,%s,%s,%s) "
-                        "ON CONFLICT (message_id) DO UPDATE SET raw=EXCLUDED.raw, model=EXCLUDED.model, prompt_version=EXCLUDED.prompt_version, labeled_at=now()",
-                        (mid, pv, a.model, json.dumps(raw, ensure_ascii=False)))
+            cur.execute("INSERT INTO message_labels(message_id, prompt_version, model, raw, topics) VALUES (%s,%s,%s,%s::jsonb,"
+                        "CASE WHEN jsonb_typeof(%s::jsonb->'topics') = 'array' THEN %s::jsonb->'topics' END) "
+                        "ON CONFLICT (message_id) DO UPDATE SET raw=EXCLUDED.raw, topics=EXCLUDED.topics, model=EXCLUDED.model, "
+                        "prompt_version=EXCLUDED.prompt_version, labeled_at=now(), archived_at=NULL",
+                        (mid, pv, a.model, *[json.dumps(raw, ensure_ascii=False)] * 3))
             conn.commit()
     print(f"labeled {ok}, failed {bad}" + (", stopped on quota" if quota_stop else ""))
     if bad and not ok:
