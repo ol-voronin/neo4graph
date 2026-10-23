@@ -246,6 +246,8 @@ async function placesGroup(q, C) {
 
 async function mentionsGroup(q) {
   const [posts, web] = await Promise.all([postMentions(q, { limit: 5, ms: 2400 }), soft(webFound(q), 2000).catch(() => ({ items: [] }))]);
+  // several words: only posts that carry all of them (as the graph's expand does); the first word alone is a namesake flood
+  if ((posts.words || []).length > 1) { posts.items = (posts.items || []).filter((p) => p.all_words); posts.total = posts.all || 0; posts.capped = posts.capped && posts.total >= 1000; }
   const topic = posts.total ? { id: "topic:" + norm(q).toLowerCase(), type: "topic", label: norm(q), sub: `згадок у постах: ${posts.total}${posts.capped ? "+" : ""}`, tier: 3, n: posts.total } : null;
   return { items: posts.items.map((p) => ({ ...p, type: "post", label: p.snippet, sub: `${p.src} · ${p.date}`, tier: 3 })), count: posts.total, capped: posts.capped,
     words: posts.words, topic, web: web.items, note: posts.skipped };
