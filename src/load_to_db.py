@@ -11,6 +11,7 @@ Alerts source: github.com/Vadimkin/ukrainian-air-raid-sirens-dataset (volunteer 
 import argparse
 import csv
 import json
+from collections import Counter
 import os
 import re
 import sys
@@ -74,6 +75,32 @@ def cmd_alerts(a):
             print(f"  {min(i + 5000, len(rows))}/{len(rows)}")
 
 
+# sources.type is checked in the database (official, state_media, milblogger, independent, analyst, osint, agency):
+# collector configs use a few more names, mapped here so a new feed never breaks the whole load
+TYPE_ALIAS = {"media": "independent", "regional_media": "independent", "news": "independent"}
+
+
+def source_type(t):
+    return TYPE_ALIAS.get(t, t) if t else "independent"
+
+
+def channels():
+    """Every channel entry (a dict with "name") anywhere in channels.json."""
+    def walk(x):
+        if isinstance(x, dict):
+            if isinstance(x.get("name"), str):
+                yield x
+            for v in x.values():
+                yield from walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                yield from walk(v)
+    seen = {}
+    for c in walk(json.loads((ROOT / "channels.json").read_text(encoding="utf-8"))):
+        seen.setdefault(c["name"], c)
+    return list(seen.values())
+
+
 def cmd_messages(a):
     rows = []
     for p in sorted((ROOT / "data" / "telegram").glob("*.jsonl")) + sorted((ROOT / "data" / "rss").glob("*.jsonl")):
@@ -85,11 +112,21 @@ def cmd_messages(a):
     print(f"parsed {len(rows)} messages")
     if a.dry_run:
         return
-    from collect_rss import SOURCES  # RSS sources register themselves (Telegram ones come from channels.json)
+    from collect_rss import SOURCES  # RSS sources register themselves; Telegram ones come from channels.json
     with connect() as conn, conn.cursor() as cur:
         cur.executemany("INSERT INTO sources(id, name, country, lang, type, platform, tier) VALUES (%s,%s,%s,'en',%s,'web','B') ON CONFLICT (id) DO NOTHING",
-                        [(f"rss:{k}", n, c, t) for k, (n, c, t) in SOURCES.items()])
+                        [(f"rss:{k}", n, c, source_type(t)) for k, (n, c, t) in SOURCES.items()])
+        cur.executemany("INSERT INTO sources(id, name, country, lang, type, platform, tier, region) VALUES (%s,%s,%s,%s,%s,'telegram',%s,%s) ON CONFLICT (id) DO NOTHING",
+                        [(f"tg:{c['name']}", c.get("title") or c["name"], c.get("country"), {"RU": "ru", "UA": "uk"}.get(c.get("country"), "en"),
+                          source_type(c.get("type")), c.get("tier") or "B", c.get("region")) for c in channels()])
         conn.commit()
+        # a message of a source that is still not registered would fail its whole 2 000-row batch (foreign key): skip it
+        cur.execute("SELECT id FROM sources")
+        known = {r[0] for r in cur.fetchall()}
+    skipped = Counter(r[1] for r in rows if r[1] not in known)
+    rows = [r for r in rows if r[1] in known]
+    if skipped:
+        print("skipped (source not registered):", dict(skipped))
     sql = ("INSERT INTO messages(id, source_id, ts_published, lang, text, url, hash) "
            "VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING")
     with connect() as conn, conn.cursor() as cur:
