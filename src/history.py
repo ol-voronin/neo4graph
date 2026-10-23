@@ -269,7 +269,7 @@ def cmd_weekly(a):
             cur.execute("CREATE TEMP TABLE rw (LIKE rhetoric_weekly INCLUDING DEFAULTS) ON COMMIT DROP")
             with cur.copy("COPY rw (week, region_id, " + ", ".join(WEEKLY_COLS) + ") FROM STDIN") as cp:
                 for r in w.itertuples(index=False):
-                    cp.write_row([r.week.date(), r.region_id] + [None if pd.isna(v) else float(v) for v in r[2:]])
+                    cp.write_row([r.week.date(), r.region_id, int(r.posts_ru)] + [None if pd.isna(v) else float(v) for v in r[3:]])
             cur.execute("DELETE FROM rhetoric_weekly WHERE week >= (SELECT min(week) FROM rw)")
             cur.execute("INSERT INTO rhetoric_weekly SELECT * FROM rw")
             print("rhetoric_weekly rows", cur.rowcount)
