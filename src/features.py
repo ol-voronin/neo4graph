@@ -191,6 +191,22 @@ def acled_join(df: pd.DataFrame, aw: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=["_wk", "_ord"])
 
 
+def explosion_daily(conn) -> pd.DataFrame:
+    """(region_id, d, expl_reports, ob_expl) from explosion_daily (src/explosions.py, migration 030); ob_expl is NaN on
+    unknown days. Empty frame if the table is absent."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT region_id, d, reports, known FROM explosion_daily WHERE d >= %s::date - 30", (PANEL_START,))
+            df = pd.DataFrame(cur.fetchall(), columns=["region_id", "d", "expl_reports", "known"])
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        print(f"explosion_daily unavailable ({str(e).splitlines()[0][:120]}): v4 labels will be missing")
+        return pd.DataFrame(columns=["region_id", "d", "expl_reports", "ob_expl"])
+    df["d"] = pd.to_datetime(df["d"])
+    df["ob_expl"] = (df.expl_reports > 0).astype(float).where(df.known.astype(bool))
+    return df.drop(columns="known")
+
+
 def label_oblast3(df: pd.DataFrame) -> pd.DataFrame:
     """ob_massive3 (model ua_oblast_massive3_*): ob_massive2, plus a known NEGATIVE for every day of an ACLED week with no
     strike, shelling or interception event at all in the oblast (a massed strike would be recorded by ACLED; that the
@@ -272,7 +288,7 @@ def label_oblast2(df: pd.DataFrame, cov: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.DataFrame, start, end, regions,
-               ee_min_extracted: int = 100, aw: pd.DataFrame | None = None) -> pd.DataFrame:
+               ee_min_extracted: int = 100, aw: pd.DataFrame | None = None, ex: pd.DataFrame | None = None) -> pd.DataFrame:
     """Pure assembly (no DB): regions x days grid with national rhetoric (per d), regional rhetoric (per region, d),
     ground truth and targets. Rows sorted by (region_id, d) with a fresh RangeIndex."""
     days = pd.date_range(start, end, freq="D")
@@ -281,6 +297,8 @@ def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.D
     df = grid.merge(lab, on=["region_id", "d"], how="left").merge(nat, on="d", how="left")
     df = label_oblast2(df, cov)
     df = label_oblast3(acled_join(df, aw if aw is not None else pd.DataFrame(columns=["region_id", "week", "ev"])))
+    df = df.merge(ex if ex is not None and len(ex) else pd.DataFrame(columns=["region_id", "d", "expl_reports", "ob_expl"]).astype({"d": "datetime64[ns]"}),
+                  on=["region_id", "d"], how="left")
     df = df.merge(geo, on=["region_id", "d"], how="left")
     have_geo = df.d.isin(set(geo.d)) if len(geo) else pd.Series(False, index=df.index)
     # a region with no threat post naming it on a day the query ran has 0, not NaN; days outside the query stay NaN
@@ -300,7 +318,7 @@ def frame_long(conn, cutoff_hour: int, until=None, regions=None, ee_min_extracte
     nat = rhetoric(conn, cutoff_hour)
     gt, cov = oblast_gt(conn)
     return build_long(nat, rhetoric_geo(conn, cutoff_hour), gt, cov, PANEL_START, end, regions or PANEL_REGIONS, ee_min_extracted,
-                      acled_weekly(conn))
+                      acled_weekly(conn), explosion_daily(conn))
 
 
 def design_long(df: pd.DataFrame, spec: dict, signal_shift: int = 0) -> pd.DataFrame:

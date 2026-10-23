@@ -1,0 +1,20 @@
+{
+  "name": "ua_oblast_expl_base_v1",
+  "role": "baseline",
+  "panel": "oblast",
+  "target": "ob_expl",
+  "target_doc": "explosion day D (Kyiv calendar day) in the oblast: >= 1 monitoring-channel report of explosions naming the oblast (src/explosions.py, explosion_daily). Known negative: no report while the monitor feed was alive (>= 30 posts that day); occupied oblasts (Luhansk, Crimea) have no negatives. Otherwise unknown",
+  "lag_target": "ob_expl",
+  "acled": true,
+  "cutoff_hour": 15,
+  "deadline_hour": 24,
+  "deadline": "D 00:00 Europe/Kyiv",
+  "signals": [],
+  "region_signals": [],
+  "features_doc": "region indicators, region base rate shrunk toward the all-oblast rate (shrink = pseudo-days), own target at D-2 and its 7-day mean; base/y2/y2_m7 from ob_expl itself (known the same day), plus acled_l / acled_m8 (as v3)",
+  "shrink": 20,
+  "ee_min_extracted": 100,
+  "C": 1.0,
+  "min_train": 60,
+  "frozen": "2026-10-23"
+}
