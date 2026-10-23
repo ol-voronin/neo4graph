@@ -8,3 +8,4 @@ __pycache__/
 local/.env
 local/data/
 node_modules/
+.claude/

@@ -154,3 +154,44 @@ names are stored.
 On 2026-10-22: 19 554 records for evading service, AWOL or desertion (ст. 408 alone 11 404, ст. 407 7 604), 16 350 for
 treason, collaboration and war crimes (ст. 111 9 124), 2 033 corruption; searching bodies: police 58 201, SBU 11 407,
 DBR 5 300. Missing persons who disappeared since February 2022: 119 213.
+
+## OSINT in Ukraine Knowledge Base & Identifier Registry
+
+Cloned from [OSINT_in_Ukraine](https://github.com/OSINT-for-countries/OSINT_in_Ukraine.git) to `data/OSINT_in_Ukraine/`.
+Structured extraction script: `src/osint_ukraine.py` → `data/osint_sources.json`.
+
+### Coverage vs. our DD (Due Diligence) pipeline
+
+| Registry / Portal | URL | Status in our DD pipeline |
+|---|---|---|
+| ЄДР (ЮО / ФОП) | `usr.minjust.gov.ua` | **Integrated** (`src/lake.py` Parquet index, `edr_orgs`) |
+| ЄДРСР (судові рішення) | `reyestr.court.gov.ua` | **Integrated** (`src/lake_edrsr.py`, `court_decisions`) |
+| Судова влада (повістки, розклад) | `court.gov.ua` | **Integrated** (`docs/court_summons.md`, `court_summons`) |
+| ЄРБ (реєстр боржників) | `erb.minjust.gov.ua` | **Integrated** (`debtors` table) |
+| МВС (розшук осіб) | `wanted.mvs.gov.ua` | **Integrated** (`src/police_wanted.py`, `wanted_persons`) |
+| НАЗК (декларації посадовців) | `nazk.gov.ua`, `declarations.com.ua` | **Integrated** (`local/ua_worker.py`, `declarations`) |
+| НАЗК (реєстр корупціонерів) | `corruptinfo.nazk.gov.ua` | **Integrated** (`src/nazk_corrupt.py`) |
+| ProZorro (закупівлі, договори) | `prozorro.gov.ua` | **Integrated** (`src/lake_prozorro.py`, `public_contracts`) |
+| Spending.gov.ua (транзакції казначейства) | `spending.gov.ua` | **Integrated** (`src/spending.py`, `public_payments`) |
+| Портал відкритих даних | `data.gov.ua` | **Integrated** (raw open dumps source) |
+| ДРРП (реєстр речових прав на нерухоме майно) | `drrp.minjust.gov.ua` | **Planned** |
+| Реєстр банкрутств | `bankruptcy.gov.ua` | **Planned** (company risk flags) |
+| Публічна кадастрова карта | `map.land.gov.ua` | **External reference** |
+| ДПС (реєстр платників податків) | `tax.gov.ua` | **External reference** |
+| Портал ліцензування Мінекономіки | `me.gov.ua` | **External reference** |
+| Держлікслужба (ліцензії на ліки) | `dls.gov.ua` | **External reference** |
+| Головний сервісний центр МВС (авто / права) | `hsc.gov.ua`, `dmsu.gov.ua` | **External reference** |
+| Clarity Project / YouControl | `clarity-project.info`, `youcontrol.com.ua` | **External reference** |
+| Держстат України | `ukrstat.gov.ua` | **External reference** |
+
+### Validated Identifier Formats (from `data/osint_sources.json`)
+
+- **ЄДРПОУ**: `^\d{8}$` (legal entities)
+- **РНОКПП**: `^\d{10}$` (individuals & FOPs)
+- **Біометричний паспорт**: `^[A-Z]{2}\d{7}$`
+- **Небіометричний паспорт**: `^[A-Z]{2}\d{6}$`
+- **ID-картка**: `^\d{9}$`
+- **Посвідчення водія**: `^[A-Z]{3}\d{6}$` (нове) / `^[А-ЯІЇЄ]{2}\d{8}$` (старе)
+- **Військовий квиток**: `^[А-ЯІЇЄA-Z]{2}\d{6,8}$`
+- **Мобільні номери**: `^(?:\+?380|0)\d{9}$` (Kyivstar: 67/68/96/97/98, Vodafone: 50/66/95/99, Lifecell: 63/73/93)
+
