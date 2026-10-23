@@ -2,6 +2,7 @@ import { sql, json, query } from "./_db.js";
 import { resolve, dossier, corpus, caseCard, strikes, rhetoricBefore, withTimeout, CAUSE_ANY, CASE_FULL, FOP_RE } from "./_intent.js";
 import { kyivToday } from "./_text.js";
 import { connectMany } from "./_connect.js";
+import { nameLink, countCandidates, identityKey } from "./_identity.js";
 
 // POST /api/chat {messages:[{role,content}]} -> answer + structured results + graph. Claude Haiku with tools over the database;
 // before the model runs, the server resolves what the question names and gathers the obvious data (one model step saved).
@@ -241,9 +242,12 @@ function toGraph(trace) {
       const name = String(t.input.name || "").replace(/ФОП/gi, "").replace(/\s+/g, " ").trim();
       const pid = node("person:" + lc(name), "person", name);
       want(pid, 1);
+      // found by the name (_identity.js): one distinct name among the records -> probable, several -> namesakes
+      const n = countCandidates(o.records || [], () => 1, (r) => identityKey(r.name)).get(1) || 0;
       for (const r of o.records || []) {
         const fid = node("fop:" + r.record, "registry", "ФОП " + r.name, { stan: r.stan, text: `${r.stan || ""}; ${r.registration || ""}`, src: "ЄДР (ФОП)" });
-        edge(pid, fid, "fop_record", { detail: "збіг за імʼям (можливий однофамілець)", src: "ЄДР" });
+        const L = nameLink("fop_record", n, { detail: "збіг за імʼям", src: "ЄДР" }, "ФОП");
+        edge(pid, fid, L.rel, L.attrs);
       }
     }
     if (t.tool === "search_decisions") {

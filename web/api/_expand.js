@@ -1,11 +1,13 @@
 import { query } from "./_db.js";
 import { getGraph, peekGraph, norm, isPlaceholder } from "./_graph.js";
 import { getManifest, searchKey } from "./_lake.js";
-import { byCode, byName, peopleOf, rolesOf, card } from "./registry.js";
+import { byCode, byName, peopleOf, rolesWithCandidates, card } from "./registry.js";
 import { postMentions, decisionTexts, webFound } from "./_mentions.js";
 import { OBLASTS } from "./_text.js";
 import { declGraph, DECL_COLS } from "./_decl.js";
 import { assetGraph, assetsForCases } from "./_assets.js";
+import { nameLink, countCandidates, identityKey } from "./_identity.js";
+import { lawyerRows, lawyerGraph } from "./_lawyers.js";
 
 // On-the-fly neighbourhood for an object the graph does not hold yet (a registry hit from /api/search, a judge, a «topic:»
 // of post mentions). Same wire format as /api/graph?around=, so the page merges it into what it already draws:
@@ -15,7 +17,9 @@ import { assetGraph, assetsForCases } from "./_assets.js";
 //   topic:<words>     — the posts that mention the words, their channels and the graph entities those posts already link to
 //   wanted:<id>       — a police wanted record: the person, the searching body, the Criminal Code article, the oblast
 //   article:<n>       — a Criminal Code article: the newest active wanted records under it (national stats: /api/node)
-//   person:<name>     — also gets the wanted records that match the full name (migration 021)
+//   person:<name>     — also gets the wanted records that match the full name (migration 021) and the cases where a lawyer
+//                       of that name is named in decision texts (person_case_links, migration 031)
+// Links that rest on the name alone follow _identity.js: one candidate in the source -> probable, several -> namesakes.
 // Every part has its own time cap and fails alone; Neon sees a few indexed lookups and at most one capped post scan.
 const soft = (p, ms, dflt) => Promise.race([Promise.resolve(p), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]).catch(() => dflt);
 const title = (s) => norm(s).toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
@@ -65,33 +69,49 @@ export async function expand(id, label = "", { judge = false } = {}) {
     const type = kind === "org" ? "org" : kind === "fop" ? "registry" : "person";
     node({ id, type, label: kind === "fop" ? "ФОП " + title(name) : kind === "person" ? title(name) : norm(label || key) });
     if (m) {
-      const jobs = [];
+      const jobs = [], cand = new Set(), key = searchKey(name, m);
+      let cut = false;
       if (kind !== "org") {
-        // companies the person founded / signs for, under both name orders
+        // companies the person founded / signs for, under both name orders; the distinct names longer than the query are
+        // the candidates (_identity.js), counted over everything the index matched, not just the rows returned
         const w = name.split(" ");
-        for (const v of [name, w.length >= 2 ? [w.at(-1), ...w.slice(0, -1)].join(" ") : null].filter(Boolean)) jobs.push(soft(rolesOf(v, m), 3000, []));
+        for (const v of [name, w.length >= 2 ? [w.at(-1), ...w.slice(0, -1)].join(" ") : null].filter(Boolean)) jobs.push(soft(rolesWithCandidates(v, m), 3000, { rows: [], names: new Set() })
+          .then((r) => { if (v === name) { for (const n of r.names) if (n !== key && n.startsWith(key + " ")) cand.add(n); cut ||= !!r.truncated; } return r.rows; }));
       }
       // the lake's own card (a ФОП record, an org from ProZorro)
       jobs.push(soft(byName(name, m, kind !== "org"), 3000, { rows: [] }).then((r) => (r.rows || []).filter((x) => x.id === id).map((x) => ({ card: card(x, m) }))));
-      for (const r of (await Promise.all(jobs)).flat()) {
+      const found = (await Promise.all(jobs)).flat(), longer = cut ? Math.max(2, cand.size) : cand.size;
+      for (const r of found) {
         if (r.card) { const n = nodes.get(id); Object.assign(n, { stan: r.card.stan, region: r.card.region, address: r.card.address, edrpou: r.card.code_type === "edrpou" ? r.card.code : undefined, src: r.card.sources.join(", ") }); continue; }
         if (searchKey(r.name, m) !== searchKey(name, m) && !searchKey(r.name, m).startsWith(searchKey(name, m))) continue;
         const rid = node({ id: "registry:" + r.code, type: "registry", label: `ЄДР ${r.code} · ${r.org || ""}`, edrpou: r.code, stan: r.stan, src: "ЄДР (data lake)" });
-        // a full-name match (with patronymic) is this person; a shorter query only names a namesake candidate
-        const pid = searchKey(r.name, m) === searchKey(name, m) ? id : node({ id: "person:" + norm(r.name).toLowerCase(), type: "person", label: title(r.name) });
-        if (pid !== id) edge(id, pid, "namesake", { detail: "збіг прізвища та імені у ЄДР; той самий чи інший — визначає по батькові" });
-        edge(pid, rid, ROLE_REL[r.role] || "related", { src: "ЄДР (data lake)" });
+        // a full-name match (with patronymic) is this person, probably (the name is the only link); a shorter query names a
+        // candidate: the only one under it -> «можливо та сама особа», several -> namesakes
+        const pid = searchKey(r.name, m) === key ? id : node({ id: "person:" + norm(r.name).toLowerCase(), type: "person", label: title(r.name) });
+        if (pid !== id) { const L = nameLink("probably_same", longer, { detail: "у ЄДР єдина особа з таким прізвищем та імʼям; по батькові в запиті не було" }, "осіб");
+          edge(id, pid, L.rel, L.rel === "namesake" ? { ...L.attrs, detail: "збіг прізвища та імені у ЄДР; той самий чи інший — визначає по батькові · " + L.attrs.cands + " осіб з таким прізвищем та імʼям" } : L.attrs); }
+        edge(pid, rid, ROLE_REL[r.role] || "related", pid === id ? { src: "ЄДР (data lake)", probable: true } : { src: "ЄДР (data lake)" });
       }
     }
     // police wanted list: full-name matches (Ukrainian or Russian spelling); a two-word name only names candidates
     if (kind === "person" && name.split(" ").length >= 2) {
-      const w = await soft(query(`SELECT ${WCOLS} FROM wanted_persons WHERE name_u = $1 OR name_r = $1 OR name_u LIKE $2 ORDER BY removed NULLS FIRST LIMIT 10`,
-        [name.toLowerCase(), name.toLowerCase() + " %"]), 2000, []);
+      const P = [name.toLowerCase(), name.toLowerCase() + " %"];
+      const [w, cnt] = await Promise.all([
+        soft(query(`SELECT ${WCOLS} FROM wanted_persons WHERE name_u = $1 OR name_r = $1 OR name_u LIKE $2 ORDER BY removed NULLS FIRST LIMIT 10`, P), 2000, []),
+        // candidates over the whole list, not only the 10 drawn (_identity.js): people = name + birth date
+        soft(query(`SELECT name_u, (name_u = $1 OR name_r = $1) same, count(DISTINCT coalesce(birth_date::text, id))::int n FROM wanted_persons
+                    WHERE name_u = $1 OR name_r = $1 OR name_u LIKE $2 GROUP BY 1, 2`, P), 2000, null)]);
+      // candidates (_identity.js): people under the full name (name + birth date), names longer than a short query, records per name
+      const isSame = (r) => r.name_u === name.toLowerCase() || r.name_r === name.toLowerCase();
+      const perName = cnt ? new Map(cnt.map((c) => [c.name_u, c.n])) : countCandidates(w, (r) => r.name_u, (r) => identityKey(r.name_u, r.birth_date || r.id));
+      const sum = (f) => (cnt ? cnt.filter(f).reduce((a, c) => a + c.n, 0) : countCandidates(w.filter((r) => f({ same: isSame(r) })), () => 1, (r) => identityKey(r.name_u, r.birth_date || r.id)).get(1) || 0);
+      const nSame = sum((c) => c.same), nLonger = sum((c) => !c.same);
       for (const r of w) {
-        const same = r.name_u === name.toLowerCase() || r.name_r === name.toLowerCase();
+        const same = isSame(r);
         const pid = same ? id : node({ id: "person:" + r.name_u, type: "person", label: title(r.name_u) });
-        if (!same) edge(id, pid, "namesake", { detail: "збіг прізвища та імені з записом розшуку; той самий чи інший — визначають по батькові й дата народження" });
-        wantedNodes(node, edge, r, pid);
+        if (!same) { const L = nameLink("probably_same", nLonger, { detail: "у розшуку єдина особа з таким прізвищем та імʼям; по батькові в запиті не було" }, "осіб у розшуку");
+          edge(id, pid, L.rel, L.rel === "namesake" ? { ...L.attrs, detail: "збіг прізвища та імені з записом розшуку; той самий чи інший — визначають по батькові й дата народження · " + L.attrs.cands + " осіб з таким прізвищем та імʼям" } : L.attrs); }
+        wantedNodes(node, edge, r, pid, same ? nSame : perName.get(r.name_u));
       }
       out.wanted = w.length;
     }
@@ -111,9 +131,10 @@ export async function expand(id, label = "", { judge = false } = {}) {
   // ---- declarations' contents for a person (decl_items, migration 023): assets, companies, income sources, family ----
   if (["person", "fop", "wanted"].includes(kind) && name.split(" ").length >= 2) {
     const rows = await soft(query(`SELECT ${DECL_COLS} FROM decl_items WHERE declarant = $1 ORDER BY year DESC LIMIT 400`, [name.toLowerCase()]), 2500, []);
-    const D = declGraph(rows);
+    const D = declGraph(rows), dn = "person:" + name.toLowerCase();
     for (const n of D.nodes) node(n);
-    for (const e of D.edges) edge(e.source, e.target, e.rel, { detail: e.detail, src: e.src });
+    // found by the declarant's name: what is declared is the declarant's, the declarant is this person only probably
+    for (const e of D.edges) edge(e.source, e.target, e.rel, { detail: e.detail, src: e.src, ...(e.source === dn || e.target === dn ? { probable: true } : {}) });
     out.declared = rows.length;
   }
 
@@ -124,15 +145,24 @@ export async function expand(id, label = "", { judge = false } = {}) {
     const cases = await soft(query(`SELECT DISTINCT lower(payload->>'cause_num') c, source, payload->>'court' court, payload->>'date' d FROM registry_hits
         WHERE lower(query) = $1 AND source IN ('summons', 'reyestr') AND payload->>'cause_num' IS NOT NULL
         UNION SELECT DISTINCT lower(cause_num), 'media', NULL, NULL FROM media_links WHERE lower(name_norm) = $1 LIMIT 40`, [nl]), 2500, []);
+    // summons and the court register were searched by the name: probable; the press names the person itself (a claim, kept)
     for (const c of cases.filter((x) => (x.c || "").trim().length > 3)) edge(pid, node({ id: "case:" + c.c, type: "case", label: "Справа " + c.c, ref: c.c }),
       c.source === "summons" ? "summoned" : c.source === "media" ? "named_by_media" : "court_register_mention",
-      { detail: [c.court, c.d].filter(Boolean).join(" · "), src: c.source === "summons" ? "court.gov.ua (оголошення про виклик)" : c.source === "media" ? "ЗМІ" : "ЄДРСР" });
+      { detail: [c.court, c.d].filter(Boolean).join(" · "), src: c.source === "summons" ? "court.gov.ua (оголошення про виклик)" : c.source === "media" ? "ЗМІ" : "ЄДРСР", ...(c.source === "media" ? {} : { probable: true }) });
     if (cases.length) {
       const A = assetGraph(await soft(assetsForCases([...new Set(cases.map((c) => c.c).filter((c) => (c || "").trim().length > 3))]), 3500, { links: [], items: [], arma: [] }));
       for (const n of A.nodes) node(n);
       for (const e of A.edges) edge(e.source, e.target, e.rel, { detail: e.detail, src: e.src });
       out.case_assets = A.nodes.filter((n) => n.type === "asset").length;
     }
+  }
+
+  // ---- a lawyer named in decision texts (person_case_links): the cases, probable (one candidate in the register) ----
+  if (kind === "person" || out.person) {
+    const L = lawyerGraph(await soft(lawyerRows({ persons: [id, out.person].filter(Boolean) }), 2000, []));
+    for (const n of L.nodes) node(n);
+    for (const e of L.edges) { const { source, target, rel, msgs, ...x } = e; edge(source, target, rel, x); }
+    if (L.edges.length) { out.lawyer_cases = L.edges.length; const n = nodes.get(id); if (n && !n.position) n.position = "адвокат"; }
   }
 
   // ---- what the texts say: posts and decision texts naming it ----
@@ -146,10 +176,10 @@ export async function expand(id, label = "", { judge = false } = {}) {
   ]);
   // a named object or a topic: only posts that carry every word of the name (surname + first name; «Рошен-Чернігів»), not the surname alone
   if ((posts.words || []).length > 1) { posts.items = (posts.items || []).filter((p) => p.all_words); posts.total = posts.all || posts.items.length; }
-  const ev = {};
+  const ev = {}, isNamed = kind === "person" || kind === "fop" || kind === "wanted";  // found by a person's name words
   for (const p of posts.items || []) {
     const pid = node({ id: p.id, type: "post", label: (p.snippet || "").slice(0, 70) + "…", src: p.source, date: p.date, url: p.url, text: p.snippet });
-    edge(out.person || id, pid, "mentioned_in", { msgs: [p.msg], date: p.date, src: p.source });
+    edge(out.person || id, pid, "mentioned_in", { msgs: [p.msg], date: p.date, src: p.source, ...(isNamed ? { probable: true } : {}) });
     ev[p.msg] = { date: p.date, src: p.source, text: p.snippet, url: p.url };
     if (isTopic) {
       const cid = node({ id: "channel:" + p.source, type: "channel", label: p.src || p.source });
@@ -158,10 +188,10 @@ export async function expand(id, label = "", { judge = false } = {}) {
   }
   for (const d of texts.items || []) {
     const did = decisionNode(node, d);
-    edge(id, did, "court_register_mention", { detail: d.snippet, date: d.d });
+    edge(id, did, "court_register_mention", { detail: d.snippet, date: d.d, ...(isNamed ? { probable: true } : {}) });
     if (d.cause_num) edge(did, caseNode(node, d.cause_num), "decision_of", { date: d.d });
   }
-  for (const w of web.items || []) edge(id, node({ id: w.id, type: "web", label: w.label.slice(0, 80), url: w.url, text: w.snippet, src: w.sub }), "web_mention", { src: w.sub });
+  for (const w of web.items || []) edge(id, node({ id: w.id, type: "web", label: w.label.slice(0, 80), url: w.url, text: w.snippet, src: w.sub }), "web_mention", { src: w.sub, ...(isNamed ? { probable: true } : {}) });
   if (isTopic) {
     // channels: topic -> channel weighted by posts; co-mentioned entities: what the graph already links to those posts
     const byCh = new Map();
@@ -192,13 +222,18 @@ export const WCOLS = `id, name_u, name_r, last_name_u, first_name_u, middle_name
   restraint, ovd, agency, region, lost_date::text lost_date, lost_place, removed::text removed`;
 const PLACE = Object.fromEntries(OBLASTS.map(([slug, nm]) => [slug, slug === "kyiv-city" ? "place:київ" : "place:" + nm.toLowerCase() + " область"]));
 const PLACE_LABEL = Object.fromEntries(OBLASTS.map(([slug, nm]) => [slug, slug === "kyiv-city" ? "Київ" : nm + " область"]));
-export function wantedNodes(node, edge, r, pid = null) {
+// pid: a person node the record is attached to by name (a person's neighbourhood), with n candidates in the list
+// (_identity.js); without pid the record's own person node is made (certain)
+export function wantedNodes(node, edge, r, pid = null, n = 1) {
   const who = [r.last_name_u, r.first_name_u, r.middle_name_u].filter(Boolean).join(" ");
   const wid = node({ id: "wanted:" + r.id, type: "wanted", label: "Розшук · " + title(who), category: r.category, article: r.article_crim, restraint: r.restraint,
     ovd: r.ovd, birth_date: r.birth_date, date: r.lost_date, region: r.region, removed: r.removed, src: "Нацполіція (data.gov.ua)" });
+  const byName = !!pid;
   pid = pid || node({ id: "person:" + r.name_u, type: "person", label: title(r.name_u) });
-  edge(pid, wid, "wanted", { detail: [(r.category || "").toLowerCase(), r.article_crim, r.restraint, r.lost_date ? "з " + r.lost_date : "", r.birth_date ? "нар. " + r.birth_date : "",
-    r.removed ? "знято з розшуку " + r.removed : ""].filter(Boolean).join(" · "), date: r.lost_date, src: "Нацполіція" });
+  const attrs = { detail: [(r.category || "").toLowerCase(), r.article_crim, r.restraint, r.lost_date ? "з " + r.lost_date : "", r.birth_date ? "нар. " + r.birth_date : "",
+    r.removed ? "знято з розшуку " + r.removed : ""].filter(Boolean).join(" · "), date: r.lost_date, src: "Нацполіція" };
+  const L = byName ? nameLink("wanted", n, attrs, "осіб у розшуку") : { rel: "wanted", attrs };
+  edge(pid, wid, L.rel, L.attrs);
   if (r.ovd) edge(node({ id: "org:" + norm(r.ovd).toLowerCase(), type: "org", label: norm(r.ovd), kind: r.agency }), wid, "searches", { src: "Нацполіція" });
   if (r.article) edge(wid, node({ id: "article:" + r.article, type: "article", label: `ст. ${r.article} КК` }), "article", { detail: r.article_crim });
   if (PLACE[r.region]) edge(wid, node({ id: PLACE[r.region], type: "place", label: PLACE_LABEL[r.region] }), "region", { detail: r.lost_place });

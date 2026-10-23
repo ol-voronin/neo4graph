@@ -77,10 +77,15 @@ export async function peopleOf(code) {
 
 // companies where a person is founder / beneficiary / signer, by full name (surname first, as ЄДР writes it)
 export async function rolesOf(name, m) {
+  return (await rolesWithCandidates(name, m)).rows;
+}
+// the same plus the distinct full names under the query across all matching rows (not only the 60 returned): the
+// candidates for api/_identity.js (one -> a probable link, several -> namesakes); truncated: the index cut the answer
+export async function rolesWithCandidates(name, m) {
   const k = searchKey(name, m);
-  if (k.split(" ").length < 2) return [];  // a bare surname matches thousands of strangers
-  const { rows } = await lookup("roles", k);
-  return rows.slice(0, 60);
+  if (k.split(" ").length < 2) return { rows: [], names: new Set(), truncated: false };  // a bare surname matches thousands of strangers
+  const { rows, truncated } = await lookup("roles", k);
+  return { rows: rows.slice(0, 60), names: new Set(rows.map((r) => searchKey(r.name, m))), truncated };
 }
 
 export async function byAddress(q, m, regionOk = () => true) {

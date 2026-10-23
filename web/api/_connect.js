@@ -52,7 +52,9 @@ function paths(g, from, to, maxDepth = 4, max = 6) {
       const { u, e } = parent.get(v);
       const A = g.byId.get(u), B = g.byId.get(v);
       steps.unshift({ from: { id: u, type: A.type, label: A.label }, rel: e.rel, to: { id: v, type: B.type, label: B.label },
-        detail: e.detail ? String(e.detail).slice(0, 240) : undefined, date: e.date, src: e.src, msgs: (e.msgs || []).slice(0, 2) });
+        detail: e.detail ? String(e.detail).slice(0, 240) : undefined, date: e.date, src: e.src, msgs: (e.msgs || []).slice(0, 2),
+        // a step that rests on the name alone (_identity.js): «можливо той самий»
+        ...(e.probable ? { probable: true, note: "можливо той самий (єдиний збіг за ПІБ)" } : {}) });
     }
     return { length: steps.length, steps };
   });
@@ -201,7 +203,7 @@ export async function connect({ a, b }) {
   const N = new Map(), E = [];
   for (const p of out.paths) for (const s of p.steps) {
     for (const x of [s.from, s.to]) if (!N.has(x.id)) N.set(x.id, { id: x.id, type: x.type, label: x.label });
-    E.push({ source: s.from.id, target: s.to.id, rel: s.rel, detail: s.detail, msgs: s.msgs || [] });
+    E.push({ source: s.from.id, target: s.to.id, rel: s.rel, detail: s.detail, msgs: s.msgs || [], ...(s.probable ? { probable: true } : {}) });
   }
   out._graph = { nodes: [...N.values()], edges: E, focus: B.ids[0] || A.ids[0] };
   return out;

@@ -2,6 +2,8 @@ import { gunzipSync } from "node:zlib";
 import { sql } from "./_db.js";
 import { declGraph } from "./_decl.js";
 import { assetGraph, allAssets } from "./_assets.js";
+import { nameLink, countCandidates, identityKey } from "./_identity.js";
+import { lawyerGraph } from "./_lawyers.js";
 
 // Full entity graph (persons, orgs, cases, assets, ЄДР records, evidence posts), kept in memory per warm function instance.
 // /api/graph serves slices of it: a light overview and capped neighbourhoods (see graph.js).
@@ -77,11 +79,14 @@ async function loadRows(q, since = null) {
         UNION SELECT lower(regexp_replace(btrim(name_norm), '\\s+', ' ', 'g')) FROM media_links
         UNION SELECT lower(regexp_replace(btrim(query), '\\s+', ' ', 'g')) FROM registry_hits),
       w AS MATERIALIZED (SELECT * FROM wanted_persons WHERE removed IS NULL),
+      -- candidates within the list (_identity.js): distinct people (name + birth date) under the full and the short name
+      nf AS (SELECT name_u, count(DISTINCT coalesce(birth_date::text, id))::int n FROM w GROUP BY 1),
+      ns AS (SELECT lower(last_name_u || ' ' || first_name_u) s, count(DISTINCT name_u || coalesce(birth_date::text, id))::int n FROM w GROUP BY 1),
       x AS (SELECT w.id, 'full' m FROM w JOIN nm ON nm.n = w.name_u
             UNION ALL SELECT w.id, 'short' m FROM w JOIN nm ON nm.n = lower(w.last_name_u || ' ' || w.first_name_u))
       SELECT DISTINCT ON (w.id) w.id, w.name_u, w.last_name_u, w.first_name_u, w.middle_name_u, w.birth_date::text b, w.category, w.article_crim, w.article,
-             w.restraint, w.ovd, w.agency, w.lost_date::text d, x.m
-      FROM x JOIN w USING (id) ORDER BY w.id, x.m`.catch((e) => { console.warn("wanted rows:", e.message); return []; });
+             w.restraint, w.ovd, w.agency, w.lost_date::text d, x.m, nf.n, ns.n ns
+      FROM x JOIN w USING (id) JOIN nf ON nf.name_u = w.name_u JOIN ns ON ns.s = lower(w.last_name_u || ' ' || w.first_name_u) ORDER BY w.id, x.m`.catch((e) => { console.warn("wanted rows:", e.message); return []; });
   // contents of NAZK declarations fetched by the registry chain (migration 023): assets, companies, income sources, family
   const decl = await (S ? q`SELECT decl_id, year, declarant, step, kind, label, owner, rel_name, rel_code, rel_kind, value::float value, currency, since, region
                             FROM decl_items WHERE created_at > ${S}`
@@ -89,7 +94,12 @@ async function loadRows(q, since = null) {
                             FROM decl_items`).catch((e) => { console.warn("decl rows:", e.message); return []; });
   // property in court cases (migrations 024–025): proceedings named in decisions, items from arrest rulings, ARMA assets
   const caseAssets = S ? { links: [], items: [], arma: [] } : await allAssets(q);
-  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted, decl, caseAssets };
+  // lawyers named in decision texts, resolved against the register of lawyers (migration 031, _lawyers.js); small table
+  // (columns as _lawyers.js LCOLS; a tagged template cannot splice them in)
+  const lawyers = await (S ? q`SELECT cause_num, doc_id, role, mention, match_level, candidates, certainty, person_id, ref_id, person_name FROM person_case_links WHERE built_at > ${S}`
+                           : q`SELECT cause_num, doc_id, role, mention, match_level, candidates, certainty, person_id, ref_id, person_name FROM person_case_links`)
+    .catch((e) => { console.warn("lawyer rows:", e.message); return []; });
+  return { persons, orgs, cases, assets, edr, msgs, hits, web, media, rhits, alinks, pay, wanted, decl, caseAssets, lawyers };
 }
 
 // ---- assemble rows into a graph; with `base` the rows are merged into an existing graph (its node/edge objects are reused) ----
@@ -140,6 +150,12 @@ export function assemble(R, base = null) {
     for (const c of ["person:" + k, "org:" + k]) if (nodes.has(c)) return c;
     return node("person:" + k, /^(тов|пат|прат|ат|дп|кп)\b/i.test(k) ? "org" : "person", qq.replace(/\b\w/gu, (c) => c.toUpperCase()));
   }
+  // a person query without patronymic and the full names ЄДР holds under it: candidates per query across all records
+  // (_identity.js: one -> «можливо та сама особа», several -> namesakes)
+  const edrName = (f) => String(f).split(";")[0].trim().toLowerCase().replace(/\s+/g, " ");
+  const edrCands = countCandidates(R.edr.flatMap((e) => (e.q || []).filter((x) => /^person:/.test(x)).map((x) => x.slice(7).toLowerCase())
+    .flatMap((pq) => [...(e.founders || []), ...(e.benef || []), ...(e.signers || [])].map(edrName).filter((n) => n !== pq && n.startsWith(pq + " ")).map((n) => [pq, n]))),
+    (x) => x[0], (x) => x[1]);
   for (const e of R.edr) {
     const rk = node("registry:" + e.edrpou, "registry", `ЄДР ${e.edrpou} · ${e.name}`, { stan: e.stan, full: e.full, edrpou: e.edrpou });
     // matched_queries carry person queries as «person:<name>» (handled by the founders pass below), not org names
@@ -160,26 +176,32 @@ export function assemble(R, base = null) {
       if (big && !hit) continue;
       const title = low.replace(/[^\s'’-]+/g, (w) => w[0].toUpperCase() + w.slice(1));
       const pid = node("person:" + low, "person", title);
-      edge(pid, rk, rel, null, { detail: String(f) });
-      if (hit && low !== hit) edge(objFor(hit), pid, "namesake", null, { detail: "збіг прізвища та імені у ЄДР; це той самий чи інший — визначає по батькові" });
+      // the searched full name in ЄДР's own list: the record is about that name, the person searched may still be another
+      edge(pid, rk, rel, null, hit ? { detail: String(f), probable: true } : { detail: String(f) });
+      if (hit && low !== hit) { const L = nameLink("probably_same", edrCands.get(hit), { detail: "у ЄДР єдина особа з таким прізвищем та імʼям; по батькові в запиті не було" }, "осіб");
+        edge(objFor(hit), pid, L.rel, null, L.rel === "namesake" ? { ...L.attrs, detail: "збіг прізвища та імені у ЄДР; це той самий чи інший — визначає по батькові · " + L.attrs.cands + " осіб з таким прізвищем та імʼям" } : L.attrs); }
     } };
     people(e.founders, "founder"); people(e.benef, "beneficiary"); people(e.signers, "signer");
   }
   // query-driven findings: corpus hits and web mentions attach to the object that was searched
   for (const h of R.hits) {
     if (!msgMap.has(h.m)) msgMap.set(h.m, { m: h.m, s: h.s, t: h.t, u: h.u, x: h.x });
-    edge(objFor(h.query), post(h.m), "mentioned_in", h.m, { date: h.t, src: h.s });
+    // a person's name found in the post: the post names someone of that name (_identity.js: probable)
+    const who = objFor(h.query);
+    edge(who, post(h.m), "mentioned_in", h.m, who.startsWith("person:") ? { date: h.t, src: h.s, probable: true } : { date: h.t, src: h.s });
   }
   for (const w of R.web) {
     if (/site:/.test(w.query)) continue;
     const wid = node("web:" + w.url, "web", (w.title || w.domain || w.url).slice(0, 80), { url: w.url, text: w.snippet, src: w.domain, engine: w.engine });
-    edge(objFor(w.query), wid, "web_mention", null, { src: w.domain });
+    const who = objFor(w.query);
+    edge(who, wid, "web_mention", null, who.startsWith("person:") ? { src: w.domain, probable: true } : { src: w.domain });
   }
   for (const w of R.web) {
     if (!/site:reyestr/.test(w.query)) continue;
     const base = w.query.replace(/\s*site:\S+/, "").replace(/"/g, "");
     const wid = node("web:" + w.url, "web", (w.title || w.url).slice(0, 80), { url: w.url, text: w.snippet, src: "reyestr.court.gov.ua", engine: w.engine });
-    edge(objFor(base), wid, "court_register_mention", null, { src: "reyestr.court.gov.ua" });
+    const who = objFor(base);
+    edge(who, wid, "court_register_mention", null, who.startsWith("person:") ? { src: "reyestr.court.gov.ua", probable: true } : { src: "reyestr.court.gov.ua" });
   }
   // media claims: who the press names in connection with a case (quote + URL as evidence); not a registry fact
   for (const ml of R.media) {
@@ -189,6 +211,10 @@ export function assemble(R, base = null) {
     edge(pid, cid, "named_by_media", null, { detail: `за даними ЗМІ (${Math.round((ml.confidence || 0) * 100)}%): ${ml.role} — «${(ml.quote || "").slice(0, 160)}» ${ml.url}` });
   }
   // registry hits from the local worker (Ukrainian IP): court register full-text search, NAZK declarations, ЄДР ФОП
+  // registry hits found by a person's name: candidates per (source, query) = distinct names (+ birth year) the source returned
+  const isName = (h) => h.qkind === "person" || h.qkind === "fop";
+  const hitCands = countCandidates(R.rhits.filter(isName), (h) => h.source + "|" + h.query.toLowerCase(), (h) => identityKey(h.payload?.name || h.ref, h.payload?.birth_year));
+  const byName = (h, rel, attrs, what) => (isName(h) ? nameLink(rel, hitCands.get(h.source + "|" + h.query.toLowerCase()), attrs, what) : { rel, attrs });
   for (const h of R.rhits) {
     const p = h.payload || {};
     const who = objFor(h.query);
@@ -196,13 +222,16 @@ export function assemble(R, base = null) {
       const did = node("decision:" + h.ref, "decision", `${p.judgment_form || "Рішення"} ${p.adjudication_date || ""}`, { doc_id: h.ref, form: p.judgment_form, kind: p.justice_kind,
         court: p.court, judge: p.judge, date: p.adjudication_date, receipt: p.receipt_date, url: h.url, status: "1", text: h.snippet, src: "reyestr.court.gov.ua" });
       if (p.cause_num) edge(did, node("case:" + p.cause_num.toLowerCase(), "case", "Справа " + p.cause_num, { ref: p.cause_num }), "decision_of", null);
-      edge(who, did, "court_register_mention", null, { detail: h.snippet, src: "reyestr.court.gov.ua" });
+      // a full-text hit: the text carries the name; one decision is one candidate
+      edge(who, did, "court_register_mention", null, isName(h) ? { detail: h.snippet, src: "reyestr.court.gov.ua", probable: true } : { detail: h.snippet, src: "reyestr.court.gov.ua" });
     } else if (h.source === "nazk_decl") {
       const did = node("decl:" + h.ref, "declaration", h.title, { url: h.url, text: h.snippet, position: p.work_post, org: p.work_place, year: p.year, region: p.region, src: "НАЗК" });
-      edge(who, did, "declaration", null, { detail: h.snippet, src: "public.nazk.gov.ua" });
+      const L = byName(h, "declaration", { detail: h.snippet, src: "public.nazk.gov.ua" }, "декларантів");
+      edge(who, did, L.rel, null, L.attrs);
     } else if (h.source === "yc_fop") {
       const fid = node("fopx:" + h.ref, "registry", h.title, { stan: p.status, text: h.snippet, kved_main: p.kved_main, kved_other: p.kved_other, registration: p.registration, city: p.city, url: h.url, src: "ЄДР (через YouControl)" });
-      edge(who, fid, "fop_record", null, { detail: h.snippet, src: "youcontrol.com.ua" });
+      const L = byName(h, "fop_record", { detail: h.snippet, src: "youcontrol.com.ua" }, "ФОП");
+      edge(who, fid, L.rel, null, L.attrs);
     } else if (h.source === "yc_org") {
       const oid = node("orgx:" + h.ref, "registry", h.title, { stan: p.status, text: h.snippet, kved_main: p.kved_main, kved_other: p.kved_other, registration: p.registration,
         capital: p.capital, address: p.address, head: p.head, head_since: p.head_since, vat: p.vat, assets: p.assets, court_docs: p.court_docs, edrpou: p.edrpou, url: h.url, src: "ЄДР (через YouControl)" });
@@ -213,20 +242,24 @@ export function assemble(R, base = null) {
       }
     } else if (h.source === "edr_role") {
       const oid = node("registry:" + p.edrpou, "registry", `ЄДР ${p.edrpou} · ${p.short_name || p.org_name || ""}`, { edrpou: p.edrpou, stan: p.stan, full: p.org_name, src: "ЄДР" });
-      edge(who, oid, { founder: "founder", beneficiary: "beneficiary", signer: "director" }[p.role] || "related", null, { detail: h.snippet, src: "ЄДР (data lake)" });
+      const L = byName(h, { founder: "founder", beneficiary: "beneficiary", signer: "director" }[p.role] || "related", { detail: h.snippet, src: "ЄДР (data lake)" }, "осіб");
+      edge(who, oid, L.rel, null, L.attrs);
     } else if (h.source === "erb") {
       const eid = node("erb:" + h.ref, "registry", h.title, { text: h.snippet, org: p.executor, agency: p.publisher, year: p.birth_year ? null : null, src: "Єдиний реєстр боржників", url: h.url, category: p.category });
-      edge(who, eid, "debtor_record", null, { detail: h.snippet, src: "erb.minjust.gov.ua" });
+      const L = byName(h, "debtor_record", { detail: h.snippet, src: "erb.minjust.gov.ua" }, "боржників (ПІБ + рік народження)");
+      edge(who, eid, L.rel, null, L.attrs);
     } else if (h.source === "summons") {
       // a court's notice summoning the person (in-absentia proceedings): the case number ties them to its decisions
       if (p.cause_num) {
         const cid = node("case:" + String(p.cause_num).toLowerCase(), "case", "Справа " + p.cause_num, { ref: p.cause_num, court: p.court });
-        edge(who, cid, "summoned", null, { detail: [p.notice_type, p.court, p.date].filter(Boolean).join(" · "), src: "court.gov.ua (оголошення про виклик)" });
+        const L = byName(h, "summoned", { detail: [p.notice_type, p.court, p.date].filter(Boolean).join(" · "), src: "court.gov.ua (оголошення про виклик)" }, "осіб");
+        edge(who, cid, L.rel, null, L.attrs);
         if (p.proc_num && /^\d{17}$/.test(p.proc_num)) edge(cid, node("erdr:" + p.proc_num, "case", "Провадження ЄРДР " + p.proc_num, { ref: p.proc_num, kind: "erdr" }), "proceeding", null);
       }
     } else if (h.source === "edr_fop") {
       const fid = node("fop:" + h.ref, "registry", h.title, { stan: p.stan, text: h.snippet, src: "ЄДР (ФОП)" });
-      edge(who, fid, "fop_record", null, { detail: h.snippet, src: "ЄДР" });
+      const L = byName(h, "fop_record", { detail: h.snippet, src: "ЄДР" }, "ФОП");
+      edge(who, fid, L.rel, null, L.attrs);
     }
   }
   // police wanted list: a record per person already in the graph under the same full name; searching body and article as nodes
@@ -236,12 +269,15 @@ export function assemble(R, base = null) {
     if (w.m === "full" && !nodes.has("person:" + w.name_u)) continue;
     const pid = node("person:" + w.name_u, "person", [w.last_name_u, w.first_name_u, w.middle_name_u].filter(Boolean).join(" ").toLowerCase()
       .replace(/(^|[\s'’-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase()));
-    if (w.m !== "full") edge(short, pid, "namesake", null, { detail: "збіг прізвища та імені з записом розшуку; той самий чи інший — визначають по батькові й дата народження" });
+    if (w.m !== "full") { const L = nameLink("probably_same", w.ns, { detail: "у розшуку єдина особа з таким прізвищем та імʼям; по батькові в запиті не було" }, "осіб у розшуку");
+      edge(short, pid, L.rel, null, L.rel === "namesake" ? { ...L.attrs, detail: "збіг прізвища та імені з записом розшуку; той самий чи інший — визначають по батькові й дата народження · " + L.attrs.cands + " осіб з таким прізвищем та імʼям" } : L.attrs); }
     const who = [w.last_name_u, w.first_name_u, w.middle_name_u].filter(Boolean).join(" ").toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
     const wid = node("wanted:" + w.id, "wanted", "Розшук · " + who, { category: w.category, article: w.article_crim, restraint: w.restraint, ovd: w.ovd, birth_date: w.b, date: w.d,
       src: "Нацполіція (data.gov.ua)" });
-    edge(pid, wid, "wanted", null, { detail: [(w.category || "").toLowerCase(), w.article_crim, w.restraint, w.d ? "з " + w.d : "", w.b ? "нар. " + w.b : "",
-      "збіг за повним ПІБ — звіряйте дату народження"].filter(Boolean).join(" · "), src: "Нацполіція" });
+    // several people under this full name in the list (different birth dates): none of them is asserted to be this node
+    const L = nameLink("wanted", w.n, { detail: [(w.category || "").toLowerCase(), w.article_crim, w.restraint, w.d ? "з " + w.d : "", w.b ? "нар. " + w.b : "",
+      "збіг за повним ПІБ — звіряйте дату народження"].filter(Boolean).join(" · "), src: "Нацполіція" }, "осіб у розшуку");
+    edge(pid, wid, L.rel, null, L.attrs);
     if (w.ovd) edge(node("org:" + norm(w.ovd).toLowerCase(), "org", norm(w.ovd), { kind: w.agency }), wid, "searches", null);
     if (w.article) edge(wid, node("article:" + w.article, "article", `ст. ${w.article} КК`), "article", null, { detail: w.article_crim });
   }
@@ -251,10 +287,15 @@ export function assemble(R, base = null) {
     for (const n of A.nodes) { const { id, type, label, ...attrs } = n; node(id, type, label, attrs); }
     for (const e of A.edges) edge(e.source, e.target, e.rel, null, { detail: e.detail, src: e.src });
   }
+  // lawyers named in decision texts (person_case_links): probable lawyer -> case edges
+  const LG = lawyerGraph(R.lawyers || []);
+  for (const n of LG.nodes) { const { id, type, label, ...attrs } = n; node(id, type, label, attrs); }
+  for (const e of LG.edges) { const { source, target, rel, msgs, ...attrs } = e; edge(source, target, rel, null, attrs); }
   // declarations' contents: real estate, vehicles, valuables as asset nodes; companies, income sources, lenders, family
-  const D = declGraph(R.decl || []);
+  // (fetched by the declarant's name: edges at the declarant are probable, _identity.js)
+  const D = declGraph(R.decl || []), declarants = new Set((R.decl || []).map((r) => "person:" + norm(r.declarant).toLowerCase()));
   for (const n of D.nodes) { const { id, type, label, ...attrs } = n; node(id, type, label, attrs); }
-  for (const e of D.edges) edge(e.source, e.target, e.rel, null, { detail: e.detail, src: e.src });
+  for (const e of D.edges) edge(e.source, e.target, e.rel, null, { detail: e.detail, src: e.src, ...(declarants.has(e.source) || declarants.has(e.target) ? { probable: true } : {}) });
   // analyst-supplied links (the researcher's own knowledge): kept apart from registry facts and labelled as such
   for (const l of R.alinks) {
     const a = node(l.src_kind + ":" + norm(l.src_name).toLowerCase(), l.src_kind, norm(l.src_name));
