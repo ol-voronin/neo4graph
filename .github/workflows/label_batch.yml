@@ -22,6 +22,13 @@ on:
         description: "submit: newest unlabeled first"
         type: boolean
         default: true
+      all_ua:
+        description: "submit: label every Ukrainian post too, not only those with rule signals (threat/target/timeframe)"
+        type: boolean
+        default: false
+      topics_since:
+        description: "submit: instead of unlabeled posts, re-label topic posts labeled before the current prompt, published since YYYY-MM-DD"
+        default: ""
 
 concurrency:
   group: label-batch
@@ -54,7 +61,7 @@ jobs:
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY missing"; exit 1; fi
           CMD="${{ github.event.inputs.cmd || 'fetch' }}"
           if [ "${{ github.event.schedule }}" = "40 3 * * *" ]; then python src/label_batch.py fetch && python src/label_batch.py submit --newest --limit 4000
-          elif [ "$CMD" = "submit" ]; then python src/label_batch.py submit --limit "${{ github.event.inputs.limit || '30000' }}" ${{ github.event.inputs.scope == 'panel' && '--panel' || '' }} ${{ github.event.inputs.newest == 'true' && '--newest' || '' }}; else python src/label_batch.py $CMD; fi   # unquoted: "drop <ids>" splits into args
+          elif [ "$CMD" = "submit" ]; then python src/label_batch.py submit --limit "${{ github.event.inputs.limit || '30000' }}" ${{ github.event.inputs.scope == 'panel' && '--panel' || '' }} ${{ github.event.inputs.newest == 'true' && '--newest' || '' }} ${{ github.event.inputs.all_ua == 'true' && '--all-ua' || '' }} ${{ github.event.inputs.topics_since && format('--topics-since {0}', github.event.inputs.topics_since) || '' }}; else python src/label_batch.py $CMD; fi   # unquoted: "drop <ids>" splits into args
       - uses: actions/upload-artifact@v4
         if: always()
         with:

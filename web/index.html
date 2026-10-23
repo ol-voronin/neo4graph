@@ -170,6 +170,11 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 .pg .card b{font-size:22px;display:block}.pg table{border-collapse:collapse;width:100%;background:var(--panel);font-size:13px}.pg th,.pg td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
 .pg .bar{display:inline-block;height:8px;background:var(--accent);border-radius:4px;vertical-align:middle;margin-right:6px}.pg .wrap{overflow-x:auto}
 .pg .regs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}.pg .reg{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}.pg .reg .bar{opacity:.85}.pg .reg .bar.b{background:var(--muted)}
+.pgmap{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-start}.pgmap svg{display:block;width:100%;max-width:820px;height:auto}
+.pgmap path,.pgmap circle{stroke:var(--panel);stroke-width:1;cursor:default;outline:none}.pgmap .o:hover,.pgmap .o:focus-visible{stroke:var(--fg);stroke-width:2}
+.pgmap .na{fill:var(--line)}.pgmap text{font-family:var(--font);font-size:11px;font-weight:600;pointer-events:none;text-anchor:middle;dominant-baseline:middle;font-variant-numeric:tabular-nums}
+.pgmap .halo{paint-order:stroke;stroke:var(--panel);stroke-width:3px;fill:var(--fg)}
+.pgmap .side2{display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--muted);min-width:180px}
 @media (max-width:760px){body{grid-template-columns:1fr}.content{grid-column:1;grid-row:2}.side{grid-row:1;height:auto;flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px;gap:4px}
   .side .brand{padding:4px 8px 4px 0}.side .brand small,.side .navnote{display:none}.rh .row{grid-template-columns:minmax(0,1fr) 44px 74px 84px}.rh .row .hide-m{display:none}}
 /* trust levels + person page (fact-check view) */
@@ -184,9 +189,9 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 @media (max-width:760px){.pp .grid2{grid-template-columns:1fr}}
 /* fact-check dashboard: verdicts wear the status palette (with ✓ ✗ ½ ? labels, never colour alone); UA/RU series = categorical slots 1/2;
    trust heat = one-hue blue ramp; mood = diverging blue (+) / grey 0 / red (−) */
-#factcheck{--v-t:#0ca30c;--v-p:#fab219;--v-f:#d03b3b;--v-u:#898781;--v-q:#c9c8c1;--s-ua:#2a78d6;--s-ru:#eb6834;--d-pos:#2a78d6;--d-neg:#e34948;--d-mid:#f0efec;--grid:#e1e0d9;--tip:#1b2024;--tipfg:#fff}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #factcheck{--v-q:#4a4a46;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}}
-:root[data-theme="dark"] #factcheck{--v-q:#4a4a46;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}
+#factcheck,#fxtip{--v-t:#0ca30c;--v-p:#fab219;--v-f:#d03b3b;--v-u:#898781;--v-q:#c9c8c1;--s-ua:#2a78d6;--s-ru:#eb6834;--d-pos:#2a78d6;--d-neg:#e34948;--d-mid:#f0efec;--grid:#e1e0d9;--tip:#1b2024;--tipfg:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #factcheck,:root:not([data-theme="light"]) #fxtip{--v-q:#4a4a46;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}}
+:root[data-theme="dark"] #factcheck,:root[data-theme="dark"] #fxtip{--v-q:#4a4a46;--s-ua:#3987e5;--s-ru:#d95926;--d-pos:#3987e5;--d-neg:#e66767;--d-mid:#383835;--grid:#2c2c2a;--tip:#e8ecee;--tipfg:#15191c}
 #factcheck.fc{background:none;border:0;padding:0;gap:12px}
 .fxhead{display:flex;flex-direction:column;gap:6px}.fxhead h2{margin:2px 0 0;font-size:20px}.fxhead .lead{margin:0;color:var(--muted);max-width:820px}
 .fxbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;position:sticky;top:0;z-index:12;background:var(--bg);padding:6px 0;border-bottom:1px solid var(--line)}
@@ -362,8 +367,8 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
   <p class="meta" style="font-family:var(--font);font-size:13px;max-width:760px">Дослідження, <b>не попередження про загрозу</b>. Кожен прогноз записується до початку дня, на який він зроблений, і більше не змінюється. Через 2–3 місяці стане видно, чи кандидатні сигнали стабільно кращі за базову лінію.</p>
   <div class="cards" id="pgcards"><p class="meta">Завантаження…</p></div>
   <h3 class="meta" style="margin:14px 0 6px" id="pgregh">Масований удар по областях</h3>
-  <div class="regs" id="pgregs"></div>
-  <div class="wrap" style="margin-top:12px"><table><thead><tr><th>День</th><th>Область</th><th>Модель</th><th>Ймовірність <span class="meta">(наведіть — що це)</span></th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div>
+  <div class="pgmap" id="pgregs"></div>
+  <details class="tbl" style="margin-top:12px"><summary>Усі прогнози таблицею</summary><div class="wrap"><table><thead><tr><th>День</th><th>Область</th><th>Модель</th><th>Ймовірність <span class="meta">(наведіть — що це)</span></th><th>Що сталося</th><th>Випущено</th></tr></thead><tbody id="pgrows"></tbody></table></div></details>
 </section>
 <script>/* show the right section before the graph data arrives (no flash of the graph on the home page) */
 {const u=new URL(location.href),v=u.searchParams.get('view')||(location.hash.length>1?'graph':'home');if(v!=='graph'){['graphtop','filters','legend'].forEach(i=>{const e=document.getElementById(i);if(e)e.hidden=true});const m=document.querySelector('.main');if(m)m.hidden=true}const t=document.getElementById(v==='prognoz'?'prognoz':v==='factcheck'?'factcheck':'home');if(v!=='graph'&&t)t.hidden=false}</script>
@@ -1101,7 +1106,7 @@ function pgTip(r,pair,PG){const f=r.features||{},cov=(PG.coverage||[]).find(c=>c
   if(r.model.includes('massive2'))h+='<br><br><b>Мітки v2:</b> «не було масованого удару» береться з повних зведень ОВА і з днів без жодної повітряної тривоги в області (коли стрічка тривог працювала); дні без доказів — невідомі, а не нулі.';
   else if(cov&&(cov.complete===0||cov.known<cov.days*0.6))h+=`<br><br>⚠ <b>Ненадійно для цієї області:</b> повних щоденних зведень немає (${cov.complete} з ${cov.days} днів), відомі ${cov.known} днів — переважно ті, коли про удари писали. Тому базова частота тут завищена і спирається на середнє по областях (переважно Харківщина). Не читайте це як реальні ${pct1(r.p)}.`;
   return h+'<br><br><span style="opacity:.8">Дослідження, не попередження про загрозу.</span>'}
-let PGD=null;
+let PGD=null,UAMAP=null;
 async function loadPG(){try{const PG=await (await fetch('/api/predictions')).json();PGD=PG;const rows=PG.rows||[];const by={},key=r=>r.d+'|'+(r.region||'');rows.filter(r=>r.outcome!=null).forEach(r=>(by[r.model]??=new Map()).set(key(r),r));
   document.getElementById('pgcards').innerHTML=Object.entries(PM).filter(([,v])=>v.vs).map(([k,v])=>{const a=by[k]||new Map(),b=by[v.vs]||new Map(),days=[...a.keys()].filter(d=>b.has(d));const y=days.map(d=>a.get(d).outcome);const A=aucOf(y,days.map(d=>a.get(d).p)),B=aucOf(y,days.map(d=>b.get(d).p));
     return `<div class="card"><div class="meta">${esc(v.t)}</div><b>${A!=null&&B!=null?(A-B>=0?'+':'')+f3(A-B):'—'}</b><div class="meta">різниця AUC кандидат − база · оцінених ${k.startsWith('ua_oblast')?'область-днів':'днів'} ${days.length}, з подією ${y.filter(Boolean).length}</div></div>`}).join('');
@@ -1111,8 +1116,24 @@ async function loadPG(){try{const PG=await (await fetch('/api/predictions')).jso
   const tipA2=r=>esc(pgTip(r,pairOf(r),PG));
   const cur=rows.filter(r=>r.d===last),reg={};cur.forEach(r=>{(reg[r.region]??={})[r.model===C?'c':'b']=r});
   document.getElementById('pgregh').textContent=last?`Масований удар по областях (≥7 ракет або ≥20 ударних дронів), ${last}`:'Масований удар по областях: прогнозів ще немає';
-  document.getElementById('pgregs').innerHTML=Object.entries(reg).sort((x,y)=>((y[1].c||y[1].b).p)-((x[1].c||x[1].b).p)).map(([r,v])=>`<div class="reg"><b style="font-size:13px;display:inline">${esc(rn(r))}</b>
-    <div tabindex="0" ${v.c?`data-tip="${tipA2(v.c)}"`:''}><span class="bar" style="width:${Math.round((v.c?.p||0)*90)}px"></span>${pct1(v.c?.p)}</div><div class="meta" tabindex="0" ${v.b?`data-tip="${tipA2(v.b)}"`:''}><span class="bar b" style="width:${Math.round((v.b?.p||0)*90)}px"></span>${pct1(v.b?.p)} база${v.c?.outcome!=null?` · сталося: ${v.c.outcome?'так':'ні'}`:''}</div></div>`).join('');
+  const regMap=async which=>{const G=UAMAP||(UAMAP=await (await fetch('/ua-oblasts.json')).json()),box=document.getElementById('pgregs');
+    const fill=p=>{const i=Math.max(0,Math.min(RAMP.length-1,Math.round(p*(RAMP.length-1))));return [RAMP[i],i>=6?'#fff':'#0b0b0b']};
+    const shape=(k,g)=>{const v=reg[k],r=v&&v[which];if(!r)return g.d?`<path class="na" d="${g.d}"><title>${esc(rn(k)==k?'Крим':rn(k))}: прогнозу немає</title></path>`:'';
+      const [bg]=fill(r.p),attr=`class="o" fill="${bg}" tabindex="0" role="img" aria-label="${esc(rn(k))}: ${pct1(r.p)}" data-tip="${tipA2(r)}"`;
+      return g.circle?`<circle ${attr} cx="${g.circle[0]}" cy="${g.circle[1]}" r="${g.circle[2]+3}"/>`:`<path ${attr} d="${g.d}"/>`};
+    const label=(k,g)=>{const r=reg[k]?.[which];if(!r)return'';const [,fg]=fill(r.p),[x,y]=k==='kyiv-city'?[g.c[0]+16,g.c[1]-10]:g.c;
+      return k==='kyiv-city'?`<text class="halo" x="${x}" y="${y}">${pct1(r.p)}</text>`:`<text x="${x}" y="${y}" fill="${fg}">${pct1(r.p)}</text>`};
+    const E=Object.entries(G.regions),order=E.filter(([k])=>k!=='kyiv-city').concat(E.filter(([k])=>k==='kyiv-city'));
+    box.innerHTML=`<svg viewBox="${G.viewBox}" role="group" aria-label="Карта ймовірностей масованого удару по областях" style="color:var(--fg)">${order.map(([k,g])=>shape(k,g)).join('')}${order.map(([k,g])=>label(k,g)).join('')}</svg>
+      <div class="side2"><div role="group" aria-label="Модель" style="display:flex;gap:6px"><button type="button" class="chip" data-m="c" aria-pressed="${which==='c'}">з риторикою</button><button type="button" class="chip" data-m="b" aria-pressed="${which==='b'}">база</button></div>
+      <div class="ramp">0%${RAMP.filter((_,i)=>i%2===0).map(c=>`<span style="background:${c}"></span>`).join('')}100%</div>
+      <span>Колір і число — ймовірність масованого удару за добу. Наведіть або виберіть область клавішею Tab — пояснення, звідки число і як модель влучала досі.</span>
+      <span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--line);margin-right:4px;vertical-align:-1px"></i>прогнозу немає</span>
+      <span>Межі: © OpenStreetMap (ODbL).</span></div>`;
+    const svg=box.querySelector('svg'),up=e=>{const t=e.target.closest&&e.target.closest('.o');if(t&&!t.matches('circle'))svg.insertBefore(t,svg.querySelector('circle.o,text'))};  // hovered outline on top of neighbours
+    svg.addEventListener('pointerover',up);svg.addEventListener('focusin',up);
+    box.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>regMap(b.dataset.m))};
+  await regMap('c');
   document.getElementById('pgrows').innerHTML=rows.slice(0,150).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(rn(r.region))}</td><td>${esc(PM[r.model]?.t||r.model)}<div class="meta">${esc(PM[r.model]?.k||'')}</div></td><td tabindex="0" data-tip="${tipA2(r)}"><span class="bar" style="width:${Math.round(r.p*80)}px"></span>${pct1(r.p)}</td>
     <td>${r.outcome==null?'<span class="meta">ще невідомо</span>':r.outcome?'<b>так</b>':'<span class="meta">ні</span>'}</td><td class="meta">${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}</td></tr>`).join('')||'<tr><td colspan="6" class="meta">Ще немає прогнозів.</td></tr>';
 }catch(e){document.getElementById('pgcards').innerHTML='<p class="meta">Помилка: '+esc(e.message)+'</p>'}}
