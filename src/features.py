@@ -137,6 +137,73 @@ def oblast_gt(conn) -> pd.DataFrame:
     return gt, cov
 
 
+ACLED_SUB = ("Air/drone strike", "Shelling/artillery/missile attack", "Disrupted weapons use")
+ACLED_LAG_DAYS = 13  # an ACLED week (Sat .. Fri) is in the export about a week after it ends: week start + 13 <= D - 1
+
+
+def acled_weekly(conn) -> pd.DataFrame:
+    """(region_id, week, ev): ACLED strike events per oblast and week (src/acled.py, migration 026), zero-filled over the
+    weeks the export covers (the aggregate omits empty cells). Empty frame if the table is absent."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT region_id, week, sum(events) FILTER (WHERE sub_event_type = ANY(%s))::int
+                           FROM acled_weekly WHERE country = 'Ukraine' AND region_id IS NOT NULL AND week >= %s::date - 120 GROUP BY 1, 2""",
+                        (list(ACLED_SUB), PANEL_START))
+            df = pd.DataFrame(cur.fetchall(), columns=["region_id", "week", "ev"])
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        print(f"acled_weekly unavailable ({str(e).splitlines()[0][:120]}): v3 labels and ACLED features will be missing")
+        return pd.DataFrame(columns=["region_id", "week", "ev"])
+    if df.empty:
+        return df
+    df["week"] = pd.to_datetime(df["week"])
+    grid = pd.MultiIndex.from_product([sorted(df.region_id.unique()), pd.date_range(df.week.min(), df.week.max(), freq="7D")],
+                                      names=["region_id", "week"]).to_frame(index=False)
+    return grid.merge(df, on=["region_id", "week"], how="left").fillna({"ev": 0})
+
+
+def acled_join(df: pd.DataFrame, aw: pd.DataFrame) -> pd.DataFrame:
+    """Adds per (region, D):
+      acled_ev   strike events in D's own ACLED week (labels only: known ~2 weeks later)
+      acled_l    log1p events of the latest week already published before the cutoff on D-1 (feature)
+      acled_m8   mean log1p events over the 8 latest published weeks (feature: the oblast's real strike rate)
+    >>> aw = pd.DataFrame({"region_id": ["a"] * 3, "week": pd.to_datetime(["2026-05-02", "2026-05-09", "2026-05-16"]), "ev": [0, 3, 0]})
+    >>> g = pd.DataFrame({"region_id": ["a", "a", "a"], "d": pd.to_datetime(["2026-05-03", "2026-05-12", "2026-05-24"])})
+    >>> acled_join(g, aw)[["acled_ev", "acled_l"]].round(3).values.tolist()
+    [[0.0, nan], [3.0, nan], [nan, 1.386]]
+    """
+    df = df.copy()
+    if aw.empty:
+        for c in ("acled_ev", "acled_l", "acled_m8"):
+            df[c] = np.nan
+        return df
+    df["_wk"] = df["d"] - pd.to_timedelta((df["d"].dt.weekday - 5) % 7, unit="D")  # ACLED weeks start on Saturday
+    df = df.merge(aw.rename(columns={"week": "_wk", "ev": "acled_ev"}), on=["region_id", "_wk"], how="left")
+    a = aw.sort_values(["region_id", "week"]).copy()
+    a["l"] = np.log1p(a["ev"])
+    a["m8"] = a.groupby("region_id")["l"].transform(lambda x: x.rolling(8, min_periods=4).mean())
+    a["avail"] = a["week"] + pd.Timedelta(days=ACLED_LAG_DAYS + 1)  # usable for target days D >= avail
+    df["_ord"] = range(len(df))
+    m = pd.merge_asof(df.sort_values("d"), a[["region_id", "avail", "l", "m8"]].sort_values("avail"), left_on="d", right_on="avail",
+                      by="region_id", direction="backward")
+    m = m.sort_values("_ord").reset_index(drop=True)
+    df["acled_l"], df["acled_m8"] = m["l"].to_numpy(), m["m8"].to_numpy()
+    return df.drop(columns=["_wk", "_ord"])
+
+
+def label_oblast3(df: pd.DataFrame) -> pd.DataFrame:
+    """ob_massive3 (model ua_oblast_massive3_*): ob_massive2, plus a known NEGATIVE for every day of an ACLED week with no
+    strike, shelling or interception event at all in the oblast (a massed strike would be recorded by ACLED; that the
+    rear oblasts are quiet most weeks is exactly what v1/v2 could not see). Positives always win.
+    >>> g = pd.DataFrame({"ob_massive2": [1.0, np.nan, np.nan, 0.0], "acled_ev": [0, 0, 4, np.nan]})
+    >>> label_oblast3(g)["ob_massive3"].tolist()
+    [1.0, 0.0, nan, 0.0]
+    """
+    df = df.copy()
+    df["ob_massive3"] = df["ob_massive2"].where(df["ob_massive2"].notna(), np.where(df["acled_ev"].eq(0), 0.0, np.nan))
+    return df
+
+
 def rhetoric_geo(conn, cutoff_hour: int) -> pd.DataFrame:
     """Per target day D and region: RU panel posts flagged r_threat that name a place in the region (geo_regions()),
     same 24-hour window as rhetoric(). Empty frame (-> NaN -> no forecast) if migration 016 is not applied."""
@@ -205,7 +272,7 @@ def label_oblast2(df: pd.DataFrame, cov: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.DataFrame, start, end, regions,
-               ee_min_extracted: int = 100) -> pd.DataFrame:
+               ee_min_extracted: int = 100, aw: pd.DataFrame | None = None) -> pd.DataFrame:
     """Pure assembly (no DB): regions x days grid with national rhetoric (per d), regional rhetoric (per region, d),
     ground truth and targets. Rows sorted by (region_id, d) with a fresh RangeIndex."""
     days = pd.date_range(start, end, freq="D")
@@ -213,6 +280,7 @@ def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.D
     lab = label_oblast(gt, cov, ee_min_extracted) if len(gt) else gt.assign(ob_massive=np.nan, ob_missile_day=np.nan)
     df = grid.merge(lab, on=["region_id", "d"], how="left").merge(nat, on="d", how="left")
     df = label_oblast2(df, cov)
+    df = label_oblast3(acled_join(df, aw if aw is not None else pd.DataFrame(columns=["region_id", "week", "ev"])))
     df = df.merge(geo, on=["region_id", "d"], how="left")
     have_geo = df.d.isin(set(geo.d)) if len(geo) else pd.Series(False, index=df.index)
     # a region with no threat post naming it on a day the query ran has 0, not NaN; days outside the query stay NaN
@@ -231,7 +299,8 @@ def frame_long(conn, cutoff_hour: int, until=None, regions=None, ee_min_extracte
     end = pd.Timestamp(until) if until is not None else pd.Timestamp.now(tz="Europe/Kyiv").tz_localize(None).normalize() + pd.Timedelta(days=1)
     nat = rhetoric(conn, cutoff_hour)
     gt, cov = oblast_gt(conn)
-    return build_long(nat, rhetoric_geo(conn, cutoff_hour), gt, cov, PANEL_START, end, regions or PANEL_REGIONS, ee_min_extracted)
+    return build_long(nat, rhetoric_geo(conn, cutoff_hour), gt, cov, PANEL_START, end, regions or PANEL_REGIONS, ee_min_extracted,
+                      acled_weekly(conn))
 
 
 def design_long(df: pd.DataFrame, spec: dict, signal_shift: int = 0) -> pd.DataFrame:
@@ -239,18 +308,21 @@ def design_long(df: pd.DataFrame, spec: dict, signal_shift: int = 0) -> pd.DataF
       reg_<slug>   region indicator (region as a feature)
       base         region base rate: expanding mean of the region's target up to D-2, shrunk toward the all-region
                    rate with weight spec["shrink"] (pseudo-days), so sparse regions borrow strength
-      y2, y2_m7    own target at D-2 and its 7-day mean (unknown days filled with the base rate, y2_known flags them)
+      y2, y2_m7    own target at D-2 and its 7-day mean (unknown days filled with the base rate, y2_known flags them);
+                   spec["lag_target"] names a real-time target for base/y2 when the training target is only known later
+                   (ob_massive3's ACLED negatives arrive ~2 weeks late, so its own D-2 value is not known at D)
+      acled_l, acled_m8      spec["acled"]: ACLED strike rate of the oblast, published weeks only (acled_join)
       <exposure>   e.g. alert_min: log1p of D-2 and 7-day mean (alerts are a threat-presence proxy, never the label)
       <signal>_1, _m3        national signals, window ending at the cutoff on D-1 (as design())
       <rsignal>_1, _m3       region signals, same window, per region
     signal_shift: circularly shift every signal column by this many days (shuffled control; keeps autocorrelation).
     """
-    y = df[spec["target"]]
+    lag_t = spec.get("lag_target", spec["target"])
     g = df.groupby("region_id", sort=False)
     F = pd.DataFrame(index=df.index)
     for r in sorted(df.region_id.unique()):
         F["reg_" + r] = (df.region_id == r).astype(float)
-    y2 = g[spec["target"]].shift(2)
+    y2 = g[lag_t].shift(2)
     m = spec.get("shrink", 20)
     known = y2.notna().astype(float)
     r_sum = y2.fillna(0).groupby(df.region_id).cumsum()
@@ -265,6 +337,8 @@ def design_long(df: pd.DataFrame, spec: dict, signal_shift: int = 0) -> pd.DataF
     F["y2"] = y2.fillna(F["base"])
     F["y2_known"] = known
     F["y2_m7"] = y2.groupby(df.region_id).transform(lambda s: s.rolling(7, min_periods=1).mean()).fillna(F["base"])
+    if spec.get("acled"):
+        F["acled_l"], F["acled_m8"] = df["acled_l"], df["acled_m8"]
     for e in spec.get("exposure", []):
         lag = np.log1p(g[e].shift(2))
         F[e + "_2"] = lag

@@ -1,0 +1,31 @@
+{
+  "name": "ua_oblast_massive3_v1",
+  "role": "candidate",
+  "compare_to": "ua_oblast_massive3_base_v1",
+  "panel": "oblast",
+  "target": "ob_massive3",
+  "target_doc": "same as ua_oblast_massive3_base_v1: ob_massive3 (features.label_oblast3)",
+  "lag_target": "ob_massive2",
+  "acled": true,
+  "cutoff_hour": 15,
+  "deadline_hour": 24,
+  "deadline": "D 00:00 Europe/Kyiv",
+  "signals": [
+    "l2_ru",
+    "tc_energy_ru",
+    "tc_dc_ru",
+    "tc_rail_ru",
+    "tc_vpk_ru"
+  ],
+  "signals_doc": "l2_ru: share of RU panel posts with rule threat level >= 2; tc_<class>_ru: share of RU panel posts that are threats (rule r_threat) AND name a target class — energy (енерг/ТЕЦ/ТЕС/підстанц…), dc (дата-центр/ЦОД/серверн), rail (залізн/железнодор/депо/локомотив), vpk (ВПК/оборонн… завод/завод); thr_geo_ru: share of RU panel threat posts naming a city/oblast of THIS region (geo_regions()); tcg_ru: share of RU panel threat posts naming THIS region AND an infrastructure class (energy | dc | rail). All over the 24 h window ending 15:00 on D-1 (features.TC_RE, INFRA_RE)",
+  "region_signals": [
+    "thr_geo_ru",
+    "tcg_ru"
+  ],
+  "features_doc": "baseline features + signals (window ending at the cutoff and its 3-day mean); base/y2/y2_m7 from the real-time target ob_massive2 (lag_target), plus acled_l (log1p ACLED strike events of the oblast, latest week published before the cutoff) and acled_m8 (its 8-week mean): the oblast's real strike rate",
+  "shrink": 20,
+  "ee_min_extracted": 100,
+  "C": 1.0,
+  "min_train": 60,
+  "frozen": "2026-10-23"
+}
