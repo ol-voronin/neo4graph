@@ -178,6 +178,11 @@ body{display:grid;grid-template-columns:212px auto minmax(0,1fr);gap:0;padding:0
 .pg .card b{font-size:22px;display:block}.pg table{border-collapse:collapse;width:100%;background:var(--panel);font-size:13px}.pg th,.pg td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
 .pg .bar{display:inline-block;height:8px;background:var(--accent);border-radius:4px;vertical-align:middle;margin-right:6px}.pg .wrap{overflow-x:auto}
 .pg .regs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}.pg .reg{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}.pg .reg .bar{opacity:.85}.pg .reg .bar.b{background:var(--muted)}
+.qform{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}.qform input{flex:1 1 280px;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit}
+.qform select{padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit}.qfil{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.qt td{white-space:normal;vertical-align:top;font-size:13px}.qt td:first-child{min-width:180px}.qt .st{display:inline-block;width:auto;height:auto;background:none;padding:1px 7px;border-radius:999px;border:1px solid var(--line);font-size:12px;white-space:nowrap}
+.qt .st.done{border-color:var(--accent);color:var(--accent)}.qt .st.failed{border-color:var(--c-registry);color:var(--c-registry)}.qt .st.running{background:var(--accent-soft)}.qt .nt{display:block;color:var(--muted);font-size:12px;margin-top:3px;max-width:520px;overflow-wrap:anywhere}
+.qt td:last-child{white-space:nowrap}.qt td:last-child .chip{margin:0 4px 4px 0}
 .pgmap{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-start}.pgmap svg{display:block;width:100%;max-width:820px;height:auto}
 .pgmap path,.pgmap circle{stroke:var(--panel);stroke-width:1;cursor:default;outline:none}.pgmap .o:hover,.pgmap .o:focus-visible{stroke:var(--fg);stroke-width:2}
 .pgmap .na{fill:var(--line)}.pgmap text{font-family:var(--font);font-size:11px;font-weight:600;pointer-events:none;text-anchor:middle;dominant-baseline:middle;font-variant-numeric:tabular-nums}
@@ -257,6 +262,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
   <button type="button" data-view="graph">Граф зв'язків</button>
   <button type="button" data-view="factcheck">Фактчек і риторика</button>
   <button type="button" data-view="prognoz">Прогноз</button>
+<button type="button" data-view="queue">Черга запитів</button>
   <p class="navnote">Дослідження на відкритих даних. Не попередження про загрозу.</p>
 </nav>
 <aside class="chat" id="chat" hidden aria-label="Чат по базі">
@@ -370,6 +376,14 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
 
 </section>
 <div class="fxtip" id="fxtip" hidden></div>
+<section class="pg qv" id="queue" hidden>
+  <h2 style="margin:4px 0">Черга запитів до реєстрів</h2>
+  <p class="meta" style="font-family:var(--font);font-size:13px;max-width:760px">Кожен запит має дві частини. <b>Реєстри з українського IP</b> (судові рішення, декларації, ФОП, оголошення про виклик) перевіряє локальний воркер — зазвичай за кілька хвилин, якщо він онлайн. <b>Хмара</b> (ЄДР, реєстр корупціонерів, корпус постів, інтернет, другий крок по знайдених компаніях) бере запити раз на ~30 хвилин, і повна цепочка триває до пів години. Знайдене з'являється на графі.</p>
+  <form id="qform" class="qform"><input id="qnew" type="search" placeholder="ПІБ, компанія, ЄДРПОУ, номер справи або посилання" aria-label="Новий запит" required minlength="3"><select id="qkind" aria-label="Тип запиту"><option value="">визначити автоматично</option><option value="person">особа</option><option value="org">компанія</option><option value="edrpou">ЄДРПОУ</option><option value="case">номер справи</option><option value="web">пошук в інтернеті</option><option value="url">посилання як джерело</option></select><button type="submit" class="chip">Додати в чергу</button><span class="meta" id="qmsg" role="status"></span></form>
+  <div class="meta" id="qworker" style="margin:8px 0"></div>
+  <div class="qfil" role="group" aria-label="Фільтр за статусом"><button type="button" class="chip" data-qs="" aria-pressed="true">усі</button><button type="button" class="chip" data-qs="queued" aria-pressed="false">у черзі</button><button type="button" class="chip" data-qs="running" aria-pressed="false">виконуються</button><button type="button" class="chip" data-qs="done" aria-pressed="false">виконано</button><button type="button" class="chip" data-qs="failed" aria-pressed="false">помилки</button><button type="button" class="chip" data-qs="cancelled" aria-pressed="false">скасовані</button></div>
+  <div class="wrap"><table class="qt"><thead><tr><th>Запит</th><th>Реєстри з українського IP</th><th>Хмара</th><th>Дії</th></tr></thead><tbody id="qrows"><tr><td colspan="4" class="meta">Завантаження…</td></tr></tbody></table></div>
+</section>
 <section class="pg" id="prognoz" hidden>
   <h2 style="margin:4px 0">Проспективна перевірка «риторика → удари»</h2>
   <p class="meta" style="font-family:var(--font);font-size:13px;max-width:760px">Дослідження, <b>не попередження про загрозу</b>. Кожен прогноз записується до початку дня, на який він зроблений, і більше не змінюється. Через 2–3 місяці стане видно, чи кандидатні сигнали стабільно кращі за базову лінію.</p>
@@ -496,7 +510,7 @@ function search(t){t=t.trim().toLowerCase();if(t.length<2)return[];const hits=[]
 function classify(t){if(/^https?:\/\//i.test(t))return 'url';if(CAUSE_RE.test(t))return 'case';if(/^\d{8}$/.test(t))return 'edrpou';if(/^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо)\b|[«»"]/i.test(t))return 'org';if(/^\p{Lu}[\p{L}'’-]+(\s+\p{Lu}[\p{L}'’.-]+){1,2}$/u.test(t))return 'person';return 'text'}
 const CHAIN={url:'забрати сторінку як джерело → витягти людей, ролі, справи з цитатами (додайте « | номер справи», щоб привʼязати до справи)',case:'ЄДРСР (рішення, судді) → тексти → учасники → ЄДР; з українського IP: усі рішення справи з реєстру + тексти',edrpou:'ЄДР (засновники, підписанти) → ЄДРСР → корпус → веб → бюджетні платежі (spending.gov.ua)',org:'ЄДР → ЄДРСР → згадки в корпусі → веб → бюджетні платежі (spending.gov.ua)',person:'згадки в постах і заявах → реєстр корупціонерів НАЗК → ЄДР (засновник/керівник) → ЄДРСР за суддею; з українського IP: повнотекстовий пошук у реєстрі рішень, декларації НАЗК, ЄДР ФОП',text:'повнотекстовий пошук по корпусу; з українського IP: повнотекстовий пошук у реєстрі судових рішень'};
 const QKIND={person:'person',org:'org',fop:'fop',case:'case'};CHAIN.fop='ЄДР ФОП: картка, стан, КВЕД';
-function chainBox(t,k=QKIND[scope.value]||(scope.value==='code'&&/^\d{8}$/.test(t)?'edrpou':classify(t))){const id='chain-'+Math.random().toString(36).slice(2,7);const html=CAN_QUEUE?`<div class="meta" style="margin-top:6px">Пошук у реєстрах для «${esc(t)}» (${k}): ${esc(CHAIN[k]||CHAIN.text)}.</div><button class="chip" id="${id}" type="button" style="margin-top:6px">Шукати в реєстрах</button>`:`<div class="meta" style="margin-top:6px">Ця копія статична; пошук у реєстрах (${esc(CHAIN[k]||CHAIN.text)}) запускається з повної версії.</div>`;return {html,bind:()=>{const b=document.getElementById(id);if(!b)return;b.onclick=async()=>{b.disabled=true;b.textContent='Ставлю в чергу…';const qr=await enqueue(t,k);b.textContent=qr.queued?(qr.existing?'Вже в черзі. Перевірятиму щохвилини.':'У черзі. Перевірятиму щохвилини.'):('Не вдалося: '+(qr.error||''));if(qr.queued)pollQuery(t,k);}}}}
+function chainBox(t,k=QKIND[scope.value]||(scope.value==='code'&&/^\d{8}$/.test(t)?'edrpou':classify(t))){const id='chain-'+Math.random().toString(36).slice(2,7);const html=CAN_QUEUE?`<div class="meta" style="margin-top:6px">Пошук у реєстрах для «${esc(t)}» (${k}): ${esc(CHAIN[k]||CHAIN.text)}.</div><button class="chip" id="${id}" type="button" style="margin-top:6px">Шукати в реєстрах</button>`:`<div class="meta" style="margin-top:6px">Ця копія статична; пошук у реєстрах (${esc(CHAIN[k]||CHAIN.text)}) запускається з повної версії.</div>`;return {html,bind:()=>{const b=document.getElementById(id);if(!b)return;b.onclick=async()=>{b.disabled=true;b.textContent='Ставлю в чергу…';const qr=await enqueue(t,k);b.textContent=qr.queued?(qr.existing?'Вже в черзі. Перевірятиму щохвилини.':'У черзі. Перевірятиму щохвилини.'):('Не вдалося: '+(qr.error||''));if(qr.queued)b.insertAdjacentHTML('afterend',' <a href="?view=queue" data-view="queue" class="meta" onclick="event.preventDefault();window.__show(\'queue\')">стежити в черзі →</a>');if(qr.queued)pollQuery(t,k);}}}}
 const LEG={queued:['wait','у черзі'],running:['spin','виконується'],done:['ok','готово'],failed:['err','помилка'],skipped:['err','пропущено'],error:['err','помилка'],skip:['err','пропущено']};
 function searchCard(t,k,created){const t0=created?new Date(created).getTime():Date.now();sugg.innerHTML=`<div class="scard" id="scard"><div class="sc-head"><span class="spinner" id="sc-spin"></span><b>Шукаю «${esc(t)}»</b> <span class="meta">(${esc(k)}) · <span id="sc-el">0:00</span></span></div>
   <div class="sc-leg"><span class="st wait" id="sc-cloud"></span><span>Хмара: корпус, ЄДР, реєстр корупціонерів, веб</span><span class="meta" id="sc-cloud-t">у черзі</span></div>
@@ -888,7 +902,7 @@ async function emptyState(){document.getElementById('panel').innerHTML=`<div cla
 if(state.center){const c=state.center;select(c).then(ok=>{if(ok)q.value=byId.get(c).label;else emptyState()})}else{emptyState()}
 q.addEventListener('input',()=>{if(!q.value.trim()&&!state.center)emptyState()});
 // ---------- sections: home / graph / factcheck+rhetoric / forecast; ?view= in the URL, the graph keeps its own #hash ----------
-const VIEWS={home:['home'],graph:['graphtop','filters','main','legend','chat'],factcheck:['factcheck'],prognoz:['prognoz']};
+const VIEWS={home:['home'],graph:['graphtop','filters','main','legend','chat'],factcheck:['factcheck'],prognoz:['prognoz'],queue:['queue']};
 const elOf=id=>document.getElementById(id)||document.querySelector('.'+id);
 const loaded={};
 function show(v,push=true){if(!VIEWS[v])v='home';for(const [k,ids] of Object.entries(VIEWS))ids.forEach(id=>{const el=elOf(id);if(el&&!(id==='chat'&&!CAN_QUEUE))el.hidden=k!==v});
@@ -898,6 +912,7 @@ function show(v,push=true){if(!VIEWS[v])v='home';for(const [k,ids] of Object.ent
   if(v==='factcheck'&&!loaded.fc){loaded.fc=1;window.__loadFC&&window.__loadFC();loadRhet();if(CAN_QUEUE){loadTrust();loadOverview();loadMood();loadWanted();loadCrime()}}
   if(v==='factcheck'&&CAN_QUEUE){const pid=new URL(location.href).searchParams.get('person');if(pid)openPerson(pid,false);else closePerson(false)}
   if(v==='prognoz'&&!loaded.pg){loaded.pg=1;loadPG()}
+  clearInterval(qTimer);if(v==='queue'&&CAN_QUEUE){loadQueue();qTimer=setInterval(()=>document.hidden||loadQueue(),20000)}
   if(v==='home')loadHome();window.scrollTo({top:0})}
 document.querySelectorAll('#side [data-view],#home [data-view]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();show(b.dataset.view)}));
 window.addEventListener('popstate',()=>show(new URL(location.href).searchParams.get('view')||'home',false));
@@ -1208,6 +1223,31 @@ function pgTip(r,pair,PG){const f=r.features||{},cov=(PG.coverage||[]).find(c=>c
   else if(r.model.includes('massive2'))h+='<br><br><b>Мітки v2:</b> «не було масованого удару» береться з повних зведень ОВА і з днів без жодної повітряної тривоги в області (коли стрічка тривог працювала); дні без доказів — невідомі, а не нулі.';
   else if(cov&&(cov.complete===0||cov.known<cov.days*0.6))h+=`<br><br>⚠ <b>Ненадійно для цієї області:</b> повних щоденних зведень немає (${cov.complete} з ${cov.days} днів), відомі ${cov.known} днів — переважно ті, коли про удари писали. Тому базова частота тут завищена і спирається на середнє по областях (переважно Харківщина). Не читайте це як реальні ${pct1(r.p)}.`;
   return h+'<br><br><span style="opacity:.8">Дослідження, не попередження про загрозу.</span>'}
+// ---- query queue (/api/queue): both legs of every registry chain, cancel / retry / add ----
+let qTimer=null,qFilter='';
+const QK={person:'особа',org:'компанія',edrpou:'ЄДРПОУ',case:'справа',text:'текст',web:'інтернет',url:'посилання',fop:'ФОП',category_index:'категорія ЄДРСР'};
+const QS={queued:'у черзі',running:'виконується',done:'виконано',failed:'помилка',cancelled:'скасовано'};
+const qago=t=>{if(!t)return '';const m=Math.round((Date.now()-new Date(t))/60000);return m<1?'щойно':m<60?m+' хв тому':m<2880?Math.round(m/60)+' год тому':Math.round(m/1440)+' дн тому'};
+const qnote=n=>{if(!n)return '';const t=String(n);if(/Traceback|File "/.test(t)){const last=t.trim().split('\n').filter(Boolean).pop()||'';return 'технічна помилка: '+last.slice(0,140)}
+  try{const j=JSON.parse(t.slice(t.indexOf('['),t.lastIndexOf(']')+1));if(Array.isArray(j))return j.length+' кроків, з помилкою: '+j.filter(x=>x.rc).length}catch(_){}return t.replace(/\s+/g,' ').slice(0,220)};
+async function loadQueue(){const box=document.getElementById('qrows');let r;try{r=await (await fetch('/api/queue'+(qFilter?'?status='+qFilter:''))).json()}catch(e){box.innerHTML=`<tr><td colspan="4" class="meta">Помилка: ${esc(e.message)}</td></tr>`;return}
+  const w=r.worker,ago=w&&w.seen_at?Math.round((Date.now()-new Date(w.seen_at))/60000):null;
+  document.getElementById('qworker').innerHTML=`Локальний воркер (український IP): ${ago==null?'ще не підключався':ago<=6?'<b>онлайн</b>':`<b>офлайн</b> ${ago<120?ago+' хв':Math.round(ago/60)+' год'} — українські реєстри чекатимуть, доки він не запуститься`}.`;
+  const it=r.items||[];if(!it.length){box.innerHTML='<tr><td colspan="4" class="meta">Порожньо.</td></tr>';return}
+  box.innerHTML=it.map(x=>{const ua=x.ua_status||(['web','url','fop','category_index'].includes(x.kind)?'skip':null);
+    const uaCell=ua==='skip'?'<span class="meta">не потрібні</span>':`<span class="st ${ua==='done'?'done':ua==='error'?'failed':''}">${esc(ua==='done'?'виконано':ua==='error'?'помилка':ua==='cancelled'?'скасовано':'чекає воркер')}</span>${x.ua_done_at?' <span class="meta">'+qago(x.ua_done_at)+'</span>':''}${x.ua_note?`<span class="nt">${esc(String(x.ua_note).slice(0,300))}</span>`:''}`;
+    const cl=`<span class="st ${x.status}">${esc(QS[x.status]||x.status)}</span> <span class="meta">${x.status==='queued'?(x.ahead?x.ahead+' попереду · ':'')+'додано '+qago(x.created_at):x.status==='running'?'з '+qago(x.started_at):qago(x.finished_at)}</span>${x.note?`<span class="nt">${esc(qnote(x.note))}</span>`:''}`;
+    const act=(x.status==='queued'?`<button type="button" class="chip" data-qdel="${x.id}">Скасувати</button>`:'')+(['failed','cancelled','done'].includes(x.status)?`<button type="button" class="chip" data-qretry="${x.id}">Повторити</button>`:'')+
+      (['person','org','edrpou','case'].includes(x.kind)&&(x.status==='done'||x.ua_status==='done')?`<button type="button" class="chip" data-qopen="${esc(x.query)}" data-qk="${esc(x.kind)}">На графі</button>`:'');
+    return `<tr><td><b>${esc(x.query)}</b><br><span class="meta">${esc(QK[x.kind]||x.kind||'')} · №${x.id}</span></td><td>${uaCell}</td><td>${cl}</td><td>${act}</td></tr>`}).join('')}
+document.getElementById('qrows').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;b.disabled=true;
+  if(b.dataset.qdel){await fetch('/api/queue?id='+b.dataset.qdel,{method:'DELETE'})}
+  else if(b.dataset.qretry){await fetch('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({retry:+b.dataset.qretry})})}
+  else if(b.dataset.qopen){show('graph');q.value=b.dataset.qopen;showQueued(b.dataset.qopen,b.dataset.qk);return}
+  loadQueue()});
+document.querySelectorAll('#queue [data-qs]').forEach(b=>b.onclick=()=>{qFilter=b.dataset.qs;document.querySelectorAll('#queue [data-qs]').forEach(x=>x.setAttribute('aria-pressed',x===b));loadQueue()});
+document.getElementById('qform').onsubmit=async e=>{e.preventDefault();const t=document.getElementById('qnew').value.trim(),k=document.getElementById('qkind').value,m=document.getElementById('qmsg');if(t.length<3)return;
+  m.textContent='додаю…';const r=await enqueue(t,k||undefined).catch(err=>({error:err.message}));m.textContent=r.queued?(r.existing?'вже в черзі (№'+r.id+')':'додано (№'+r.id+')'):'не вдалося: '+(r.error||'');if(r.queued){document.getElementById('qnew').value='';loadQueue()}};
 let PGD=null,UAMAP=null;
 async function loadPG(){try{const PG=await (await fetch('/api/predictions')).json();PGD=PG;const rows=PG.rows||[];const by={},key=r=>r.d+'|'+(r.region||'');rows.filter(r=>r.outcome!=null).forEach(r=>(by[r.model]??=new Map()).set(key(r),r));
   document.getElementById('pgcards').innerHTML=Object.entries(PM).filter(([,v])=>v.vs).map(([k,v])=>{const a=by[k]||new Map(),b=by[v.vs]||new Map(),days=[...a.keys()].filter(d=>b.has(d));const y=days.map(d=>a.get(d).outcome);const A=aucOf(y,days.map(d=>a.get(d).p)),B=aucOf(y,days.map(d=>b.get(d).p));
