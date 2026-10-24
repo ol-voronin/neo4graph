@@ -238,7 +238,7 @@ def weekly(posts: pd.DataFrame) -> pd.DataFrame:
     from features import INFRA_RE
     p = posts[(posts.text.str.len() >= 40) & (posts.source_id.map(COUNTRY) == "RU")].copy()
     ts = pd.to_datetime(p.ts_published, utc=True).dt.tz_convert("Europe/Kyiv").dt.tz_localize(None).dt.normalize()
-    p["week"] = ts - pd.to_timedelta((ts.dt.weekday - 5) % 7, unit="D") + pd.Timedelta(days=7)  # the week AFTER the post's week
+    p["week"] = ts - pd.to_timedelta((ts.dt.dayofweek - 5) % 7, unit="D") + pd.Timedelta(days=7)  # the week AFTER the post's week
     lab = pd.DataFrame([rule_labels(t) for t in p.text], index=p.index)
     x = p.text.map(lambda s: lower(s).replace("’", "'").replace("ʼ", "'").replace("`", "'").replace("‘", "'"))  # geo_regions() normalisation
     p["thr"], p["l2"] = lab.r_threat, lab.rule_threat_level >= 2
@@ -258,20 +258,21 @@ def weekly(posts: pd.DataFrame) -> pd.DataFrame:
 def cmd_weekly(a):
     """History Parquet (before the panel start) + live panel posts from Neon (after it) -> rhetoric_weekly."""
     hist = pd.read_parquet(PARQUET, columns=["id", "source_id", "ts_published", "text"])
+    # the rule labels and region regexes take ~10 min on 600 k posts: no connection is held meanwhile (Neon ends idle transactions)
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT m.id, m.source_id, m.ts_published, m.text FROM messages m WHERE m.source_id = ANY(%s) AND m.ts_published >= %s",
+                    (list(COUNTRY), PANEL_START))
+        live = pd.DataFrame(cur.fetchall(), columns=["id", "source_id", "ts_published", "text"])
+    hist["ts_published"] = pd.to_datetime(hist.ts_published, utc=True)
+    live["ts_published"] = pd.to_datetime(live.ts_published, utc=True)
+    posts = pd.concat([hist[hist.ts_published < pd.Timestamp(PANEL_START, tz="Europe/Kyiv")], live]).drop_duplicates("id")
+    print(f"posts: history {len(hist)}, live {len(live)}, used {len(posts)} ({posts.ts_published.min()} .. {posts.ts_published.max()})")
+    w = weekly(posts)
+    print(w.groupby("region_id").week.agg(["min", "max", "count"]).head(3).to_string())
+    print(w[WEEKLY_COLS].describe().round(4).to_string())
+    if a.dry_run:
+        return
     with connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT m.id, m.source_id, m.ts_published, m.text FROM messages m WHERE m.source_id = ANY(%s) AND m.ts_published >= %s",
-                        (list(COUNTRY), PANEL_START))
-            live = pd.DataFrame(cur.fetchall(), columns=["id", "source_id", "ts_published", "text"])
-        hist["ts_published"] = pd.to_datetime(hist.ts_published, utc=True)
-        live["ts_published"] = pd.to_datetime(live.ts_published, utc=True)
-        posts = pd.concat([hist[hist.ts_published < pd.Timestamp(PANEL_START, tz="Europe/Kyiv")], live]).drop_duplicates("id")
-        print(f"posts: history {len(hist)}, live {len(live)}, used {len(posts)} ({posts.ts_published.min()} .. {posts.ts_published.max()})")
-        w = weekly(posts)
-        print(w.groupby("region_id").week.agg(["min", "max", "count"]).head(3).to_string())
-        print(w[WEEKLY_COLS].describe().round(4).to_string())
-        if a.dry_run:
-            return
         with conn.cursor() as cur:
             cur.execute("CREATE TEMP TABLE rw (LIKE rhetoric_weekly INCLUDING DEFAULTS) ON COMMIT DROP")
             with cur.copy("COPY rw (week, region_id, " + ", ".join(WEEKLY_COLS) + ") FROM STDIN") as cp:
