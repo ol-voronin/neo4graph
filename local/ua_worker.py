@@ -79,6 +79,8 @@ def classify(q):
         return "case"
     if re.match(r"^\d{8}$", q):
         return "edrpou"
+    if re.match(r"^\d{10}$", q):
+        return "rnokpp"
     if ORG_RE.search(q):
         return "org"
     if NAME_RE.match(q):
@@ -708,7 +710,7 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                 got += 1
         notes.append(f"текстів: {got}")
     else:
-        exprs = [f'"{q}"'] if kind in ("person", "org", "edrpou") else [q]
+        exprs = [f'"{q}"'] if kind in ("person", "org", "edrpou", "rnokpp") else [q]
         # no «Прізвище І.Б.» search: the register does not honour the phrase with initials and returned 121 k unrelated
         # decisions for «Сальдо В. В.»; full name only (plus the cases found through summons notices below)
         seen = set()
@@ -813,7 +815,7 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                              "title": f"{c['short_name'] or c['name']} · {c['edrpou']} · КВЕД {(c['kved_main'] or '?')[:5]}",
                              "snippet": f"{c['status'] or ''}; реєстрація {c['registration'] or '?'}; керівник: {c['head'] or '?'}; {c['kved_main'] or ''}", "payload": c})
             notes.append(f"YouControl компанія: {sum(1 for h in hits if h['source'] == 'yc_org')}")
-        if kind in ("person", "org", "edrpou"):
+        if kind in ("person", "org", "edrpou", "rnokpp"):
             etotal, debtors = erb_search(q)
             if etotal is not None:
                 notes.append(f"реєстр боржників: {etotal}")

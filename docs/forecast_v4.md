@@ -14,3 +14,10 @@ v1-v3 maps say ~0% for Lviv or Volyn on a morning when the monitors report explo
   shuffled-date control (`nowcast.py backtest --model ua_oblast_expl_v1 --controls 50`).
 - Decision rule: rhetoric adds a signal only if Δ AUC > 0 with the 95% CI above 0 and shuffled-control p < 0.05.
 - Specs are frozen as of this file; a change means a new file and name.
+
+## Result (backtest 2026-10-24)
+`nowcast.py backtest --model ua_oblast_expl_v1 --controls 50`, test days from 2026-05-30 (the frozen spec reads daily rhetoric
+from the live panel only), 3 387 oblast-days, 1 322 explosion days: AUC 0.847 with rhetoric vs 0.866 baseline, Brier 0.154 vs
+0.143; Δ AUC −0.018, 95% CI [−0.035, −0.003]; shuffled control p = 0.96. Within-region AUC 0.613 vs 0.595 (not the
+pre-registered metric). **Decision rule not met: rhetoric makes the explosion forecast slightly worse.** Using the 2022–2026
+history for the daily features needs a new pre-registered version.

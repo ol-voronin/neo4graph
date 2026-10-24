@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 CAUSE_RE = re.compile(r"^\d{1,4}/\d{1,6}/\d{2}(?:-[\w/]+)?$")
 EDRPOU_RE = re.compile(r"^\d{8}$")
+RNOKPP_RE = re.compile(r"^\d{10}$")
 ORG_RE = re.compile(r"^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо|зао|оао)\b|\bltd\b|\bllc\b|\bінк\b|\binc\b", re.I)
 NAME_RE = re.compile(r"^[А-ЯІЇЄҐA-Z][\w'’-]+(\s+[А-ЯІЇЄҐA-Z][\w'’-]+){1,2}$")
 
@@ -30,6 +31,8 @@ def classify(q: str) -> str:
         return "case"
     if EDRPOU_RE.match(q):
         return "edrpou"
+    if RNOKPP_RE.match(q):
+        return "rnokpp"
     if ORG_RE.search(q) or re.search(r"[«»\"]", q):
         return "org"
     if NAME_RE.match(q):
@@ -52,7 +55,9 @@ def expand(cur, conn, q, kind, log, py):
     targets = []
     if kind == "person":
         cur.execute("SELECT short_name, edrpou FROM edr_orgs WHERE EXISTS (SELECT 1 FROM unnest(matched_queries) m WHERE m ILIKE %s)", ("person:%" + q.split()[0].lower() + "%",))
-        targets += [("org", r[0]) for r in cur.fetchall() if r[0]]
+    elif kind == "rnokpp":
+        cur.execute("SELECT edrpou, name FROM edr_orgs WHERE (founders || signers || beneficiaries)::text LIKE %s", ("%" + q + "%",))
+        targets += [("org", r[1]) for r in cur.fetchall() if r[1]]
     elif kind in ("org", "edrpou"):
         # reverse direction: company -> its people. Founders, beneficiaries and signers are public ЄДР data; each one goes
         # to the queue as a full-name person query so the UA leg does ФОП/КВЕД, declarations, court register, debtors for
@@ -129,6 +134,9 @@ def main():
         run([py, "src/edrsr_index.py", "--years", a.years, "--from-db", "--texts", str(a.texts)], log, "ЄДРСР: cases referencing it")
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
         run([py, "src/spending.py", "--from-db", "--query", q] + (["--edrpou", q] if kind == "edrpou" else []), log, "spending.gov.ua: public money received (2 years)")
+    elif kind == "rnokpp":
+        run([py, "src/web_mentions.py", q], log, "web: public mentions of tax code (RNOKPP)")
+        run([py, "src/edrsr_index.py", "--years", a.years, "--from-db", "--texts", str(a.texts)], log, "ЄДРСР: court decisions referencing RNOKPP")
     elif kind == "person":
         run([py, "src/corpus_mentions.py", q], log, "corpus: posts and statements mentioning the name")
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")

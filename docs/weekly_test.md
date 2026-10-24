@@ -33,3 +33,9 @@ Ukraine, admin1 = oblast) and `rhetoric_weekly` (`src/history.py weekly`: 12 pan
 Rhetoric "adds a signal" only if Δ AUC > 0 with the 95% CI above 0 AND shuffled-control p < 0.05 on the primary target.
 Anything else is reported as no evidence of a signal at weekly resolution. No feature or target is tuned after seeing
 results; a change means a new pre-registered version.
+
+## Result (final run 2026-10-24, history from 2022-02-26)
+`python src/weekly.py --controls 50`, 5 375 oblast-weeks, 470 escalation weeks (primary target `esc`):
+AUC 0.731 with rhetoric vs 0.727 without; Δ AUC +0.005, 95% CI [−0.010, +0.017]; shuffled-date control mean Δ +0.004,
+p = 0.47. Before the live panel +0.006, live panel (725 rows) +0.012, without occupied oblasts +0.009 — all the size of the
+shuffled control, i.e. what extra features give by chance. **Decision rule not met: no evidence of a signal at weekly resolution.**
