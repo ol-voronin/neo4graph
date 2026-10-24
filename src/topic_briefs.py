@@ -6,6 +6,7 @@ Every event / checked item cites a ref (s<statement id> or e<event id>) from tha
 """
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -31,6 +32,74 @@ SYSTEM = """Ти — редактор аналітичної довідки. Т�
  "sides":{"UA":"<=200 символів: що кажуть українські офіційні","RU":"<=200: російські","other":"<=200: США, ЄС, інші; порожньо якщо нема"},
  "checked":[{"ref":"s…","text":"<=160 символів: що заявили і що показала перевірка"}],   // 0–4, найпоказовіші вердикти
  "watch":"<=160 символів: що чекає перевірки або на що зважати далі"}"""
+
+
+TRANSLIT = dict(zip("абвгґдеєёэжзиіїйыклмнопрстуфхцчшщьъюя'’ʼ",
+                    ["a", "b", "v", "g", "g", "d", "e", "e", "e", "e", "zh", "z", "i", "i", "i", "i", "i", "k", "l", "m", "n", "o", "p", "r", "s",
+                     "t", "u", "f", "kh", "ts", "ch", "sh", "sh", "", "", "iu", "ia", "", "", ""]))
+
+
+def speaker_key(name: str) -> str:
+    """One key for spellings of one speaker, across scripts: «Корецкий» / «Сергій Корецький, прем'єр-міністр», «Рыбарь (tg:rybar)» /
+    «Rybar» / «@rybar (Михаил Звинчук)», «Борис Рожин» / «tg:boris_rozhin» / «Boris Rozhin».
+    >>> speaker_key("Корецкий") == speaker_key("Сергій Корецький, прем'єр-міністр"), speaker_key("@sashakots") == speaker_key("sashakots")
+    (True, True)
+    >>> len({speaker_key(n) for n in ("Rybar", "Рыбарь (tg:rybar)", "@rybar (Михаил Звинчук)", "Рибарь")}), speaker_key("Борис Рожин") == speaker_key("tg:boris_rozhin")
+    (1, True)
+    >>> speaker_key("Дональд Трамп") == speaker_key("Трамп")
+    True
+    """
+    n = re.sub(r"\(.*?\)|,.*$", "", name or "").strip()
+    n = re.sub(r"^(tg:|@)", "", n, flags=re.I)
+    w = (n.split() or [n])[-1].lower().split("_")[-1]
+    w = "".join(TRANSLIT.get(ch, ch) for ch in w).replace("y", "i").replace("h", "") if w else w
+    w = re.sub(r"(.)\1+", r"\1", w)
+    return re.sub(r"(ii|ij|i|a|ia)$", "", w) if len(w) > 5 else w
+
+
+def display(names):
+    """Readable label from the spellings of one speaker: no handle prefixes or job-title tails, Cyrillic and full names first.
+    >>> display({"boris_rozhin": 9, "Борис Рожин (tg:boris_rozhin)": 5}), display({"Сергій Корецький, прем'єр-міністр": 11, "Корецкий": 5})
+    ('Борис Рожин', 'Сергій Корецький')
+    """
+    def clean(s):
+        s = re.sub(r"\s*\(.*?\)|,.*$", "", s).strip()
+        s = re.sub(r"^(tg:|@)", "", s, flags=re.I)
+        return s
+    best = max(names, key=lambda s: (bool(re.search(r"[А-ЯІЇЄҐа-яіїєґ]", clean(s))), "_" not in s, len(clean(s).split()) > 1, names[s]))
+    return clean(best) or best
+
+
+def top_actors(rows, k=6):
+    """rows (actor_id, name, n): curated actors by id, the rest merged by speaker_key; the most frequent spelling names it."""
+    groups = {}
+    for aid, name, n in rows:
+        # auto ids (ru:~rybar, ru:~рыбарь: one per spelling, migration 019 trigger) are merged like unmapped names
+        g = groups.setdefault(aid if aid and "~" not in aid else "~" + speaker_key(name), {"n": 0, "names": {}})
+        g["n"] += n
+        g["names"][name] = g["names"].get(name, 0) + n
+    # an unmapped spelling of a curated actor («Корецкий» next to actor ua:koretskyi) joins it
+    cur_keys = {speaker_key(max(g["names"], key=g["names"].get)): key for key, g in groups.items() if not key.startswith("~")}
+    for key in [k_ for k_ in groups if k_.startswith("~") and k_[1:] in cur_keys]:
+        g = groups.pop(key)
+        tgt = groups[cur_keys[key[1:]]]
+        tgt["n"] += g["n"]
+        for nm, c in g["names"].items():
+            tgt["names"].setdefault(nm, 0)
+    out = [{"name": display(g["names"]), "n": g["n"]} for g in groups.values()]
+    return sorted(out, key=lambda a: -a["n"])[:k]
+
+
+def ask(msg, tries=2):
+    """Model call -> parsed JSON; a truncated or malformed answer is asked again once."""
+    for i in range(tries):
+        resp = claude().messages.create(model=MODEL, max_tokens=6000, output_config={"effort": "medium"},
+                                        system=SYSTEM, messages=[{"role": "user", "content": msg}])
+        try:
+            return parse_json(anthropic_text(resp))
+        except ValueError as e:
+            print(f"  bad JSON ({e}), stop_reason {resp.stop_reason}" + ("; retrying" if i + 1 < tries else ""))
+    return None
 
 
 def topic_cond(topic, alias=""):
@@ -64,10 +133,10 @@ def gather(cur, topic, days):
           count(*) FILTER (WHERE s.status = 'unresolvable' AND s.ts_published > now() - make_interval(days => %s))
         FROM statements s WHERE {cond}""", [days] * 3 + [days] * 4 + args)
     n, n_prev, t, f, p, u = cur.fetchone()
-    cur.execute(f"""SELECT coalesce(a.name_uk, x.actor_name), count(*) FROM statements_x x LEFT JOIN actors a ON a.id = x.actor_id
+    cur.execute(f"""SELECT x.actor_id, coalesce(a.name_uk, x.actor_name), count(*) FROM statements_x x LEFT JOIN actors a ON a.id = x.actor_id
         WHERE {topic_cond(topic, 'x')[0]} AND x.ts_published > now() - make_interval(days => %s) AND x.actor_name IS NOT NULL
-        GROUP BY 1 ORDER BY 2 DESC LIMIT 6""", topic_cond(topic)[1] + [days])
-    actors = [{"name": a, "n": k} for a, k in cur.fetchall()]
+        GROUP BY 1, 2""", topic_cond(topic)[1] + [days])
+    actors = top_actors(cur.fetchall())
     stats = {"n": n, "n_prev": n_prev, "actors": actors, "verdicts": {"t": t, "f": f, "p": p, "u": u}}
     return st, ev, stats
 
@@ -99,6 +168,7 @@ def build(a):
     from load_to_db import connect
     with connect() as conn:
         cur = conn.cursor()
+        failed = []
         for topic in ([a.topic] if a.topic is not None else ["", *TOPICS]):
             st, ev, stats = gather(cur, topic, a.days)
             refs = {f"s{r[0]}": {"url": r[9], "date": str(r[1]), "source": r[10], "status": r[7]} for r in st}
@@ -110,9 +180,11 @@ def build(a):
             if a.dry_run:
                 print(f"[{topic or 'all'}] statements {len(st)}, events {len(ev)}, ~{len(msg) // 3:,} tokens; {stats}")
                 continue
-            resp = claude().messages.create(model=MODEL, max_tokens=4000, output_config={"effort": "medium"},
-                                            system=SYSTEM, messages=[{"role": "user", "content": msg}])
-            body = clean(parse_json(anthropic_text(resp)), refs)
+            raw = ask(msg)
+            if raw is None:
+                failed.append(topic or "all")
+                continue
+            body = clean(raw, refs)
             used = {e["ref"] for e in body["events"]} | {c["ref"] for c in body["checked"]}
             cur.execute("""INSERT INTO topic_briefs (topic, generated_at, days, body, stats, refs, model) VALUES (%s, now(), %s, %s, %s, %s, %s)
                 ON CONFLICT (topic) DO UPDATE SET generated_at = now(), days = EXCLUDED.days, body = EXCLUDED.body, stats = EXCLUDED.stats,
@@ -121,6 +193,8 @@ def build(a):
                          json.dumps({k: refs[k] for k in used}, ensure_ascii=False), MODEL))
             conn.commit()
             print(f"[{topic or 'all'}] {len(body['events'])} events, {len(body['checked'])} checked; {body['summary'][:120]}")
+        if failed:  # the others are written; the old brief of a failed topic stays on the page
+            sys.exit(f"no valid answer for: {', '.join(failed)}")
 
 
 if __name__ == "__main__":
