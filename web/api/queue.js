@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       // work list for the local registry worker (Ukrainian IP): items the cloud chain cannot complete
       if (!process.env.INGEST_TOKEN || req.headers["x-ingest-token"] !== process.env.INGEST_TOKEN) return json(res, 401, { error: "bad token" });
       await sql`ALTER TABLE query_queue ADD COLUMN IF NOT EXISTS ua_status text`;
-      const rows = await sql`SELECT id, query, kind, status, created_at FROM query_queue WHERE ua_status IS NULL AND kind IN ('case','person','org','text','edrpou')
+      const rows = await sql`SELECT id, query, kind, status, created_at FROM query_queue WHERE ua_status IS NULL AND kind IN ('case','person','org','text','edrpou','rnokpp','code')
                              ORDER BY created_at LIMIT 5`;
       return json(res, 200, { items: rows });
     }
