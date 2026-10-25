@@ -3,6 +3,7 @@ import { resolve, dossier, corpus, caseCard, strikes, rhetoricBefore, withTimeou
 import { kyivToday } from "./_text.js";
 import { connectMany } from "./_connect.js";
 import { nameLink, countCandidates, identityKey } from "./_identity.js";
+import { planGraph, graphText } from "./_graphchat.js";
 
 // POST /api/chat {messages:[{role,content}]} -> answer + structured results + graph. Claude Haiku with tools over the database;
 // before the model runs, the server resolves what the question names and gathers the obvious data (one model step saved).
@@ -443,19 +444,25 @@ export default async function handler(req, res) {
   const t0 = Date.now();
   let body = "";
   for await (const c of req) body += c;
-  let messages;
-  try { messages = JSON.parse(body).messages.filter((m) => typeof m.content === "string").slice(-12); } catch { return json(res, 400, { error: "bad body" }); }
+  let messages, graph = null;
+  try { const b = JSON.parse(body); messages = b.messages.filter((m) => typeof m.content === "string").slice(-12); graph = b.graph && typeof b.graph === "object" ? b.graph : null; } catch { return json(res, 400, { error: "bad body" }); }
   const last = [...messages].reverse().find((m) => m.role === "user")?.content || "";
   if (!last.trim()) return json(res, 400, { error: "empty question" });
   let trace = [];
   try {
     // short lookups go straight to the base; longer questions go to the model when one is configured (it has the same tools)
     const hasModel = !!(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY);
+    // a command about what the graph shows is applied by the page; a question gets the graph state as context
+    if (graph?.center && process.env.ANTHROPIC_API_KEY) {
+      const plan = await planGraph(last, graph, process.env.ANTHROPIC_API_KEY).catch((e) => { console.log("plan", e.message); return null; });
+      if (plan?.kind === "command" && plan.actions.length) return json(res, 200, { answer: plan.reply || "Готово.", actions: plan.actions, mode: "graph", ms: Date.now() - t0 });
+    }
+    const gctx = graphText(graph);
     const d = !hasModel || last.length <= 80 ? await direct(last) : null;
     if (d) return json(res, 200, { answer: d.answer, trace: wire(d.trace), graph: toGraph(d.trace), mode: "direct" });
     await withTimeout(prestep(last, trace), 16000).catch((e) => console.log("prestep", e.message));
     trace = [...trace];  // calls still running after the cap may push later; the snapshot is what the model sees
-    const pre = trace.length ? context(trace) : "";
+    const pre = [gctx, trace.length ? context(trace) : ""].filter(Boolean).join("\n\n");
     const msgs = messages.map((m, i) => (i === messages.length - 1 && m.role === "user" && pre ? { role: "user", content: [{ type: "text", text: m.content }, { type: "text", text: pre }] } : m));
     let answer = null, mode = "direct";
     if (process.env.ANTHROPIC_API_KEY) {
