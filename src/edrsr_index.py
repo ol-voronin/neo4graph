@@ -131,6 +131,7 @@ def match_index(y, causes, court_codes, judges, category_re, form_re):
     """The stream() predicate over the parquet index (DuckDB): case numbers, court codes (or «hacc»), judge fragments, category."""
     import duckdb
     db = duckdb.connect()
+    db.execute("SET enable_progress_bar = false")
     db.execute("CREATE TEMP TABLE c(cause text)")
     if causes:
         db.executemany("INSERT INTO c VALUES (?)", [(x,) for x in causes])
