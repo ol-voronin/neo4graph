@@ -1,7 +1,7 @@
 name: live
 
 # Registry queue watcher. Collection and the live estimate moved to the VPS (deploy/vps.md: systemd timers
-# neo4graph-collect / neo4graph-live); what stays here needs the repository secrets: every 5 min, if registry queries wait,
+# neo4graph-collect / neo4graph-live); what stays here needs the repository secrets: every minute, if registry queries wait,
 # start queue.yml (it drains with the search / LLM keys and refreshes the graph snapshot). Four starts a day keep it going.
 
 on:
@@ -47,7 +47,7 @@ jobs:
             if [ "${n:-0}" -gt 0 ] && [ -z "$(gh run list --workflow queue.yml --status in_progress --json databaseId -q '.[].databaseId')" ] && [ -z "$(gh run list --workflow queue.yml --status queued --json databaseId -q '.[].databaseId')" ]; then
               echo "queue: $n waiting -> queue.yml"; gh workflow run queue.yml || true
             fi
-            left=$(( start + 300 - $(date +%s) ))
+            left=$(( start + 60 - $(date +%s) ))
             [ "$left" -gt 0 ] && [ $(( $(date +%s) + left )) -lt "$end" ] && sleep "$left" || true
             [ $(( $(date +%s) + 600 )) -ge "$end" ] && break
           done
