@@ -23,6 +23,15 @@ export default async function handler(req, res) {
       const open = await sql`SELECT id, status, created_at FROM query_queue WHERE query = ${q} AND status IN ('queued','running') LIMIT 1`;
       if (open.length) return json(res, 200, { queued: true, existing: true, ...open[0] });
       const k = kind || classify(q);
+      // kind=decl: NAZK declarations only (the page asks when a person or a judge is opened); the VPS worker does it,
+      // the cloud chain has nothing to add, so the cloud status starts as done. Once a month per name is enough.
+      if (k === "decl") {
+        const recent = await sql`SELECT id, ua_status, created_at FROM query_queue WHERE query = ${q} AND kind = 'decl' AND created_at > now() - interval '30 days'
+                                 AND coalesce(ua_status, 'queued') NOT IN ('error', 'cancelled') ORDER BY created_at DESC LIMIT 1`;
+        if (recent.length) return json(res, 200, { queued: true, existing: true, ...recent[0] });
+        const row = await sql`INSERT INTO query_queue(query, kind, status, note) VALUES (${q}, 'decl', 'done', 'декларації: лише воркер UA') RETURNING id, status, created_at`;
+        return json(res, 200, { queued: true, kind: k, ...row[0] });
+      }
       const row = await sql`INSERT INTO query_queue(query, kind) VALUES (${q}, ${k}) RETURNING id, status, created_at`;
       return json(res, 200, { queued: true, kind: k, ...row[0] });
     }
@@ -38,8 +47,8 @@ export default async function handler(req, res) {
       // work list for the local registry worker (Ukrainian IP): items the cloud chain cannot complete
       if (!process.env.INGEST_TOKEN || req.headers["x-ingest-token"] !== process.env.INGEST_TOKEN) return json(res, 401, { error: "bad token" });
       await sql`ALTER TABLE query_queue ADD COLUMN IF NOT EXISTS ua_status text`;
-      const rows = await sql`SELECT id, query, kind, status, created_at FROM query_queue WHERE ua_status IS NULL AND kind IN ('case','person','org','text','edrpou','rnokpp','code')
-                             ORDER BY created_at LIMIT 5`;
+      const rows = await sql`SELECT id, query, kind, status, created_at FROM query_queue WHERE ua_status IS NULL AND kind IN ('decl','case','person','org','text','edrpou','rnokpp','code')
+                             ORDER BY kind = 'decl' DESC, created_at LIMIT 5`;
       return json(res, 200, { items: rows });
     }
     const rows = await sql`SELECT id, query, kind, status, created_at, started_at, finished_at, note, ua_status, ua_note, ua_done_at,
