@@ -128,9 +128,24 @@ async function check(info) {
     const t = (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
     const m = t.match(/\{[\s\S]*\}/);
     if (!m) throw new Error("модель не дала відповіді");
-    return JSON.parse(m[0]);
+    try { return JSON.parse(m[0]); } catch (_) { return await repair(key, m[0]); }
   }
   throw new Error("перевірка не завершилась");
+}
+
+// an answer with an unescaped quote inside a string: the same content back as valid JSON (no tools, a short call)
+async function repair(key, text) {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", signal: AbortSignal.timeout(20000),
+    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01",
+      ...(process.env.ANTHROPIC_WORKSPACE_ID ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID } : {}) },
+    body: JSON.stringify({ model: MODEL, max_tokens: 4000, output_config: { effort: "low" },
+      messages: [{ role: "user", content: "Виправ синтаксис цього JSON (екрануй лапки всередині рядків), зміст не змінюй. Відповідай лише JSON.\n\n" + text }] }),
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error.message || "model error");
+  const t = (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  return JSON.parse((t.match(/\{[\s\S]*\}/) || [t])[0]);
 }
 
 export default async function handler(req, res) {
