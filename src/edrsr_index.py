@@ -6,6 +6,11 @@ doc_url on the register's open-data web server; fetched on demand for matched ro
   python src/edrsr_index.py --years 2026 --hacc                       # all HACC decisions this year
   python src/edrsr_index.py --years 2021-2026 --cause 642/8729/21,...  # specific case numbers across years
   python src/edrsr_index.py --years 2026 --from-db                    # case numbers referenced in ee_cases / statements
+  python src/edrsr_index.py --years 2021-2026 --build-index            # VPS: keep the dumps, one parquet per year
+  python src/edrsr_index.py --years 2026 --build-index --refresh       # VPS nightly: re-download the current year
+
+With EDRSR_CACHE=1 (the VPS, deploy/vps.md) the dumps stay on disk and a year with a parquet index (data/edrsr/idx_<y>.parquet)
+is matched with DuckDB in seconds instead of re-downloading the zip and scanning ~8 M rows in Python (minutes per year).
 """
 import argparse
 import csv
@@ -15,6 +20,7 @@ import re
 import sys
 import time
 import urllib.request
+import os
 import zipfile
 from pathlib import Path
 
@@ -86,6 +92,68 @@ def stream(zip_path: Path, causes: set, court_codes: set, judges: tuple = (), ca
                            "judge": (row.get("judge") or "").strip() or None, "doc_url": row.get("doc_url"),
                            "status": row.get("status"), "date_publ": row.get("date_publ") or None}
             print(f"scanned {n} rows")
+
+
+CACHE = os.environ.get("EDRSR_CACHE") == "1"
+COLS = ["doc_id", "cause_num", "court_code", "court", "judgment_form", "justice_kind", "category", "adjudication_date",
+        "receipt_date", "judge", "doc_url", "status", "date_publ"]
+
+
+def idx_path(y):
+    return ROOT / "data" / "edrsr" / f"idx_{y}.parquet"
+
+
+def build_index(y, refresh=False):
+    """Every row of the year's dump, names joined in, as parquet (zstd). Re-downloads the zip with refresh."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    zp = ROOT / "data" / "edrsr" / f"edrsr_data_{y}.zip"
+    if refresh:
+        zp.unlink(missing_ok=True)
+    zp = download(y, zp)
+    out, tmp = idx_path(y), idx_path(y).with_suffix(".tmp")
+    schema = pa.schema([(c, pa.string()) for c in COLS])
+    t0, n = time.time(), 0
+    with pq.ParquetWriter(tmp, schema, compression="zstd") as w:
+        batch = []
+        # every row: a match-all predicate through the same stream (same joins and cleaning as a normal scan)
+        for rec in stream(zp, set(), set(), (), re.compile(""), None):
+            batch.append(rec)
+            if len(batch) >= 200_000:
+                w.write_table(pa.Table.from_pylist(batch, schema)); n += len(batch); batch = []
+        if batch:
+            w.write_table(pa.Table.from_pylist(batch, schema)); n += len(batch)
+    tmp.replace(out)
+    print(f"index {out.name}: {n} rows, {out.stat().st_size / 1e6:.0f} MB, {time.time() - t0:.0f} s")
+
+
+def match_index(y, causes, court_codes, judges, category_re, form_re):
+    """The stream() predicate over the parquet index (DuckDB): case numbers, court codes (or «hacc»), judge fragments, category."""
+    import duckdb
+    db = duckdb.connect()
+    db.execute("CREATE TEMP TABLE c(cause text)")
+    if causes:
+        db.executemany("INSERT INTO c VALUES (?)", [(x,) for x in causes])
+    conds, args = ["cause_num IN (SELECT cause FROM c)"], []
+    codes = set(court_codes) - {"hacc"}
+    if codes:
+        conds.append("court_code IN (" + ",".join("?" * len(codes)) + ")"); args += list(codes)
+    if "hacc" in court_codes:
+        conds.append("regexp_matches(court, ?, 'i')"); args.append(HACC_RE.pattern)
+    for j in judges:
+        conds.append("contains(lower(judge), ?)"); args.append(j)
+    if category_re:
+        conds.append("(regexp_matches(coalesce(category, ''), ?, 'i')" + (" AND regexp_matches(coalesce(judgment_form, ''), ?, 'i')" if form_re else "") + ")")
+        args += [category_re.pattern] + ([form_re.pattern] if form_re else [])
+    q = f"SELECT {', '.join(COLS)} FROM read_parquet(?) WHERE " + " OR ".join(conds)
+    t0 = time.time()
+    rows = db.execute(q, [str(idx_path(y))] + args).fetchall()
+    print(f"index {y}: {len(rows)} rows in {time.time() - t0:.1f} s")
+    for r in rows:
+        rec = dict(zip(COLS, r))
+        for k in ("adjudication_date", "receipt_date", "date_publ"):
+            rec[k] = rec[k] or None
+        yield rec
 
 
 def rtf_to_text(data: bytes) -> str:
@@ -162,6 +230,8 @@ def main():
     ap.add_argument("--category", default="", help="regex on the case category name (e.g. 'земел'), indexes every matching decision of the year")
     ap.add_argument("--form", default="", help="regex on judgment form, combined with --category (e.g. 'Вирок|Рішення')")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--build-index", action="store_true", help="write data/edrsr/idx_<year>.parquet from the dump (VPS)")
+    ap.add_argument("--refresh", action="store_true", help="with --build-index: re-download the dump first")
     a = ap.parse_args()
     judges = tuple(" ".join(x.lower().split()[:2]) for x in a.judge.split(",") if x.strip())
     category_re = re.compile(a.category, re.I) if a.category else None
@@ -173,6 +243,10 @@ def main():
             years += list(range(int(lo), int(hi) + 1))
         elif part.strip():
             years.append(int(part))
+    if a.build_index:
+        for y in years:
+            build_index(y, a.refresh)
+        return
     causes = {c.strip() for c in a.cause.split(",") if c.strip()}
     court_codes = {c.strip() for c in a.courts.split(",") if c.strip()}
     if a.hacc:
@@ -194,8 +268,9 @@ def main():
         print("nothing to match"); return
     total = 0
     for y in years:
-        zp = download(y, ROOT / "data" / "edrsr" / f"edrsr_data_{y}.zip")
-        for rec in stream(zp, causes, court_codes, judges, category_re, form_re):
+        fast = CACHE and idx_path(y).exists()
+        zp = None if fast else download(y, ROOT / "data" / "edrsr" / f"edrsr_data_{y}.zip")
+        for rec in (match_index(y, causes, court_codes, judges, category_re, form_re) if fast else stream(zp, causes, court_codes, judges, category_re, form_re)):
             total += 1
             if a.dry_run:
                 if total <= 20:
@@ -212,7 +287,8 @@ def main():
                 conn.commit()
         if conn:
             conn.commit()
-        zp.unlink(missing_ok=True)  # runners have limited disk; the dump is re-downloaded next time
+        if zp and not CACHE:
+            zp.unlink(missing_ok=True)  # runners have limited disk; the dump is re-downloaded next time
     print(f"matched {total} decisions")
     if a.texts and cur:
         cur.execute("SELECT doc_id, doc_url FROM court_decisions WHERE text IS NULL AND doc_url IS NOT NULL AND status='1' "
