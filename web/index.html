@@ -914,6 +914,20 @@ function caseParticipants(n){const people=new Map(),judges=new Set(),anonS=new S
   if(judges.size)h+=`<p class="meta">Судді (з рішень): ${[...judges].map(j=>`<button type="button" class="lnk" data-q="${esc(j)}">${esc(j)}</button>`).join(', ')}</p>`;
   if(anon)h+=`<p class="meta">Ще ${anon} учасників у рішеннях знеособлені («ОСОБА_1»…): реєстр судових рішень приховує імена сторін. Імена зʼявляються тут, коли їх називають новини, тексти про адвокатів або реєстри.</p>`;
   return h}
+// NAZK declarations of whoever is opened (a full name, or «Прізвище І. Б.» as decisions name judges): asked of the VPS
+// worker once (queue kind=decl, api/queue.js), then the neighbourhood is reloaded; state per person in DECLQ
+const DECLQ=new Map(),INIT_RE=/^[\p{Lu}][\p{L}'’ʼ-]+\s+\p{Lu}\.\s*(\p{Lu}\.)?$/u;
+async function declAuto(n){const el=document.getElementById('declst');if(!el)return;const has=(adj.get(n.id)||[]).filter(e=>byId.get(e.source===n.id?e.target:e.source)?.type==='declaration').length;
+  const full=!!patrM(n),init=INIT_RE.test(n.label.trim());if(!full&&!init){el.textContent='';return}
+  if(has){el.textContent=`Декларації НАЗК: ${has} — у звʼязках нижче («декларація»).`;return}
+  const judge=(adj.get(n.id)||[]).some(e=>/judge/.test(e.rel))||/судд/i.test(n.position||'');
+  const q=n.label.trim()+(init&&judge?'|суд':''),st=DECLQ.get(n.id);
+  if(st==='done'){el.textContent='Декларацій НАЗК не знайдено'+(init?' (за прізвищем та ініціалами'+(judge?', місце роботи — суд':'')+')':'')+'.';return}
+  if(st){el.innerHTML='<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Шукаю декларації НАЗК…';return}
+  DECLQ.set(n.id,'wait');el.innerHTML='<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Шукаю декларації НАЗК…';
+  let r;try{r=await enqueue(q,'decl')}catch(_){r=null}if(!r||!r.queued){DECLQ.delete(n.id);el.textContent='';return}
+  for(let i=0;i<45;i++){const it=await queueStatus(q);if(it&&it.item.kind==='decl'&&['done','error'].includes(it.item.ua_status))break;await new Promise(res=>setTimeout(res,4000))}
+  DECLQ.set(n.id,'done');if(await loadAround(n.id,{fresh:true}))render();if(state.center===n.id){panelKey='';render()}}
 function panel(nodes,edges){
   const n=byId.get(state.center);const p=document.getElementById('panel');
   if(hist[hist.length-1]!==n.id){const i=hist.indexOf(n.id);if(i>=0)hist.splice(i,1);hist.push(n.id);if(hist.length>7)hist.shift()}
@@ -922,6 +936,7 @@ function panel(nodes,edges){
   let html=`<div class="path">${hist.map((id,i)=>{const x=byId.get(id);return `<button type="button" class="crumb" data-id="${esc(id)}"${i===hist.length-1?' aria-current="true"':''}><span class="dot" style="background:${COLORS[x.type]}"></span>${esc(x.label.length>28?x.label.slice(0,27)+'…':x.label)}</button>`}).join('<span class="meta">›</span>')}</div>`;
   html+=`<div class="meta">${TYPES[n.type]||n.type} · ${esc(provOf(n))}${n.src?' · '+esc(SRC[n.src]||n.src):''}</div><h2>${esc(n.label)}</h2>`;
   html+=`<div class="explain" id="nexplain"><span class="meta">Що це: завантажую…</span></div>`;
+  if(n.type==='person'&&CAN_QUEUE)html+=`<div class="meta" id="declst" style="margin:4px 0"></div>`;
   // 2. facts
   const kv=[];if(n.position)kv.push(['Посада',n.position]);if(n.org)kv.push(['Орган / місце роботи',n.org]);if(n.year)kv.push(['Рік',n.year]);if(n.region)kv.push(['Регіон',n.region]);
   if(n.type==='decision'){kv.push(['№ в ЄДРСР',n.doc_id],['Форма',n.form],['Судочинство',n.kind],['Категорія',n.category],['Суд',n.court],['Суддя',n.judge],['Ухвалено',n.date],['Надійшло до реєстру',n.receipt],['Опубліковано / остання дія',n.publ],['Статус',n.status==='1'?'активне':n.status?'вилучене':null]);}
@@ -971,7 +986,7 @@ function panel(nodes,edges){
   document.getElementById('fb-undo')?.addEventListener('click',async()=>{for(const [k,v] of [...FB])if(v==='no'&&(k.startsWith(n.id+'|')||k.split('|')[1]===n.id)){const [a,b2,...r]=k.split('|');await setFB({source:a,target:b2,rel:r.join('|')},null)}render();select(n.id)});if(none){nc.bind();document.getElementById('none-q').onclick=()=>{q.value=n.label;q.focus();sLast=null;doSearch(n.label,{now:true})}}
   p.querySelectorAll('li.more button').forEach(b=>b.onclick=()=>{const ul=b.closest('ul');const rel=[...groups].find(([r,it])=>ul.previousElementSibling.textContent.startsWith(REL[r]||r));if(!rel)return;const extra=rel[1].slice(25).map(([oid,e])=>{const o=byId.get(oid);return `<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${idTag(e)}${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}</li>`}).join('');b.closest('li').outerHTML=extra;ul.querySelectorAll('button[data-id]').forEach(x=>x.onclick=()=>select(x.dataset.id))});
   p.scrollTop=0;
-  if(CAN_QUEUE&&n.type==='person')loadProf(n);
+  if(CAN_QUEUE&&n.type==='person'){loadProf(n);declAuto(n)}
   if(CAN_QUEUE)loadDetail(n);else document.getElementById('nexplain').innerHTML=`<span class="meta">Що це: ${esc(provOf(n))}; подробиці з реєстрів — у повній версії.</span>`;
 }
 // lawyers named in decision texts (api/_lawyers.js): 'можливо' -> a link tagged «можливо»; 'неоднозначно' / 'немає в реєстрі' -> text only

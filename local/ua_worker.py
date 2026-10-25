@@ -383,6 +383,44 @@ def nazk_document(doc_id):
     return json.loads(get(NAZK_DOC.format(id=doc_id)))
 
 
+INITIALS = re.compile(r"^([\w'’ʼ-]+)\s+(\w)\.\s*(?:(\w)\.)?$")
+
+
+def declarations(env, q, kind, hits, notes, tleft, hint=""):
+    """NAZK declarations of a person: the list (registry_hits nazk_decl) and the contents of their own declarations
+    (decl_items). «Прізвище І. Б.» (how decisions name judges): the surname is searched and kept are the declarants with those
+    initials — and, with a hint («суд»), that word in the place of work; one full name left -> its contents are fetched,
+    several -> only the list (namesakes are not merged)."""
+    m = INITIALS.match(q)
+    total, decl = nazk_declarations(m.group(1) if m else q)
+    if m:
+        sur, i1, i2 = m.group(1).lower(), m.group(2).upper(), (m.group(3) or "").upper()
+        def fits(d):
+            w = (d.get("name") or "").split()
+            return (len(w) >= 2 and w[0].lower() == sur and w[1][:1].upper() == i1 and (not i2 or (len(w) > 2 and w[2][:1].upper() == i2))
+                    and (not hint or hint.lower() in (d.get("work_place") or "").lower() + " " + (d.get("work_post") or "").lower()))
+        decl = [d for d in decl if fits(d)]
+    full = {(d.get("name") or "").lower() for d in decl}
+    notes.append(f"декларації НАЗК: {len(decl) if m else total}" + (f" (за ініціалами: {', '.join(sorted(full))[:200]})" if m else ""))
+    for d in decl[:60]:
+        hits.append({"query": q, "qkind": kind, "source": "nazk_decl", "ref": d["id"], "url": d["url"],
+                     "title": f"Декларація {d['year'] or ''} · {d['name']}", "snippet": f"{d['work_place'] or ''} — {d['work_post'] or ''}", "payload": d})
+    # contents of the person's own declarations: real estate, vehicles, companies, income sources, loans, family
+    who = next(iter(full)) if m and len(full) == 1 else q
+    items = []
+    for d in (pick_declarations(who, decl) if (not m or len(full) == 1) else []):
+        if not tleft():
+            break
+        try:
+            items += decl_items(nazk_document(d["id"]), q)
+        except Exception as e:  # noqa: BLE001
+            print("nazk doc:", d["id"], e)
+        time.sleep(1)
+    for i in range(0, len(items), 100):
+        ingest(env, {"kind": "decl_items", "rows": items[i:i + 100]})
+    notes.append(f"вміст декларацій: {len(items)} записів")
+
+
 def pick_declarations(q, decl, max_docs=5):
     """Declarations of this very person: the full name must match a 3-word query; a 2-word query only when every hit carries
     the same full name (otherwise namesakes would be merged). Latest per year, annual first; at most max_docs."""
@@ -692,6 +730,12 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
         for i in range(0, len(rows), 25):
             ingest(env, {"kind": "decisions", "rows": rows[i:i + 25]})
 
+    if kind == "decl":
+        q, _, hint = q.partition("|")
+        declarations(env, q.strip(), "person", hits, notes, tleft, hint.strip())
+        for i in range(0, len(hits), 50):
+            ingest(env, {"kind": "hits", "rows": hits[i:i + 50]})
+        return "; ".join(notes)
     if kind == "case":
         total, rows = reyestr_search(case_number=q)
         p = 2
@@ -730,24 +774,7 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                              "snippet": f"пошук «{ex}» ({r['justice_kind']})", "payload": r})
         push_decisions(all_rows)
         if kind == "person":
-            total, decl = nazk_declarations(q)
-            notes.append(f"декларації НАЗК: {total}")
-            for d in decl[:60]:
-                hits.append({"query": q, "qkind": kind, "source": "nazk_decl", "ref": d["id"], "url": d["url"],
-                             "title": f"Декларація {d['year'] or ''} · {d['name']}", "snippet": f"{d['work_place'] or ''} — {d['work_post'] or ''}", "payload": d})
-            # contents of the person's own declarations: real estate, vehicles, companies, income sources, loans, family
-            items = []
-            for d in pick_declarations(q, decl):
-                if not tleft():
-                    break
-                try:
-                    items += decl_items(nazk_document(d["id"]), q)
-                except Exception as e:  # noqa: BLE001
-                    print("nazk doc:", d["id"], e)
-                time.sleep(1)
-            for i in range(0, len(items), 100):
-                ingest(env, {"kind": "decl_items", "rows": items[i:i + 100]})
-            notes.append(f"вміст декларацій: {len(items)} записів")
+            declarations(env, q, kind, hits, notes, tleft)
             ftotal, fops = fop_search(q, deadline=deadline) if (not NO_FOP or lake_has("fop")) else (None, [])
             if ftotal is not None:
                 notes.append(f"ЄДР ФОП: {ftotal}" if ftotal >= 0 else f"ЄДР ФОП: {-ftotal - 1}+ (скан не завершено, повторіть)")
