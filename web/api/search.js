@@ -6,7 +6,7 @@ import { byName, byCode, byAddress, rolesOf, card } from "./registry.js";
 import { postMentions, decisionTexts, findJudges, webFound } from "./_mentions.js";
 import { findPlaces } from "./_places.js";
 
-// GET /api/search?q=...&kind=all|person|org|fop|code|case|place|channel|post[&part=main|mentions]
+// GET /api/search?q=...&kind=all|person|org|fop|code|case|place|channel|post[&part=main|mentions][&src=graph,registry,...]
 // Searches everything, not only what is already in the graph. Sources run in parallel, each under its own time cap, and the
 // answer is grouped: graph (names already in the graph), registry (the lake's ЄДР / ФОП / ProZorro index: names, codes,
 // addresses, people's roles), courts (case numbers, judges, decision texts), mentions (posts that mention the words, plus web
@@ -278,11 +278,12 @@ async function mentionsGroup(q) {
     words: posts.words, topic, web: web.items, note: posts.skipped };
 }
 
-export async function searchAll(q, kind = "all", part = "") {
+export async function searchAll(q, kind = "all", part = "", src = null) {
   const detected = detect(q);
   const scope = kind === "all" && detected !== "all" ? detected : kind;
   if (scope === "url") return { q, kind, detected, groups: [], results: [] };
-  const want = SCOPE[scope].filter((g) => (part === "main" ? g !== "mentions" : part === "mentions" ? g === "mentions" : true));
+  // src: the bases ticked in the page's «Бази» filter (all when absent)
+  const want = SCOPE[scope].filter((g) => (!src || src.includes(g)) && (part === "main" ? g !== "mentions" : part === "mentions" ? g === "mentions" : true));
   const C = await soft(getCaps(), 2000).catch(() => ({ names: false, trgm: false }));
   const t0 = Date.now();
   const run = {
@@ -318,8 +319,11 @@ export default async function handler(req, res) {
   if (!KINDS.includes(kind)) return json(res, 400, { error: "unknown kind" });
   if (!["", "main", "mentions"].includes(part)) return json(res, 400, { error: "part must be main|mentions" });
   if (q.length < 2) return json(res, 400, { error: "q too short" });
+  const srcRaw = url.searchParams.get("src");
+  const src = srcRaw == null ? null : srcRaw.split(",").filter(Boolean);
+  if (src && src.some((g) => !GROUPS.some(([k]) => k === g))) return json(res, 400, { error: "unknown src" });
   try {
-    const out = await searchAll(q, kind, part);
+    const out = await searchAll(q, kind, part, src);
     if (part !== "mentions") out.queue = (await soft(query(`SELECT kind, status, created_at FROM query_queue WHERE query = $1 ORDER BY created_at DESC LIMIT 1`, [q]), 1500).catch(() => []))[0] || null;
     return json(res, 200, out);
   } catch (e) {
