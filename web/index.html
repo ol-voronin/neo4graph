@@ -87,7 +87,8 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .node circle{stroke:var(--panel);stroke-width:1.5px;cursor:pointer}
 .node.center circle,.node:focus-visible circle{stroke:var(--accent);stroke-width:3px}
 svg.hl-on .node:not(.hl){opacity:.15}svg.hl-on .link:not(.hl){opacity:.06}svg.hl-on .link.hl{stroke:var(--accent);stroke-opacity:1}
-.canvas .gctl{position:absolute;right:10px;top:30px;display:flex;gap:6px}
+.canvas .glist{position:absolute;inset:0;overflow:auto;background:var(--panel);padding:52px 14px 16px;z-index:2;border-radius:inherit}.glist h4{margin:12px 0 4px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.glist ul{list-style:none;margin:0;padding:0}.glist li{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}.glist li button{all:unset;cursor:pointer;font-weight:500;display:inline-flex;gap:6px;align-items:center}.glist li button:hover{color:var(--accent)}.glist .via{font-size:12px;color:var(--muted)}
+.canvas .gctl{z-index:3;position:absolute;right:10px;top:30px;display:flex;gap:6px}
 .canvas.full{position:fixed;inset:0;z-index:55;border-radius:0;border:0}
 .tabs{display:flex;gap:6px;flex-wrap:wrap}
 .tabs button{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer}
@@ -333,7 +334,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
   <div class="hints" id="fhints"></div>
 </div>
 <div class="main">
-  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><span class="meta count" id="count"></span><button type="button" class="chip moren" id="moren" hidden>показати ще</button><div class="gctl"><button type="button" class="chip" id="gfit" title="Показати весь граф у вікні">вмістити</button><button type="button" class="chip" id="gfull" aria-pressed="false" title="Граф на весь екран (Esc — вийти)">на весь екран</button></div><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div><button type="button" class="chip tod" id="todetails" hidden>деталі ↓</button></div>
+  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><div class="glist" id="glist" hidden></div><span class="meta count" id="count"></span><button type="button" class="chip moren" id="moren" hidden>показати ще</button><div class="gctl"><button type="button" class="chip" id="gview" aria-pressed="false" title="Ті самі обʼєкти й звʼязки списком: рівні від вибраного, через кого звʼязано">список</button><button type="button" class="chip" id="gfit" title="Показати весь граф у вікні">вмістити</button><button type="button" class="chip" id="gfull" aria-pressed="false" title="Граф на весь екран (Esc — вийти)">на весь екран</button></div><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div><button type="button" class="chip tod" id="todetails" hidden>деталі ↓</button></div>
   <aside class="panel" id="panel"><p class="empty">Введіть об'єкт у пошук або натисніть вузол.</p></aside>
 </div>
 <div class="legend" id="legend"></div>
@@ -467,9 +468,9 @@ function mergeCase(cause){const list=(DEC&&DEC.cases[cause])||[];if(!list.length
 const adj=new Map(); G.edges.forEach((e,i)=>{e.i=i;(adj.get(e.source)||adj.set(e.source,[]).get(e.source)).push(e);(adj.get(e.target)||adj.set(e.target,[]).get(e.target)).push(e);});
 const msgIndex=new Map(G.nodes.filter(n=>n.type==='post').map(n=>[n.id.slice(5),n]));
 const state={depth:window.matchMedia('(max-width:760px)').matches?1:2,center:null,f:[]};
-try{const s=JSON.parse(localStorage.getItem('graph-ui')||'{}');if(s.depth)state.depth=s.depth;}catch(_){}
+try{const s=JSON.parse(localStorage.getItem('graph-ui')||'{}');if(s.depth)state.depth=s.depth;if(s.view)state.view=s.view;}catch(_){}
 try{const h=new URLSearchParams(location.hash.slice(1));if(h.get('f'))state.f=JSON.parse(h.get('f'));if(h.get('c'))state.center=h.get('c');}catch(_){}
-function save(){try{localStorage.setItem('graph-ui',JSON.stringify({depth:state.depth}))}catch(_){}const h=new URLSearchParams();if(state.f.length)h.set('f',JSON.stringify(state.f));if(state.center)h.set('c',state.center);const hs='#'+h.toString();if(hs!==(location.hash||'#'))history.replaceState(null,'',hs);}
+function save(){try{localStorage.setItem('graph-ui',JSON.stringify({depth:state.depth,view:state.view}))}catch(_){}const h=new URLSearchParams();if(state.f.length)h.set('f',JSON.stringify(state.f));if(state.center)h.set('c',state.center);const hs='#'+h.toString();if(hs!==(location.hash||'#'))history.replaceState(null,'',hs);}
 // ---- facets: every filter is a (facet, value) chip the user adds or removes; values are computed from the data around the selected object
 const OBL=['Вінниц','Волин','Дніпропетров','Донец','Житомир','Закарпат','Запоріз','Івано-Франків','Київ','Кіровоград','Луган','Львів','Миколаїв','Одес','Полтав','Рівн','Сум','Терноп','Харків','Херсон','Хмельниц','Черкас','Чернівец','Черніг','Крим','Севастопол'];
 const OBLN={'Вінниц':'Вінницька','Волин':'Волинська','Дніпропетров':'Дніпропетровська','Донец':'Донецька','Житомир':'Житомирська','Закарпат':'Закарпатська','Запоріз':'Запорізька','Івано-Франків':'Івано-Франківська','Київ':'Київ / Київська','Кіровоград':'Кіровоградська','Луган':'Луганська','Львів':'Львівська','Миколаїв':'Миколаївська','Одес':'Одеська','Полтав':'Полтавська','Рівн':'Рівненська','Сум':'Сумська','Терноп':'Тернопільська','Харків':'Харківська','Херсон':'Херсонська','Хмельниц':'Хмельницька','Черкас':'Черкаська','Чернівец':'Чернівецька','Черніг':'Чернігівська','Крим':'Крим','Севастопол':'Севастополь'};
@@ -808,8 +809,19 @@ function hl(id){const s=id&&NB.get(id);svg.classed('hl-on',!!id);node.classed('h
 function linkTip(d){return `${d.source.n.label} → ${REL[d.rel]||d.rel} → ${d.target.n.label}${idText(d.e)}`}
 function tipAt(d,x,y){tip.hidden=false;tip.textContent=d.n.label+(d.n.position?' · '+d.n.position:'');tip.style.left=x+'px';tip.style.top=y+'px'}
 const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+// «список»: the same objects and links as the graph, by level from the selected object, each with the link it is reached by
+// (a text view for long neighbourhoods and phones; the graph keeps the same state)
+const LORD=['person','wanted','org','registry','declaration','asset','case','article','court','place','channel','web','topic','decision','post'];
+function drawList(v){const L=document.getElementById('glist'),on=state.view==='list';L.hidden=!on;const gb=document.getElementById('gview');gb.setAttribute('aria-pressed',String(on));gb.textContent=on?'граф':'список';if(!on)return;
+  if(!state.center){L.innerHTML='<p class="empty">Виберіть обʼєкт — тут будуть його звʼязки списком.</p>';return}
+  const d=v.dist||new Map(),by=new Map();for(const e of v.edges){for(const [a,b] of [[e.source,e.target],[e.target,e.source]]){if((d.get(b)??9)===(d.get(a)??9)+1&&!by.has(b))by.set(b,[a,e])}}
+  const lv=new Map();for(const n of v.nodes){if(n.id===state.center)continue;const k=d.get(n.id)??1;(lv.get(k)||lv.set(k,[]).get(k)).push(n)}
+  let h=`<h4>${esc(byId.get(state.center)?.label||'')}</h4>`;
+  for(const k of [...lv.keys()].sort((a,b)=>a-b)){const xs=lv.get(k).sort((a,b)=>(LORD.indexOf(a.type)>>>0)-(LORD.indexOf(b.type)>>>0)||a.label.localeCompare(b.label,'uk'));
+    h+=`<h4>Рівень ${k} · ${xs.length}</h4><ul>${xs.map(n=>{const [p,e]=by.get(n.id)||[];const pn=p&&byId.get(p);return `<li><button type="button" data-id="${esc(n.id)}"><span class="dot" style="background:${COLORS[n.type]}"></span>${esc(n.label)}</button><span class="via">${esc(TYPES[n.type]||n.type)}${e?` · ${esc(REL[e.rel]||e.rel)}${pn&&p!==state.center?` ← ${esc(pn.label.length>40?pn.label.slice(0,38)+'…':pn.label)}`:''}`:''}${e&&FB.get(fbKey(e))==='yes'?' · ✓ підтверджено':''}${e?.probable?' · можливо':''}</span></li>`}).join('')}</ul>`}
+  L.innerHTML=h;L.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id))}
 function render(){
-  const v=visible(),{nodes,edges}=v;DIST=v.dist||null;
+  const v=visible(),{nodes,edges}=v;DIST=v.dist||null;drawList(v);
   document.getElementById('count').textContent=`${nodes.length} вузлів · ${edges.length} зв'язків`+(state.center?'':' · найзв’язніші в базі');
   moreB.hidden=!(v.more>0);moreB.textContent=`показати ще (${v.more})`;
   const W=svg.node().clientWidth||600,H=svg.node().clientHeight||400,[vx,vy]=d3.zoomTransform(svg.node()).invert([W/2,H/2]);
@@ -856,6 +868,7 @@ function render(){
 }
 // «на весь екран»: the canvas covers the window (CSS, so it works on iOS too); Esc or the button exits
 const gfull=document.getElementById('gfull');
+document.getElementById('gview').onclick=()=>{state.view=state.view==='list'?'graph':'list';save();render()};
 function setFull(f){canvas.classList.toggle('full',f);gfull.setAttribute('aria-pressed',String(f));gfull.textContent=f?'згорнути (Esc)':'на весь екран';document.documentElement.style.overflow=f?'hidden':'';requestAnimationFrame(()=>fit(false))}
 gfull.onclick=()=>setFull(!canvas.classList.contains('full'));
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&canvas.classList.contains('full'))setFull(false)});
