@@ -21,7 +21,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);font-
 h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
 .top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .search{position:relative;flex:1 1 260px;min-width:0}
-.sbar{display:flex;gap:6px}.sbar select{flex:none;max-width:42%;font-size:13px;padding:0 6px;border-radius:8px}
+.sbar{display:flex;gap:6px;position:relative}.sbar>.srcb{flex:none;font-size:13px;padding:0 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);cursor:pointer;white-space:nowrap}.sbar>.srcb[aria-expanded=true]{outline:2px solid var(--accent);outline-offset:1px}.srcp{position:absolute;left:0;top:calc(100% + 4px);z-index:21;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;box-shadow:0 8px 24px rgba(0,0,0,.12);width:min(340px,calc(100vw - 32px));box-sizing:border-box}.srcp label{display:flex;gap:8px;align-items:flex-start;padding:5px 0;cursor:pointer;font-size:14px}.srcp label input{margin-top:3px}.srcp .meta{display:block;font-size:12px}.srcp .row{display:flex;gap:6px;margin-top:6px;border-top:1px solid var(--line);padding-top:8px}.sbar select{flex:none;max-width:42%;font-size:13px;padding:0 6px;border-radius:8px}
 .search input{flex:1;min-width:0;width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
 .search input:focus{outline:2px solid var(--accent);outline-offset:1px}
 .sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:8px;max-height:min(70vh,640px);overflow:auto;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.12)}
@@ -305,7 +305,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
 </section>
 <div class="top" id="graphtop">
   <h1>Граф зв'язків · антикорупційний шар</h1>
-  <div class="search"><div class="sbar"><select id="qscope" aria-label="Де шукати"><option value="all">Усе</option><option value="person">Людина</option><option value="org">Компанія</option><option value="fop">ФОП</option><option value="code">Код ЄДРПОУ/ІПН</option><option value="case">Справа</option><option value="place">Місце</option><option value="channel">Канал</option><option value="post">Пости</option></select><input id="q" type="search" placeholder="Особа, компанія, справа, ЄДРПОУ, ІПН / РНОКПП…" autocomplete="off" aria-label="Пошук об'єкта"></div><div class="sugg" id="sugg" hidden></div></div>
+  <div class="search"><div class="sbar"><select id="qscope" aria-label="Де шукати"><option value="all">Усе</option><option value="person">Людина</option><option value="org">Компанія</option><option value="fop">ФОП</option><option value="code">Код ЄДРПОУ/ІПН</option><option value="case">Справа</option><option value="place">Місце</option><option value="channel">Канал</option><option value="post">Пости</option></select><button type="button" class="srcb" id="qsrc" aria-haspopup="true" aria-expanded="false" aria-controls="srcp">Бази: усі</button><div class="srcp" id="srcp" hidden role="group" aria-label="По яких базах шукати"></div><input id="q" type="search" placeholder="Особа, компанія, справа, ЄДРПОУ, ІПН / РНОКПП…" autocomplete="off" aria-label="Пошук об'єкта"></div><div class="sugg" id="sugg" hidden></div></div>
   <span class="meta" id="stats"></span>
 </div>
 <div class="filters" id="filters">
@@ -564,20 +564,36 @@ let pollTimer=null;function pollCase(t){clearInterval(pollTimer);pollTimer=setIn
 let sTimer=null,sCtl=null,sCtlM=null,sMTimer=null,sLast=null,sOpen=new Set(),webTimer=null;
 const SGROUPS=[['graph','Граф'],['registry','Реєстри'],['wanted','Розшук'],['courts','Суди'],['mentions','Згадки в постах'],['places','Місця'],['channels','Канали']];
 const SSCOPE={all:['graph','registry','wanted','courts','mentions','places','channels'],person:['graph','registry','wanted','courts','mentions'],org:['graph','registry','courts','mentions'],fop:['graph','registry','mentions'],code:['graph','registry','mentions'],case:['courts','graph','mentions'],place:['places','registry','mentions'],channel:['channels','mentions'],post:['mentions'],erdr:['graph','courts','mentions']};
+// «Бази»: which sources the search asks (a subset of SGROUPS), remembered in this browser; all ticked = no filter
+const SHINT={graph:'особи, компанії, справи вже в графі; ЄДР і картки з черги',registry:'ЄДР, ФОП, засновники/бенефіціари, адвокати (ЄРАУ), ProZorro',wanted:'розшук Нацполіції / СБУ / ДБР',courts:'номери справ, судді, тексти рішень ЄДРСР',mentions:'пости Telegram / RSS і знайдене в інтернеті',places:'адреси, населені пункти, місця подій',channels:'джерела: канали й сайти'};
+let BASES=new Set(SGROUPS.map(g=>g[0]));try{const v=JSON.parse(localStorage.getItem('graph-src')||'null');if(Array.isArray(v)){const ok=v.filter(k=>SHINT[k]);if(ok.length)BASES=new Set(ok)}}catch(_){}
+const srcAll=()=>BASES.size===SGROUPS.length,srcParam=()=>srcAll()?'':'&src='+[...BASES].join(',');
+const srcBtn=document.getElementById('qsrc'),srcPop=document.getElementById('srcp');
+function srcLabel(){srcBtn.textContent=srcAll()?'Бази: усі':'Бази: '+BASES.size+' з '+SGROUPS.length;srcBtn.title=SGROUPS.filter(g=>BASES.has(g[0])).map(g=>g[1]).join(', ')}
+function srcRender(){srcPop.innerHTML=SGROUPS.map(([k,l])=>`<label><input type="checkbox" value="${k}"${BASES.has(k)?' checked':''}><span>${l}<span class="meta">${esc(SHINT[k])}</span></span></label>`).join('')+'<div class="row"><button type="button" class="chip" data-a="all">Усі</button><button type="button" class="chip" data-a="none">Жодної</button></div>'}
+function srcChanged(){try{localStorage.setItem('graph-src',JSON.stringify([...BASES]))}catch(_){}srcLabel();sLast=null;const t=q.value.trim();if(t.length>=2&&!/^https?:\/\//i.test(t))doSearch(t)}
+srcBtn.onclick=e=>{e.stopPropagation();const open=srcPop.hidden;if(open)srcRender();srcPop.hidden=!open;srcBtn.setAttribute('aria-expanded',String(open));if(open){sugg.hidden=true;srcPop.querySelector('input')?.focus()}};
+srcPop.addEventListener('click',e=>e.stopPropagation());
+srcPop.addEventListener('change',e=>{const c=e.target;if(c.type!=='checkbox')return;c.checked?BASES.add(c.value):BASES.delete(c.value);srcChanged()});
+srcPop.addEventListener('click',e=>{const a=e.target.dataset&&e.target.dataset.a;if(!a)return;BASES=new Set(a==='all'?SGROUPS.map(g=>g[0]):[]);srcRender();srcChanged()});
+srcPop.addEventListener('keydown',e=>{if(e.key==='Escape'){srcPop.hidden=true;srcBtn.setAttribute('aria-expanded','false');srcBtn.focus()}});
+document.addEventListener('click',()=>{if(!srcPop.hidden){srcPop.hidden=true;srcBtn.setAttribute('aria-expanded','false')}});
+if(!CAN_QUEUE)srcBtn.hidden=true;srcLabel();
 const scopeOf=(t,kind)=>kind!=='all'?kind:/^\d{1,4}\/\d*(?:\/[\w/-]*)?$/.test(t)?'case':/^\d{8}$|^\d{10}$/.test(t)?'code':/^\d{17}$/.test(t)?'erdr':'all';
 async function runSearch(t,kind,part,bust){
   if(!CAN_QUEUE){if(/^\d{1,4}\/\d/.test(t))return {results:(await casePrefix(t)).map(c=>({id:'case:'+c.cause_num.toLowerCase(),type:'case',label:'Справа '+c.cause_num,cause_num:c.cause_num,sub:c.n+' рішень',strong:c.cause_num===t}))};
     return {results:search(t).map(n=>({id:n.id,type:n.type,label:n.label,sub:n.position||'',strong:n.label.toLowerCase()===t.toLowerCase()}))}}
   const ctl=new AbortController();if(part==='mentions'){sCtlM?.abort();sCtlM=ctl}else{sCtl?.abort();sCtl=ctl}
-  return (await fetch(`/api/search?q=${encodeURIComponent(t)}&kind=${kind}&part=${part}${bust?'&fresh='+bust:''}`,{signal:ctl.signal})).json()}
+  return (await fetch(`/api/search?q=${encodeURIComponent(t)}&kind=${kind}&part=${part}${srcParam()}${bust?'&fresh='+bust:''}`,{signal:ctl.signal})).json()}
 async function doSearch(t,o={}){const kind=scope.value;clearTimeout(sMTimer);
   if(!sLast||sLast.t!==t||sLast.kind!==kind){sLast={t,kind,main:null,mentions:null,err:{}};sOpen=new Set()}
+  if(CAN_QUEUE&&!BASES.size){sugg.innerHTML='<div style="padding:10px 12px">Не вибрано жодної бази. Відмітьте хоча б одну в «Бази».</div>';sugg.hidden=false;return null}
   const cur=sLast;if(sugg.hidden||!sugg.querySelector('.sg')||sugg.classList.contains('stale'))showResults();
   const one=async part=>{try{const r=await runSearch(t,kind,part,o.bust);if(sLast!==cur||q.value.trim()!==t||scope.value!==kind)return null;
       if(r.error)cur.err[part]=r.error;else cur[part]=r;showResults();return r}
     catch(e){if(e.name!=='AbortError'&&sLast===cur){cur.err[part]=e.message;showResults()}return null}};
   const main=one('main');
-  if(CAN_QUEUE&&(SSCOPE[scopeOf(t,kind)]||[]).includes('mentions'))sMTimer=setTimeout(()=>one('mentions'),o.now?0:350);
+  if(CAN_QUEUE&&BASES.has('mentions')&&(SSCOPE[scopeOf(t,kind)]||[]).includes('mentions'))sMTimer=setTimeout(()=>one('mentions'),o.now?0:350);
   return main}
 const SKEL='<div class="meta sload"><span class="spinner"></span> шукаю…</div>';
 function sItem(x,g){const b=document.createElement('button');b.type='button';b.className='si';b.dataset.k='1';b.dataset.key=x.id+'|'+(x.label||'');
@@ -593,7 +609,7 @@ function showResults(){const cur=sLast;if(!cur)return;const t=cur.t;sugg.classLi
   sugg.innerHTML='';sugg.hidden=false;
   // static copy: one flat list
   if(!CAN_QUEUE){const res=(cur.main&&cur.main.results)||[];if(!res.length)sugg.innerHTML=`<div style="padding:10px 12px">${cur.main?`Нічого за «${esc(t)}».`:SKEL}</div>`;res.forEach(x=>sugg.appendChild(sItem(x)));return}
-  const sc=scopeOf(t,cur.kind),want=SSCOPE[sc]||SSCOPE.all,by={};
+  const sc=scopeOf(t,cur.kind),want=(SSCOPE[sc]||SSCOPE.all).filter(k=>BASES.has(k)),by={};
   for(const part of ['main','mentions'])for(const g of (cur[part]&&cur[part].groups)||[])by[g.key]=g;
   let any=0;const empty=[];
   for(const [key,label] of SGROUPS){if(!want.includes(key))continue;const g=by[key],part=key==='mentions'?'mentions':'main';
@@ -615,7 +631,7 @@ function showResults(){const cur=sLast;if(!cur)return;const t=cur.t;sugg.classLi
     sugg.appendChild(sec)}
   if(empty.length)sugg.insertAdjacentHTML('beforeend',`<div class="meta sload" style="border-top:1px solid var(--line);padding-top:8px">Нічого: ${esc(empty.join(' · '))}</div>`);
   const done=cur.main&&(!want.includes('mentions')||cur.mentions||cur.err.mentions);
-  if(done&&!any)sugg.insertAdjacentHTML('afterbegin',`<div style="padding:10px 12px">Ніде нічого за «${esc(t)}»${cur.kind!=='all'?` (${esc(scope.selectedOptions[0].textContent)})`:''}. Спробуйте інтернет або реєстри нижче.</div>`);
+  if(done&&!any)sugg.insertAdjacentHTML('afterbegin',`<div style="padding:10px 12px">${want.length?'Ніде нічого':'Вибрані бази не шукають такий запит; нічого'} за «${esc(t)}»${cur.kind!=='all'?` (${esc(scope.selectedOptions[0].textContent)})`:''}${srcAll()?'':` у базах: ${esc(SGROUPS.filter(g=>BASES.has(g[0])).map(g=>g[1]).join(', '))}`}. Спробуйте інтернет або реєстри нижче.</div>`);
   // footer: web search (queued, src/web_mentions.py) + registry chain
   const qs=cur.main&&cur.main.queue,c=chainBox(t),d=document.createElement('div');d.className='sfoot';
   d.innerHTML=`<div class="group"><button type="button" class="chip" id="webq" data-k="1">Шукати в інтернеті</button><span class="meta" id="webst"></span></div>`+(qs&&['queued','running'].includes(qs.status)?`<div class="meta">Пошук «${esc(t)}» уже ${qs.status==='running'?'виконується':'у черзі'}${qs.kind?' ('+esc(qs.kind)+')':''}.</div>`:'')+c.html;
