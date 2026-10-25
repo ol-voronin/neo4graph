@@ -925,7 +925,7 @@ async function declAuto(n){const el=document.getElementById('declst');if(!el)ret
   if(st==='done'){el.textContent='Декларацій НАЗК не знайдено'+(init?' (за прізвищем та ініціалами'+(judge?', місце роботи — суд':'')+')':'')+'.';return}
   if(st){el.innerHTML='<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Шукаю декларації НАЗК…';return}
   DECLQ.set(n.id,'wait');el.innerHTML='<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Шукаю декларації НАЗК…';
-  let r;try{r=await enqueue(q,'decl')}catch(_){r=null}if(r&&r.scanned){DECLQ.set(n.id,'done');el.textContent='Декларацій НАЗК для цього судді не знайдено (перевірено '+new Date(r.done_at).toLocaleDateString('uk-UA')+').';return}if(!r||!r.queued){DECLQ.delete(n.id);el.textContent='';return}
+  let r;try{r=await enqueue(q,'decl')}catch(_){r=null}if(r&&r.scanned){DECLQ.set(n.id,'done');if(r.found){if(await loadAround(n.id,{fresh:true})){panelKey='';render()}return}el.textContent='Декларацій НАЗК для цього судді не знайдено (перевірено '+new Date(r.done_at).toLocaleDateString('uk-UA')+').';return}if(!r||!r.queued){DECLQ.delete(n.id);el.textContent='';return}
   for(let i=0;i<45;i++){const it=await queueStatus(q);if(it&&it.item.kind==='decl'&&['done','error'].includes(it.item.ua_status))break;await new Promise(res=>setTimeout(res,4000))}
   DECLQ.set(n.id,'done');if(await loadAround(n.id,{fresh:true}))render();if(state.center===n.id){panelKey='';render()}}
 function panel(nodes,edges){

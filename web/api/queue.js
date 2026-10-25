@@ -30,8 +30,8 @@ export default async function handler(req, res) {
                                  AND coalesce(ua_status, 'queued') NOT IN ('error', 'cancelled') ORDER BY created_at DESC LIMIT 1`;
         if (recent.length) return json(res, 200, { queued: true, existing: true, ...recent[0] });
         // judges are fetched ahead of time at night (local/decl_judges.py, decl_scan): nothing to queue
-        const scanned = await sql`SELECT done_at FROM decl_scan WHERE name = ${q.split("|")[0].trim()} AND done_at > now() - interval '30 days'`.catch(() => []);
-        if (scanned.length) return json(res, 200, { queued: false, scanned: true, done_at: scanned[0].done_at });
+        const scanned = await sql`SELECT done_at, found FROM decl_scan WHERE name = ${q.split("|")[0].trim()} AND done_at > now() - interval '30 days'`.catch(() => []);
+        if (scanned.length) return json(res, 200, { queued: false, scanned: true, done_at: scanned[0].done_at, found: scanned[0].found });
         const row = await sql`INSERT INTO query_queue(query, kind, status, note) VALUES (${q}, 'decl', 'done', 'декларації: лише воркер UA') RETURNING id, status, created_at`;
         return json(res, 200, { queued: true, kind: k, ...row[0] });
       }
