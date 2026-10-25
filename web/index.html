@@ -502,7 +502,9 @@ function centerPatr(){const c=byId.get(state.center);return c?patrM(c):null}
 // placeholders and raw-id labels (server-side isJunk in api/_graph.js; repeated here for snapshots built before it)
 const PH_RE=/^(немає|нема|немає даних|відсутн[а-яії]*(\s.*)?|причин[аи] відсутн.*|не встановлено|не визначено|не вказано|невідом(а|ий|ого|ому|ої|і|е|о)(\s.*)?|нет|нету|отсутству[а-яє]*(\s.*)?|не указан[а-я]*|неизвестн(ый|ая|ое|ые|ого|о)(\s.*)?|н\/?а|n\/?a|none|null|unknown|[-–—.х_x0 ]+)[.!]?$/i;
 const isPh=s=>{s=String(s||'').replace(/\s+/g,' ').trim().replace(/[«»"“”„]/g,'').replace(/^(тов|пп|фоп)\s+/i,'');return !s||PH_RE.test(s)};
-const JUNK=new WeakMap();function isJunk(n){let j=JUNK.get(n);if(j===undefined){j=(n.type==='person'||n.type==='org')&&(isPh(n.label)||isPh(n.id.slice(n.id.indexOf(':')+1))||/^(person|org):/.test(n.label));JUNK.set(n,j)}return j}
+// «ОСОБА_1», «НОМЕР_1»: anonymised in the court register; as nodes they tied unrelated cases together
+const ANON=/^(особа|номер|адреса|інформація)_\d+$/i;
+const JUNK=new WeakMap();function isJunk(n){let j=JUNK.get(n);if(j===undefined){j=(n.type==='person'||n.type==='org')&&(ANON.test(n.label.trim())||(n.type==='person'&&/^\d{1,4}\/\d/.test(n.label))||isPh(n.label)||isPh(n.id.slice(n.id.indexOf(':')+1))||/^(person|org):/.test(n.label));JUNK.set(n,j)}return j}
 const TEXTY=new Set(['post','web','decision','topic']);
 function nodeOk(n,g,cp=centerPatr()){if(n.id===state.center)return true;if(cp&&!state.f.some(f=>f.k==='patr')){const np=patrM(n);if(np&&np.toLowerCase()!==cp.toLowerCase())return false}for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(F.edge)continue;if(k==='patr'&&TEXTY.has(n.type)){const h=hay(n);if(!vals.some(v=>h.includes(v.toLowerCase().slice(0,-2))))return false;continue}if(k==='text'){if(!vals.every(v=>hay(n).includes(v.toLowerCase())))return false;continue}const x=F.get(n);if(x==null&&k!=='type')continue;if(!vals.includes(x))return false}return true}
 // researcher's verdicts on edges (api/feedback.js, migration 034): 'no' hides the edge everywhere, 'yes' draws it as confirmed
@@ -512,12 +514,13 @@ async function setFB(e,verdict){const k=fbKey(e);if(verdict)FB.set(k,verdict);el
   try{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({a:e.source,b:e.target,rel:e.rel,verdict})})}catch(_){}}
 function edgeOk(e,g,cp){if(FB.get(fbKey(e))==='no')return false;for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(!F.edge)continue;const x=F.get(e);if(x==null)continue;if(!vals.includes(x))return false}const a=byId.get(e.source),b=byId.get(e.target);return nodeOk(a,g,cp)&&nodeOk(b,g,cp)}
 // the walk is cached per (centre, depth, filters, data size): render, hints and facetCounts all ask for it several times per frame
+const INST=/(^|[\s«"])(суд|прокуратур|ДБР|НАБУ|САП|ВАКС|поліці|ДСА|ДПСУ|СБУ|Державне бюро|військова частина|апеляційн)/i;
 const EGO=new Map();
 function ego(center,depth,g=groups()){const S=SLICE.get(center),key=FBV+'|'+center+'|'+depth+'|'+JSON.stringify(g)+'|'+G.edges.length+'|'+G.nodes.length+'|'+(S?S.size:0)+'|'+JSON.stringify(state.f.filter(f=>f.k==='patr'));
   const hit=EGO.get(key);if(hit)return hit;if(EGO.size>8)EGO.clear();
   const cp=centerPatr(),pf=!!(g.patr&&g.patr.length),seen=new Map([[center,0]]),q=[center],edges=new Set();
   for(let qi=0;qi<q.length;qi++){const u=q[qi];const d=seen.get(u);if(d>=depth)continue;
-    for(const e of adj.get(u)||[]){const v=e.source===u?e.target:e.source;if(S&&!S.has(v))continue;const vn=byId.get(v);if(!vn||isJunk(vn)||!edgeOk(e,g,cp))continue;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);const hub=(cp||pf)&&vn.type==='person'&&!patrM(vn)&&vn.label.trim().split(/\s+/).length<=2;if(!hub)q.push(v)}}}
+    for(const e of adj.get(u)||[]){const v=e.source===u?e.target:e.source;if(S&&!S.has(v))continue;const vn=byId.get(v);if(!vn||isJunk(vn)||!edgeOk(e,g,cp))continue;edges.add(e);if(!seen.has(v)){seen.set(v,d+1);const hub=((cp||pf)&&vn.type==='person'&&!patrM(vn)&&vn.label.trim().split(/\s+/).length<=2)||(vn.type==='org'&&INST.test(vn.label))||vn.type==='court';if(!hub)q.push(v)}}}
   const r={nodes:[...seen.keys()].map(id=>byId.get(id)),edges:[...edges],dist:seen};EGO.set(key,r);return r;
 }
 // facet values available around the current object (computed on the unfiltered neighbourhood so removed values can be added back)
@@ -834,6 +837,25 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&canvas.classList.co
 const hist=[];
 const PROV_REL=new Set(['court_register_mention','declaration','fop_record','namesake','named_by_media','web_mention','mentioned_in','registry_record','founder','signer','beneficiary']);
 function fmtDate(d){return d?String(d).slice(0,10):''}
+// «Учасники справи»: people tied to the case directly or through its decisions / proceedings, with their roles, and for each
+// what else they are in (other cases, companies) — two more levels without drawing thousands of nodes
+const CASEP=new Set(),CASEP_JUDGE=new Set();let CASEP_IDS=[];
+function caseParticipants(n){const people=new Map(),judges=new Set(),anonS=new Set();const near=new Set([n.id]);
+  const add=(o,role)=>{if(ANON.test(o.label.trim())){anonS.add(o.id);return}if(isJunk(o))return;const r=people.get(o.id)||people.set(o.id,{o,roles:new Set()}).get(o.id);if(role)r.roles.add(role)};
+  for(const e of adj.get(n.id)||[]){const o=byId.get(e.source===n.id?e.target:e.source);if(!o)continue;
+    if(o.type==='person')add(o,REL[e.rel]||e.rel);
+    else if(['decision','case'].includes(o.type)){near.add(o.id);if(o.judge)judges.add(o.judge);for(const e2 of adj.get(o.id)||[]){const o2=byId.get(e2.source===o.id?e2.target:e2.source);if(o2&&o2.type==='person')add(o2,REL[e2.rel]||e2.rel)}}}
+  const anon=anonS.size,rows=[...people.values()].map(r=>{const other=new Map(),orgs=new Map();for(const e of adj.get(r.o.id)||[]){const x=byId.get(e.source===r.o.id?e.target:e.source);if(!x||near.has(x.id)||isJunk(x))continue;
+      if(x.type==='case')other.set(x.id,x);else if(x.type==='decision'){for(const e2 of adj.get(x.id)||[]){const c=byId.get(e2.source===x.id?e2.target:e2.source);if(c&&c.type==='case'&&!near.has(c.id))other.set(c.id,c)}}else if(['org','registry'].includes(x.type)&&!INST.test(x.label))orgs.set(x.id,x)}return {...r,other:[...other.values()],orgs:[...orgs.values()]}})
+    .sort((a,b)=>(b.other.length+b.orgs.length)-(a.other.length+a.orgs.length));
+  CASEP_IDS=rows.map(r=>r.o.id);rows.forEach(r=>{if([...r.roles].some(x=>/суддя/i.test(x)))CASEP_JUDGE.add(r.o.id)});
+  const chip=x=>`<button type="button" class="chip" data-id="${esc(x.id)}" style="font-size:12px;padding:2px 8px">${esc(x.label.length>40?x.label.slice(0,38)+'…':x.label)}</button>`;
+  let h=`<h3>Учасники справи (${rows.length}${anon?` + ${anon} знеособлених`:''})</h3>`;
+  if(!rows.length&&!judges.size)h+=`<p class="meta">Відомих поіменно учасників ще немає.</p>`;
+  if(rows.length)h+=`<ul class="rel">${rows.slice(0,30).map(r=>`<li><button type="button" data-id="${esc(r.o.id)}"><span class="dot" style="background:${COLORS[r.o.type]}"></span>${esc(r.o.label)}</button><span class="r">${esc([...r.roles].join(', '))}</span>${r.other.length||r.orgs.length?`<span class="r">${[r.other.length?`ще справ: ${r.other.length}`:'',r.orgs.length?`компаній: ${r.orgs.length}`:''].filter(Boolean).join(' · ')}</span><div class="group" style="margin-top:2px">${[...r.other.slice(0,3),...r.orgs.slice(0,3)].map(chip).join('')}</div>`:''}</li>`).join('')}</ul>`;
+  if(judges.size)h+=`<p class="meta">Судді (з рішень): ${[...judges].map(j=>`<button type="button" class="lnk" data-q="${esc(j)}">${esc(j)}</button>`).join(', ')}</p>`;
+  if(anon)h+=`<p class="meta">Ще ${anon} учасників у рішеннях знеособлені («ОСОБА_1»…): реєстр судових рішень приховує імена сторін. Імена зʼявляються тут, коли їх називають новини, тексти про адвокатів або реєстри.</p>`;
+  return h}
 function panel(nodes,edges){
   const n=byId.get(state.center);const p=document.getElementById('panel');
   if(hist[hist.length-1]!==n.id){const i=hist.indexOf(n.id);if(i>=0)hist.splice(i,1);hist.push(n.id);if(hist.length>7)hist.shift()}
@@ -862,6 +884,12 @@ function panel(nodes,edges){
   const tl=[];for(const e of mine){const o=byId.get(e.source===n.id?e.target:e.source);const d=o.date||e.date||(o.year?String(o.year):'');if(d)tl.push([String(d),o,e])}
   tl.sort((a,b)=>b[0].localeCompare(a[0]));
   if(tl.length>=3)html+=`<h3>Хронологія (${tl.length})</h3><ul class="tl">${tl.slice(0,12).map(([d,o,e])=>`<li><span class="meta">${esc(fmtDate(d))}</span> <button type="button" data-id="${esc(o.id)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button> <span class="meta">${esc(REL[e.rel]||e.rel)}</span></li>`).join('')}${tl.length>12?`<li class="meta">…ще ${tl.length-12} у списку звʼязків нижче</li>`:''}</ul>`;
+  if(n.type==='case'){html+=caseParticipants(n);
+    // second level: fetch the neighbourhoods of the named participants once, then redraw (their other cases and companies)
+    if(CAN_QUEUE){const ids=CASEP_IDS.filter(id=>!EXPANDED.has(id)).slice(0,6);
+      // the server builds each one on the fly (registries, the judge's decisions, lawyer cases, posts), as when a person is opened
+      if(ids.length)Promise.all(ids.map(id=>{if(EXPANDED.has(id))return null;const o=byId.get(id),pr=fetch(`/api/node?id=${encodeURIComponent(id)}&expand=1&label=${encodeURIComponent(o.label)}${CASEP_JUDGE.has(id)?'&judge=1':''}`).then(r=>r.json()).catch(()=>null);EXPANDED.set(id,pr);
+        return pr.then(r=>{if(!r||r.error){EXPANDED.delete(id);return null}mergeSlice(r);sliceAdd(id,(r.nodes||[]).map(x=>x.id));return r})})).then(rs=>{if(rs.some(Boolean)&&state.center===n.id){panelKey='';render()}})}}
   // 5. connections, grouped
   const groups=new Map();mine.forEach(e=>{const other=e.source===n.id?e.target:e.source;const key=e.rel;(groups.get(key)||groups.set(key,[]).get(key)).push([other,e])});
   html+=`<h3>Зв'язки (${mine.length}) · за поточними фільтрами</h3>`;
@@ -880,6 +908,7 @@ function panel(nodes,edges){
   const rej=[...FB].filter(([k,v])=>v==='no'&&(k.startsWith(n.id+'|')||k.split('|')[1]===n.id)).length;
   if(rej)html+=`<p class="meta">Приховано звʼязків, які ви позначили як хибні: ${rej}. <button type="button" class="lnk" id="fb-undo">повернути</button></p>`;
   p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));
+  p.querySelectorAll('button[data-q]').forEach(b=>b.onclick=()=>{q.value=b.dataset.q;q.focus();sLast=null;doSearch(b.dataset.q,{now:true})});
   p.querySelectorAll('button[data-fb]').forEach(b=>b.onclick=async()=>{const e=FBE[+b.dataset.fb],v=b.dataset.v,cur=FB.get(fbKey(e));await setFB(e,cur===v?null:v);render();select(n.id)});
   document.getElementById('fb-undo')?.addEventListener('click',async()=>{for(const [k,v] of [...FB])if(v==='no'&&(k.startsWith(n.id+'|')||k.split('|')[1]===n.id)){const [a,b2,...r]=k.split('|');await setFB({source:a,target:b2,rel:r.join('|')},null)}render();select(n.id)});if(none){nc.bind();document.getElementById('none-q').onclick=()=>{q.value=n.label;q.focus();sLast=null;doSearch(n.label,{now:true})}}
   p.querySelectorAll('li.more button').forEach(b=>b.onclick=()=>{const ul=b.closest('ul');const rel=[...groups].find(([r,it])=>ul.previousElementSibling.textContent.startsWith(REL[r]||r));if(!rel)return;const extra=rel[1].slice(25).map(([oid,e])=>{const o=byId.get(oid);return `<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${idTag(e)}${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}</li>`}).join('');b.closest('li').outerHTML=extra;ul.querySelectorAll('button[data-id]').forEach(x=>x.onclick=()=>select(x.dataset.id))});
@@ -999,7 +1028,8 @@ async function emptyState(){document.getElementById('panel').innerHTML=`<div cla
   if(!CAN_QUEUE)return;
   try{const r=await (await fetch('/api/queue')).json();
     const w=r.worker;const st=document.getElementById('stats');if(w&&w.seen_at){const ago=Math.round((Date.now()-new Date(w.seen_at))/60000);if(!st.textContent.includes('воркер UA'))st.textContent+=` · воркер UA: ${ago<=6?'онлайн':'офлайн '+(ago<120?ago+' хв':Math.round(ago/60)+' год')}`}}catch(e){}}
-if(state.center){const c=state.center;select(c).then(ok=>{if(ok)q.value=byId.get(c).label;else emptyState()})}else{emptyState()}
+// a case from the URL: its decisions come from api/case (as when it is picked in the search), not with the neighbourhood
+if(state.center){const c=state.center;(c.startsWith('case:')&&CAN_QUEUE?fetchCase(c.slice(5)).then(()=>mergeCase(c.slice(5))).catch(()=>null):Promise.resolve()).then(()=>select(c)).then(ok=>{if(ok)q.value=byId.get(c).label;else emptyState()})}else{emptyState()}
 q.addEventListener('input',()=>{if(!q.value.trim()&&!state.center)emptyState()});
 // ---------- sections: home / graph / factcheck+rhetoric / forecast; ?view= in the URL, the graph keeps its own #hash ----------
 const VIEWS={home:['home'],graph:['graphtop','filters','main','legend','chat'],factcheck:['factcheck'],prognoz:['prognoz'],queue:['queue']};
