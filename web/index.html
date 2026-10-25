@@ -22,7 +22,9 @@ h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
 .top{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
 .search{position:relative;flex:1 1 260px;min-width:0}
 .sbar{display:flex;gap:6px;position:relative}.sbar>.srcb{flex:none;font-size:13px;padding:0 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);cursor:pointer;white-space:nowrap}.sbar>.srcb[aria-expanded=true]{outline:2px solid var(--accent);outline-offset:1px}.srcp{position:absolute;left:0;top:calc(100% + 4px);z-index:21;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;box-shadow:0 8px 24px rgba(0,0,0,.12);width:min(340px,calc(100vw - 32px));box-sizing:border-box}.srcp label{display:flex;gap:8px;align-items:flex-start;padding:5px 0;cursor:pointer;font-size:14px}.srcp label input{margin-top:3px}.srcp .meta{display:block;font-size:12px}.sbar>.srcb.narrow{border-color:var(--accent);color:var(--accent);font-weight:600}.srch{display:flex;flex-direction:column;gap:2px;padding-bottom:6px;border-bottom:1px solid var(--line);margin-bottom:2px}.srow{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.srow .lnk{flex:none;font-size:12px;margin-top:6px}
-.sbases{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:1}.sugg .sbases .chip{font-size:12px;padding:3px 9px;width:auto;display:inline-block;margin:0;text-align:center;border:1px solid var(--line);border-radius:999px;background:var(--panel)}.sugg .sbases .chip.on{background:var(--accent-soft);border-color:var(--accent)}.sbases .chip:not(.on){opacity:.65;border-style:dashed}
+.sbases{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:1}.sugg .sbases .chip{font-size:12px;padding:3px 9px;width:auto;display:inline-block;margin:0;text-align:center;border:1px solid var(--line);border-radius:999px;background:var(--panel)}.sugg .sbases .chip.on{background:var(--accent-soft);border-color:var(--accent)}.sugg .sbases .chip.ai{margin-left:auto;border-color:var(--accent);color:var(--accent);font-weight:600}.sugg .sbases .rel li{position:relative}.rel li>button[data-id]{padding-right:56px}.fb{display:inline-flex;gap:3px;position:absolute;top:5px;right:6px}.rel li .fb button,.fb button{display:inline-block;font-weight:400;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:6px;font-size:11px;line-height:1;padding:3px 5px;cursor:pointer}.fb button[data-v=yes][aria-pressed=true]{background:#0ca30c;border-color:#0ca30c;color:#fff}.fb button[data-v=no]:hover{border-color:#d03b3b;color:#d03b3b}.fb button[data-v=yes]:hover{border-color:#0ca30c;color:#0ca30c}
+.link.ok{stroke:#0ca30c!important;stroke-dasharray:none!important;opacity:.9}
+.chip.on{background:var(--accent-soft);border-color:var(--accent)}.sbases .chip:not(.on){opacity:.65;border-style:dashed}
 .srcp .row{display:flex;gap:6px;margin-top:6px;border-top:1px solid var(--line);padding-top:8px}.sbar select{flex:none;max-width:42%;font-size:13px;padding:0 6px;border-radius:8px}
 .search input{flex:1;min-width:0;width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);font:inherit;font-size:15px}
 .search input:focus{outline:2px solid var(--accent);outline-offset:1px}
@@ -56,7 +58,7 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;font-size:13px}
 .kv .k{color:var(--muted)}
 .rel{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
-.rel li.more button{color:var(--accent)}.rel li{display:grid;grid-template-columns:1fr;gap:2px;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
+.rel li.more button{color:var(--accent)}.rel li{position:relative;display:grid;grid-template-columns:1fr;gap:2px;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
 .rel li button{all:unset;cursor:pointer;color:var(--fg);font-weight:500;display:flex;gap:6px;align-items:center}
 .rel li button:hover{color:var(--accent)}
 .rel .r{font-size:12px;color:var(--muted)}
@@ -503,10 +505,15 @@ const isPh=s=>{s=String(s||'').replace(/\s+/g,' ').trim().replace(/[«»"“”�
 const JUNK=new WeakMap();function isJunk(n){let j=JUNK.get(n);if(j===undefined){j=(n.type==='person'||n.type==='org')&&(isPh(n.label)||isPh(n.id.slice(n.id.indexOf(':')+1))||/^(person|org):/.test(n.label));JUNK.set(n,j)}return j}
 const TEXTY=new Set(['post','web','decision','topic']);
 function nodeOk(n,g,cp=centerPatr()){if(n.id===state.center)return true;if(cp&&!state.f.some(f=>f.k==='patr')){const np=patrM(n);if(np&&np.toLowerCase()!==cp.toLowerCase())return false}for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(F.edge)continue;if(k==='patr'&&TEXTY.has(n.type)){const h=hay(n);if(!vals.some(v=>h.includes(v.toLowerCase().slice(0,-2))))return false;continue}if(k==='text'){if(!vals.every(v=>hay(n).includes(v.toLowerCase())))return false;continue}const x=F.get(n);if(x==null&&k!=='type')continue;if(!vals.includes(x))return false}return true}
-function edgeOk(e,g,cp){for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(!F.edge)continue;const x=F.get(e);if(x==null)continue;if(!vals.includes(x))return false}const a=byId.get(e.source),b=byId.get(e.target);return nodeOk(a,g,cp)&&nodeOk(b,g,cp)}
+// researcher's verdicts on edges (api/feedback.js, migration 034): 'no' hides the edge everywhere, 'yes' draws it as confirmed
+const FB=new Map();let FBV=0;const fbKey=e=>e.source+'|'+e.target+'|'+e.rel;
+if(CAN_QUEUE)fetch('/api/feedback').then(r=>r.json()).then(r=>{for(const l of r.links||[])FB.set(l.a+'|'+l.b+'|'+l.rel,l.verdict);FBV++;if(FB.size&&state.center)render()}).catch(()=>{});
+async function setFB(e,verdict){const k=fbKey(e);if(verdict)FB.set(k,verdict);else FB.delete(k);FBV++;EGO.clear();
+  try{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({a:e.source,b:e.target,rel:e.rel,verdict})})}catch(_){}}
+function edgeOk(e,g,cp){if(FB.get(fbKey(e))==='no')return false;for(const [k,vals] of Object.entries(g)){const F=FACETS[k];if(!F.edge)continue;const x=F.get(e);if(x==null)continue;if(!vals.includes(x))return false}const a=byId.get(e.source),b=byId.get(e.target);return nodeOk(a,g,cp)&&nodeOk(b,g,cp)}
 // the walk is cached per (centre, depth, filters, data size): render, hints and facetCounts all ask for it several times per frame
 const EGO=new Map();
-function ego(center,depth,g=groups()){const S=SLICE.get(center),key=center+'|'+depth+'|'+JSON.stringify(g)+'|'+G.edges.length+'|'+G.nodes.length+'|'+(S?S.size:0)+'|'+JSON.stringify(state.f.filter(f=>f.k==='patr'));
+function ego(center,depth,g=groups()){const S=SLICE.get(center),key=FBV+'|'+center+'|'+depth+'|'+JSON.stringify(g)+'|'+G.edges.length+'|'+G.nodes.length+'|'+(S?S.size:0)+'|'+JSON.stringify(state.f.filter(f=>f.k==='patr'));
   const hit=EGO.get(key);if(hit)return hit;if(EGO.size>8)EGO.clear();
   const cp=centerPatr(),pf=!!(g.patr&&g.patr.length),seen=new Map([[center,0]]),q=[center],edges=new Set();
   for(let qi=0;qi<q.length;qi++){const u=q[qi];const d=seen.get(u);if(d>=depth)continue;
@@ -611,7 +618,7 @@ async function doSearch(t,o={}){const kind=scope.value;clearTimeout(sMTimer);
 const SKEL='<div class="meta sload"><span class="spinner"></span> шукаю…</div>';
 function sItem(x,g){const b=document.createElement('button');b.type='button';b.className='si';b.dataset.k='1';b.dataset.key=x.id+'|'+(x.label||'');
   const tag=x.type==='topic'?'усі згадки → граф':(TYPES[x.type]||x.type);
-  b.innerHTML=`<span class="dot" style="background:${COLORS[x.type]||'var(--c-post)'}"></span><span class="sl">${esc(x.label)}<span class="meta sm">${esc(tag)}${x.sub?' · '+esc(x.sub):''}${x.strong||x.exact?' · точний збіг':''}${x.lake&&!x.in_graph?' · ще не в графі':''}</span></span>`;
+  b.innerHTML=`<span class="dot" style="background:${COLORS[x.type]||'var(--c-post)'}"></span><span class="sl">${esc(x.label)}<span class="meta sm">${esc(tag)}${x.sub?' · '+esc(x.sub):''}${x.picked?' · ви вже обирали':''}${x.strong||x.exact?' · точний збіг':''}${x.lake&&!x.in_graph?' · ще не в графі':''}</span></span>`;
   b.onclick=()=>pick(x);return b}
 function sPost(p){const b=document.createElement('button');b.type='button';b.className='si sp';b.dataset.k='1';b.dataset.key=p.id;
   b.innerHTML=`<span class="dot" style="background:var(--c-post)"></span><span class="sl"><span class="meta">${esc(p.date||'')} · ${esc(p.src||p.source||'')}</span><br>${esc((p.snippet||p.label||'').slice(0,220))}</span>`;
@@ -627,6 +634,8 @@ function showResults(){const cur=sLast;if(!cur)return;const t=cur.t;sugg.classLi
   {const row=document.createElement('div');row.className='sbases';row.setAttribute('role','group');row.setAttribute('aria-label','Бази в цьому пошуку');
    row.innerHTML='<span class="meta">Бази:</span>'+SGROUPS.filter(([k])=>(SSCOPE[sc]||SSCOPE.all).includes(k)).map(([k,l])=>{const on=BASES.has(k),g=by[k],n=g&&g.status==='ok'?g.count+(g.capped?'+':''):'';
      return `<button type="button" class="chip sb${on?' on':''}" data-b="${k}" aria-pressed="${on}" title="${esc(SHINT[k])}${on?' — клацніть, щоб не шукати тут':' — клацніть, щоб шукати й тут'}">${on?'':'+ '}${l}${on&&n!==''?` <span class="meta">${n}</span>`:''}</button>`}).join('');
+   row.insertAdjacentHTML('beforeend',`<button type="button" class="chip sb ai" id="aiq" title="Модель розбере збіги: хто з кандидатів — та сама людина, хто однофамілець; враховує ваші ✓/✗">✨ AI: хто з них той самий</button>`);
+   row.querySelector('#aiq').onclick=e=>{e.stopPropagation();aiSearch(t)};
    row.querySelectorAll('[data-b]').forEach(b=>b.onclick=e=>{e.stopPropagation();const k=b.dataset.b;if(BASES.has(k)){if(BASES.size>1)BASES.delete(k)}else BASES.add(k);srcChanged()});
    sugg.appendChild(row)}
   let any=0;const empty=[];
@@ -654,6 +663,21 @@ function showResults(){const cur=sLast;if(!cur)return;const t=cur.t;sugg.classLi
   const qs=cur.main&&cur.main.queue,c=chainBox(t),d=document.createElement('div');d.className='sfoot';
   d.innerHTML=`<div class="group"><button type="button" class="chip" id="webq" data-k="1">Шукати в інтернеті</button><span class="meta" id="webst"></span></div>`+(qs&&['queued','running'].includes(qs.status)?`<div class="meta">Пошук «${esc(t)}» уже ${qs.status==='running'?'виконується':'у черзі'}${qs.kind?' ('+esc(qs.kind)+')':''}.</div>`:'')+c.html;
   sugg.appendChild(d);c.bind();if(fk)[...sugg.querySelectorAll('[data-k]')].find(x=>x.dataset.key===fk)?.focus();const wb=document.getElementById('webq');if(wb){wb.onclick=()=>webSearch(t);if(webTimer&&webTimer.t===t)webState(webTimer.st)}}
+// AI search (api/aisearch.js): the model groups the candidates into «the same person» and namesakes, using the researcher's ✓/✗
+const AIC={висока:'#0ca30c',середня:'#fab219',низька:'#898781'};
+async function aiSearch(t){sugg.hidden=false;sugg.innerHTML=`<div class="meta sload"><span class="spinner"></span> AI розбирає збіги для «${esc(t)}»… (5–20 с)</div>`;let r;
+  try{r=await (await fetch('/api/aisearch?q='+encodeURIComponent(t))).json()}catch(e){r={error:e.message}}
+  if(q.value.trim()!==t)return;sugg.innerHTML='';
+  const back=document.createElement('button');back.type='button';back.className='lnk';back.dataset.k='1';back.textContent='← звичайні результати';back.onclick=e=>{e.stopPropagation();sLast=null;doSearch(t,{now:true})};sugg.appendChild(back);
+  if(r.error){sugg.insertAdjacentHTML('beforeend',`<div style="padding:10px 12px">AI-пошук не вдався: ${esc(r.error)}</div>`);return}
+  const by=new Map((r.items||[]).map(x=>[x.id,x])),pf=r.profile||{},ex=[pf.patronymic,pf.region,pf.role,pf.birth_year].filter(Boolean);
+  sugg.insertAdjacentHTML('beforeend',`<div class="meta sload" style="display:block">Шукали в базах: «${esc(r.name)}»${ex.length?' · з запиту: '+esc(ex.join(', ')):''}. Групи — гіпотеза моделі за даними рядків, не встановлена особа${r.feedback?`; враховано ваших позначок: ${r.feedback}`:''}.</div>`);
+  if(!(r.groups||[]).length)sugg.insertAdjacentHTML('beforeend',`<div style="padding:10px 12px">${esc(r.note||'Модель не знайшла кандидатів, що підходять під запит.')}</div>`);
+  for(const g of r.groups||[]){const sec=document.createElement('div');sec.className='sg';sec.innerHTML=`<div class="gh"><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${AIC[g.confidence]||'#898781'};margin-right:6px"></i>${esc(g.title)}</span><span>${esc(g.confidence)}</span></div><div class="meta sload" style="display:block">${esc(g.why)}</div>`;
+    g.ids.forEach(id=>{const x=by.get(id);if(x)sec.appendChild(sItem(x))});sugg.appendChild(sec)}
+  if((r.namesakes?.ids||[]).length){const sec=document.createElement('div');sec.className='sg';sec.innerHTML=`<div class="gh"><span>Однофамільці (відкинуто)</span><span>${r.namesakes.ids.length}</span></div><div class="meta sload" style="display:block">${esc(r.namesakes.why)}</div>`;
+    r.namesakes.ids.slice(0,6).forEach(id=>{const x=by.get(id);if(x){const b=sItem(x);b.style.opacity='.6';sec.appendChild(b)}});sugg.appendChild(sec)}
+  if(r.ask)sugg.insertAdjacentHTML('beforeend',`<div class="meta sload" style="display:block;border-top:1px solid var(--line);padding-top:8px">Щоб розділити точніше: ${esc(r.ask)}</div>`)}
 // «Шукати в інтернеті»: queue kind=web, poll the queue, then refetch the mentions part past the CDN cache
 function webState(st){const el=document.getElementById('webst'),b=document.getElementById('webq');if(!el)return;el.textContent=st;if(b)b.disabled=/у черзі|виконується|ставлю/.test(st)}
 async function webSearch(t){webState('ставлю в чергу…');let r;try{r=await enqueue(t,'web')}catch(e){webState('не вдалося: '+e.message);return}
@@ -663,7 +687,7 @@ async function webSearch(t){webState('ставлю в чергу…');let r;try{
     W.st=({queued:'у черзі (хмара бере раз на кілька хвилин)',running:'виконується…',done:'готово — оновлюю згадки',failed:'помилка у хмарі'})[it.status]||it.status;webState(W.st);
     if(['done','failed'].includes(it.status)||++n>45){clearInterval(W.id);if(it.status==='done'&&q.value.trim()===t){sLast=null;doSearch(t,{bust:Date.now(),now:true})}}};
   W.id=setInterval(tick,30000);tick()}
-async function pick(x){sugg.hidden=true;q.value=x.type==='topic'?x.label:x.type==='post'?q.value:x.label;if(x.cause_num&&x.type==='case'){await fetchCase(x.cause_num);mergeCase(x.cause_num)}
+async function pick(x){if(CAN_QUEUE&&sLast&&x.id&&x.type!=='post')fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pick:{q:sLast.t,id:x.id,label:x.label}})}).catch(()=>{});sugg.hidden=true;q.value=x.type==='topic'?x.label:x.type==='post'?q.value:x.label;if(x.cause_num&&x.type==='case'){await fetchCase(x.cause_num);mergeCase(x.cause_num)}
   const type=TYPES[x.type]?x.type:'registry';
   const ex=x.type==='topic'||x.type==='wanted'||x.type==='article'||x.lake||x.judge||(['registry','person','org'].includes(x.type)&&x.in_graph===false)?{label:x.role_of&&x.type==='person'?x.role_of:x.label,judge:!!x.judge,lake:!!x.lake}:null;
   select(x.id,{placeholder:{id:x.id,type,label:x.type==='registry'&&/^registry:\d{8}$/.test(x.id)?`ЄДР ${x.id.slice(9)} · ${x.label}`:x.label},expand:ex})}
@@ -770,7 +794,7 @@ function render(){
   const ls=edges.map(e=>({source:pos.get(e.source),target:pos.get(e.target),rel:e.rel,w:e.nmsgs||(e.msgs||[]).length,k:e.source+'|'+e.target+'|'+e.rel,e}));
   NB=new Map();for(const l of ls){(NB.get(l.source.id)||NB.set(l.source.id,new Set()).get(l.source.id)).add(l.target.id);(NB.get(l.target.id)||NB.set(l.target.id,new Set()).get(l.target.id)).add(l.source.id)}
   link=gl.selectAll('line').data(ls,d=>d.k).join(en=>en.append('line').on('mousemove',(ev,d)=>{const r=svg.node().getBoundingClientRect();tip.hidden=false;tip.textContent=linkTip(d);tip.style.left=(ev.clientX-r.left)+'px';tip.style.top=(ev.clientY-r.top)+'px'}).on('mouseleave',()=>{tip.hidden=true}))
-    .attr('class',d=>'link'+(['registry_record','founder','beneficiary','signer'].includes(d.rel)?' reg':'')+(d.e.probable?' prob':'')).attr('stroke-width',d=>Math.min(4,1+d.w*.6));
+    .attr('class',d=>'link'+(['registry_record','founder','beneficiary','signer'].includes(d.rel)?' reg':'')+(FB.get(fbKey(d.e))==='yes'?' ok':d.e.probable?' prob':'')).attr('stroke-width',d=>Math.min(4,1+d.w*.6));
   // namesakes («ФОП Кравченко Олександр …» around «Кравченко Олександр»): next to the node only the part that tells them apart;
   // the full label is in the tooltip
   const crowded=ns.length>140,cw=(byId.get(state.center)?.label||'').replace(/^(ФОП|ПП|ТОВ)\s+/i,'').split(/\s+/).slice(0,2);let pre=null;
@@ -845,14 +869,19 @@ function panel(nodes,edges){
   const none=!mine.length&&CAN_QUEUE&&!OVER.has(n.id)&&!(adj.get(n.id)||[]).length,nc=none&&chainBox(n.label);
   if(none)html+=`<p class="empty">Нічого не знайдено за «${esc(n.label)}»: ні в графі, ні в реєстрах, ні в постах. Це не означає, що такої людини чи компанії немає — лише що в базі даних про неї ще немає.</p><button type="button" class="chip" id="none-q">Шукати в інтернеті й реєстрах</button>${nc.html}`;
   else if(!mine.length)html+=`<p class="empty">За поточними фільтрами зв'язків немає — зніміть фільтр або збільште глибину.</p>`;
+  const FBE=[];
   for(const [rel,items] of [...groups].sort((a,b)=>b[1].length-a[1].length)){
     const byType=new Map();items.forEach(([oid])=>{const t=byId.get(oid).type;byType.set(t,(byType.get(t)||0)+1)});
     html+=`<div class="meta" style="margin:8px 0 4px">${esc(REL[rel]||rel)} · ${items.length} <span style="opacity:.7">(${[...byType].map(([t,c])=>`${TYPES[t]||t}: ${c}`).join(', ')})</span></div><ul class="rel">`;
-    let shown=0;for(const [oid,e] of items){if(++shown>25){html+=`<li class="more"><button type="button" data-more="1">показати ще ${items.length-25}…</button></li>`;break}const o=byId.get(oid);const ev=(e.msgs||[]).map(m=>msgIndex.get(m)).filter(Boolean).slice(0,3);
-      html+=`<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${idTag(e)}${o.position||o.org?`<span class="r">${esc(o.position||o.org)}</span>`:''}${e.detail?`<span class="r">${esc(e.detail)}${e.url?` <a href="${esc(e.url)}" target="_blank" rel="noopener">рішення ↗</a>`:''}</span>`:''}${ev.length?`<ul class="ev">${ev.map(m=>`<li>${m.date||''} · ${esc(SRC[m.src]||m.src||'')} · ${esc(m.text||'')}${m.url?` <a href="${esc(m.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:''}</li>`}
+    let shown=0;for(const [oid,e] of items){const fi=FBE.push(e)-1,fv=FB.get(fbKey(e));if(++shown>25){html+=`<li class="more"><button type="button" data-more="1">показати ще ${items.length-25}…</button></li>`;break}const o=byId.get(oid);const ev=(e.msgs||[]).map(m=>msgIndex.get(m)).filter(Boolean).slice(0,3);
+      html+=`<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${CAN_QUEUE?`<span class="fb" role="group" aria-label="Чи правильний цей звʼязок"><button type="button" data-fb="${fi}" data-v="yes" aria-pressed="${fv==='yes'}" title="Так, звʼязок правильний (запамʼятаю)">✓</button><button type="button" data-fb="${fi}" data-v="no" title="Ні, це не той / звʼязок хибний — сховаю його всюди">✗</button></span>`:''}${idTag(e)}${o.position||o.org?`<span class="r">${esc(o.position||o.org)}</span>`:''}${e.detail?`<span class="r">${esc(e.detail)}${e.url?` <a href="${esc(e.url)}" target="_blank" rel="noopener">рішення ↗</a>`:''}</span>`:''}${ev.length?`<ul class="ev">${ev.map(m=>`<li>${m.date||''} · ${esc(SRC[m.src]||m.src||'')} · ${esc(m.text||'')}${m.url?` <a href="${esc(m.url)}" target="_blank" rel="noopener">↗</a>`:''}</li>`).join('')}</ul>`:''}</li>`}
     html+='</ul>';
   }
-  p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));if(none){nc.bind();document.getElementById('none-q').onclick=()=>{q.value=n.label;q.focus();sLast=null;doSearch(n.label,{now:true})}}
+  const rej=[...FB].filter(([k,v])=>v==='no'&&(k.startsWith(n.id+'|')||k.split('|')[1]===n.id)).length;
+  if(rej)html+=`<p class="meta">Приховано звʼязків, які ви позначили як хибні: ${rej}. <button type="button" class="lnk" id="fb-undo">повернути</button></p>`;
+  p.innerHTML=html;p.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));
+  p.querySelectorAll('button[data-fb]').forEach(b=>b.onclick=async()=>{const e=FBE[+b.dataset.fb],v=b.dataset.v,cur=FB.get(fbKey(e));await setFB(e,cur===v?null:v);render();select(n.id)});
+  document.getElementById('fb-undo')?.addEventListener('click',async()=>{for(const [k,v] of [...FB])if(v==='no'&&(k.startsWith(n.id+'|')||k.split('|')[1]===n.id)){const [a,b2,...r]=k.split('|');await setFB({source:a,target:b2,rel:r.join('|')},null)}render();select(n.id)});if(none){nc.bind();document.getElementById('none-q').onclick=()=>{q.value=n.label;q.focus();sLast=null;doSearch(n.label,{now:true})}}
   p.querySelectorAll('li.more button').forEach(b=>b.onclick=()=>{const ul=b.closest('ul');const rel=[...groups].find(([r,it])=>ul.previousElementSibling.textContent.startsWith(REL[r]||r));if(!rel)return;const extra=rel[1].slice(25).map(([oid,e])=>{const o=byId.get(oid);return `<li><button type="button" data-id="${esc(oid)}"><span class="dot" style="background:${COLORS[o.type]}"></span>${esc(o.label)}</button>${idTag(e)}${e.detail?`<span class="r">${esc(e.detail)}</span>`:''}</li>`}).join('');b.closest('li').outerHTML=extra;ul.querySelectorAll('button[data-id]').forEach(x=>x.onclick=()=>select(x.dataset.id))});
   p.scrollTop=0;
   if(CAN_QUEUE&&n.type==='person')loadProf(n);
