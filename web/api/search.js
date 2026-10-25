@@ -5,6 +5,7 @@ import { getManifest, searchKey, coreKey } from "./_lake.js";
 import { byName, byCode, byAddress, rolesOf, card } from "./registry.js";
 import { postMentions, decisionTexts, findJudges, webFound } from "./_mentions.js";
 import { findPlaces } from "./_places.js";
+import { qkey } from "./feedback.js";
 
 // GET /api/search?q=...&kind=all|person|org|fop|code|case|place|channel|post[&part=main|mentions][&src=graph,registry,...]
 // Searches everything, not only what is already in the graph. Sources run in parallel, each under its own time cap, and the
@@ -290,6 +291,8 @@ export async function searchAll(q, kind = "all", part = "", src = null) {
     graph: () => graphGroup(q, scope, C), registry: () => registryGroup(q, scope), courts: () => courtsGroup(q, scope, C),
     mentions: () => mentionsGroup(q), places: () => placesGroup(q, C), wanted: () => wantedGroup(q), channels: () => sources(q, C).channel().then((items) => ({ items })),
   };
+  // results opened before for this query (search_picks, migration 034) go first: the search learns from what was chosen
+  const picksP = query(`SELECT id, n FROM search_picks WHERE q = $1`, [qkey(q)]).catch(() => []);
   const groups = await Promise.all(want.map(async (key) => {
     const s = Date.now();
     try {
@@ -301,10 +304,15 @@ export async function searchAll(q, kind = "all", part = "", src = null) {
       return { key, label: GROUPS.find((g) => g[0] === key)[1], status: /не встигло/.test(e.message) ? "timeout" : "error", note: String(e.message || e), count: 0, items: [], ms: Date.now() - s };
     }
   }));
-  // flat list: exact identifiers first, then by group priority
+  const picks = new Map((await soft(picksP, 800).catch(() => [])).map((r) => [r.id, r.n]));
+  if (picks.size) for (const g of groups) {
+    g.items.forEach((x) => { if (picks.has(x.id)) x.picked = picks.get(x.id); });
+    g.items.sort((a, b) => (b.picked || 0) - (a.picked || 0));
+  }
+  // flat list: results picked before, exact identifiers, then by group priority
   const PRI = { graph: 1, registry: 2, wanted: 2, courts: 3, places: 4, channels: 5, mentions: 6 };
   const flat = [];
-  for (const g of groups) g.items.forEach((x, i) => flat.push({ ...x, group: g.key, _p: x.exact || (x.tier === 0 && g.key !== "mentions") ? 0 : PRI[g.key], _i: i }));
+  for (const g of groups) g.items.forEach((x, i) => flat.push({ ...x, group: g.key, _p: x.picked ? -1 : x.exact || (x.tier === 0 && g.key !== "mentions") ? 0 : PRI[g.key], _i: i }));
   for (const g of groups) if (g.topic) flat.push({ ...g.topic, group: "mentions", _p: PRI.mentions, _i: -1 });
   const results = dedupe(flat.filter((x) => x.type !== "post").sort((a, b) => a._p - b._p || a._i - b._i)).slice(0, 20)
     .map(({ _p, _i, ...x }) => ({ ...x, strong: x.tier === 0 }));
