@@ -17,7 +17,11 @@ Why: a Ukrainian IP for the registry worker (the cloud cannot reach reyestr.cour
 | `neo4graph-collect.timer` → `.service` | `scripts/collect_once.sh`: Telegram, RSS, Air Force / oblast summaries → Neon | 10 min after the previous pass ends (~20 min cycle) |
 | `neo4graph-live.timer` → `.service` | `src/nowcast.py live` + `src/explosions.py build` | :05 and :35 |
 | `neo4graph-update.timer` | `git pull --ff-only` + `pip install -r requirements.txt` | daily 04:20 |
+| `neo4graph-drain.service` | `scripts/drain_loop.sh`: the cloud leg of the registry queue (web search, LLM, ЄДР, ЄДРСР) — takes an item within ~10 s; waits until the keys are set | always on |
+| `neo4graph-edrsr.timer` → `.service` | `src/edrsr_index.py --years <this year> --build-index --refresh`: re-downloads the current year's court dump and rebuilds its parquet index (older years are indexed once) | daily 03:40 |
 | `neo4graph-nightly.timer` → `.service` | `src/person_cases.py build`: lawyers named in decision texts → person_case_links (fresh lawyers.parquet from the lake release) | daily 05:10 |
+
+Keys for the drain (in `/etc/neo4graph.env`, set by the owner): `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID`, `TAVILY_API_KEY` (and/or `BRAVE_API_KEY`, `GOOGLE_CSE_KEY` + `GOOGLE_CSE_ID`), `GEMINI_API_KEY`. Court dumps and indexes: `/opt/neo4graph/data/edrsr` (~10 GB).
 
 GitHub keeps what needs the repository secrets: the frozen daily forecast (nowcast.yml), the registry queue's cloud
 leg (queue.yml, started by the live.yml watcher whenever queries wait), lake, history backfills. collect.yml is manual only.
