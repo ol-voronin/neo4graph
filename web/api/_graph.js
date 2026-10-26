@@ -148,7 +148,7 @@ export function assemble(R, base = null) {
   function objFor(qq) {
     const k = qq.toLowerCase().replace(/\s+/g, " ").trim();
     for (const c of ["person:" + k, "org:" + k]) if (nodes.has(c)) return c;
-    return node("person:" + k, /^(тов|пат|прат|ат|дп|кп)\b/i.test(k) ? "org" : "person", qq.replace(/\b\w/gu, (c) => c.toUpperCase()));
+    return node("person:" + k, /^(тов|пат|прат|ат|дп|кп)\b/i.test(k) ? "org" : "person", qq.replace(/(^|[\s-])(\p{L})/gu, (m, a, c) => a + c.toUpperCase()));
   }
   // a person query without patronymic and the full names ЄДР holds under it: candidates per query across all records
   // (_identity.js: one -> «можливо та сама особа», several -> namesakes)
