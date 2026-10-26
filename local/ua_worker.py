@@ -231,7 +231,7 @@ def nazk_declarations(name, max_pages=5):
         rows = d.get("data") or []
         for r in rows:
             s1 = (((r.get("data") or {}).get("step_1") or {}).get("data")) or {}
-            full = " ".join(x for x in (s1.get("lastname"), s1.get("firstname"), s1.get("middlename")) if x).title()
+            full = cap(" ".join(x for x in (s1.get("lastname"), s1.get("firstname"), s1.get("middlename")) if x))
             out.append({"id": r.get("id"), "year": r.get("declaration_year"), "type": r.get("declaration_type"), "name": full,
                         "work_place": s1.get("workPlace"), "work_post": s1.get("workPost"), "region": s1.get("region") or s1.get("actual_region"),
                         "url": f"https://public.nazk.gov.ua/documents/{r.get('id')}"})
@@ -342,7 +342,7 @@ def decl_items(doc, query):
         return declarant
 
     for iid, (nm, rel) in fam.items():
-        add("step_2", {}, f"{rel or 'член сімʼї'}: {nm.title()}", owner=declarant, rel_name=nm, rel_kind="person")
+        add("step_2", {}, f"{rel or 'член сімʼї'}: {cap(nm)}", owner=declarant, rel_name=nm, rel_kind="person")
     for step in sorted(D, key=lambda x: int(x.split("_")[1]) if x.split("_")[1].isdigit() else 0):
         if step in ("step_0", "step_1", "step_2", "step_15"):
             continue
@@ -523,7 +523,7 @@ def fop_search(name, limit=60, deadline=None):
 
     def rec(line):
         g = lambda tag: html.unescape((re.search(f"<{tag}>(.*?)</{tag}>", line) or [None, ""])[1])  # noqa: E731
-        return {"record": g("RECORD"), "name": g("NAME").title(), "stan": g("STAN"), "registration": g("REGISTRATION"), "terminated": g("TERMINATED_INFO")}
+        return {"record": g("RECORD"), "name": cap(g("NAME")), "stan": g("STAN"), "registration": g("REGISTRATION"), "terminated": g("TERMINATED_INFO")}
 
     import shutil
     import subprocess
@@ -556,7 +556,7 @@ def fop_search(name, limit=60, deadline=None):
                     if nm.upper().startswith(key):
                         total += 1
                         if len(out) < limit:
-                            out.append({"record": el.findtext("RECORD"), "name": nm.title(), "stan": el.findtext("STAN"), "registration": el.findtext("REGISTRATION"),
+                            out.append({"record": el.findtext("RECORD"), "name": cap(nm), "stan": el.findtext("STAN"), "registration": el.findtext("REGISTRATION"),
                                         "terminated": el.findtext("TERMINATED_INFO")})
                     el.clear()
             if partial:
@@ -756,7 +756,7 @@ def yc_company(q, kind="org", limit=3):
         out.append({"edrpou": cid, "name": full or short, "short_name": short, "status": grab(r"Статус з ЄДР\s*\n\s*([^\n]+)"),
                     "registration": grab(r"Дата реєстрації\s*\n\s*(\d{2}\.\d{2}\.\d{4})"), "opf": grab(r"Організаційно-правова форма\s*\n([^\n]+)"),
                     "capital": grab(r"Розмір статутного капіталу\s*\n\s*([^\n]+)"), "kved_main": grab(r"Основний:\s*\n\s*(\d{2}\.\d{2} [^\n]+)"),
-                    "kved_other": others[:15], "head": head.group(1).strip().title() if head else None,
+                    "kved_other": others[:15], "head": cap(head.group(1).strip()) if head else None,
                     "head_since": head.group(2) if head and head.group(2) else None, "head_role": (head.group(3).strip(" ,") if head else None),
                     "address": grab(r"Місцезнаходження юридичної особи:\s*\n\s*([^\n]+)"), "vat": grab(r"Реєстр платників ПДВ\s*\n[^\n]*\n\s*([^\n]+)"),
                     "assets": assets, "court_docs": grab(r"згадується в (\d+) судових документах"),

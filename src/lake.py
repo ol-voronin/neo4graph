@@ -44,6 +44,11 @@ DUMPS = {
 BATCH = 200_000
 
 
+def cap(s: str) -> str:
+    """ДАР'Я ВЯЧЕСЛАВІВНА -> Дар'я Вячеславівна (str.title() capitalises after an apostrophe)."""
+    return " ".join(w[:1].upper() + w[1:].lower() for w in str(s or "").split())
+
+
 def name_key(s: str) -> str:
     s = (s or "").upper().replace("Ё", "Е").replace("’", "'").replace("`", "'").replace('"', "").replace("«", "").replace("»", "")
     return re.sub(r"\s+", " ", s).strip()
@@ -115,7 +120,7 @@ def build_fop(zpath):
     rows, n = [], 0
     for s in _xml_lines(zpath):
         nm = _get(s, "NAME")
-        rows.append({"record": _get(s, "RECORD"), "name": nm.title(), "name_key": name_key(nm), "stan": _get(s, "STAN"),
+        rows.append({"record": _get(s, "RECORD"), "name": cap(nm), "name_key": name_key(nm), "stan": _get(s, "STAN"),
                      "registration": _get(s, "REGISTRATION"), "terminated": _get(s, "TERMINATED_INFO")})
         n += 1
         if len(rows) >= BATCH:
@@ -149,7 +154,7 @@ def build_uo(zpath):
                 for x in lst:
                     who = re.split(r";| - ", x, maxsplit=1)[0].strip()
                     if who and not re.search(r"\d{8}", x.split(";")[1] if ";" in x else ""):
-                        roles.append({"name_key": name_key(who), "name": who.title(), "edrpou": code, "role": role, "detail": x[:300]})
+                        roles.append({"name_key": name_key(who), "name": cap(who), "edrpou": code, "role": role, "detail": x[:300]})
         n += 1
         if len(rows) >= BATCH:
             _flush(w, schema, rows)
