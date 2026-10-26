@@ -20,6 +20,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -70,6 +71,7 @@ def cfg():
                 env[k.strip()] = v.strip()
     env.setdefault("API_BASE", os.environ.get("API_BASE", "https://rhetoric-graph.vercel.app"))
     env.setdefault("INGEST_TOKEN", os.environ.get("INGEST_TOKEN", ""))
+    env.setdefault("TAX_CABINET_TOKEN", os.environ.get("TAX_CABINET_TOKEN", ""))
     return env
 
 
@@ -603,6 +605,56 @@ def erb_search(name, limit=60):
     return total, out
 
 
+# ---------------------------------------------------------------- ДПС: «Дізнайся більше про свого бізнес-партнера»
+# The public-part API of the Електронний кабінет (https://cabinet.tax.gov.ua/help/api-registers.html): a taxpayer's
+# registration record by tax number. It is the one official source that turns a РНОКПП into a name (the open ЄДР dump,
+# НАЗК and the debtors register publish no РНОКПП). Needs TAX_CABINET_TOKEN: a token the owner creates in the cabinet
+# (Налаштування → Токени відкритої частини); it is revoked automatically after 1000 requests in a day. Street-level
+# address is dropped for individuals (region / locality only), as everywhere else in the project.
+TAX_STAN = {0: "основне місце обліку", 1: "неосновне місце обліку", 2: "знято з обліку", 3: "перебуває на обліку"}
+
+
+def tax_registration(env, tin):
+    """-> ({name, tin, since, stan, kved, kved_since, locality, url}, note) or (None, note)."""
+    token = env.get("TAX_CABINET_TOKEN", "")
+    if not token:
+        return None, "ДПС: токен кабінету не задано"
+    hdr = {"Content-Type": "application/json", "Accept": "application/json"}
+    out = {}
+    for ep, body in (("registration", {"tins": tin, "name": None, "token": token}), ("ev", {"tin": tin, "name": None, "token": token})):
+        try:
+            raw = post(f"https://cabinet.tax.gov.ua/ws/api/public/registers/{ep}", json.dumps(body).encode(), hdr, timeout=60)
+            data = json.loads(raw.decode("utf-8", "ignore") or "null")
+        except urllib.error.HTTPError as e:
+            msg = e.read().decode("utf-8", "ignore")[:200]
+            try:
+                msg = json.loads(msg).get("error_description") or msg
+            except Exception:  # noqa: BLE001
+                pass
+            return None, f"ДПС {ep}: HTTP {e.code} {msg}"
+        except Exception as e:  # noqa: BLE001
+            return None, f"ДПС {ep}: {str(e)[:120]}"
+        rows = data if isinstance(data, list) else (data.get("rows") or data.get("data") or [data]) if isinstance(data, dict) else []
+        rows = [r for r in rows if isinstance(r, dict) and str(r.get("TIN_S") or r.get("tin") or "") == tin]
+        if not rows:
+            if ep == "registration":
+                return None, "ДПС: платника з таким номером не знайдено"
+            continue
+        r = rows[0]
+        if ep == "registration":
+            addr = str(r.get("ADRESS") or "")
+            parts = [x.strip() for x in addr.split(",")]
+            locality = ", ".join(x for x in parts if re.search(r"ОБЛ|М\.|МІСТО|РАЙОН|СМТ|СЕЛО|С\.|КИЇВ", x, re.I))[:80]
+            out = {"name": re.sub(r"\s+", " ", str(r.get("FULL_NAME") or "")).strip(), "tin": tin, "since": r.get("D_REG_STI"),
+                   "stan": TAX_STAN.get(r.get("C_STAN"), str(r.get("C_STAN") or "")), "closed": r.get("D_ZAKR_STI"), "office": r.get("C_STI_MAIN_NAME"),
+                   "locality": locality, "url": "https://cabinet.tax.gov.ua/registers/registration"}
+        else:
+            out.update({"kved": r.get("KVED"), "kved_since": r.get("DATE_ACC_ERS")})
+    if not out.get("name"):
+        return None, "ДПС: запис без імені"
+    return out, f"ДПС: {out['name']} ({out['stan']})"
+
+
 # ---------------------------------------------------------------- YouControl public FOP page (КВЕД etc.)
 def yc_fop(name, limit=5):
     """YouControl's public ФОП pages carry what the open ЄДР dump no longer has: КВЕД (main + others), registration date,
@@ -754,6 +806,18 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                 got += 1
         notes.append(f"текстів: {got}")
     else:
+        if kind == "rnokpp":
+            rec, note = tax_registration(env, q)
+            notes.append(note)
+            if rec:
+                hits.append({"query": q, "qkind": kind, "source": "tax_reg", "ref": q, "url": rec["url"],
+                             "title": f"{rec['name']} · {rec['stan']}",
+                             "snippet": "; ".join(x for x in (f"на обліку з {rec['since']}" if rec.get("since") else "", f"КВЕД {rec['kved']}" if rec.get("kved") else "",
+                                                             rec.get("locality") or "", f"знято {rec['closed']}" if rec.get("closed") else "") if x), "payload": rec})
+                # the number is now a name: the person's chain (declarations, ЄДР ФОП, roles, court register, debtors)
+                pname = " ".join(w[:1].upper() + w[1:].lower() for w in rec["name"].split())
+                if NAME_RE.match(pname) and tleft():
+                    notes.append("далі як особа: " + process(env, pname, "person", pages, texts, deadline))
         exprs = [f'"{q}"'] if kind in ("person", "org", "edrpou", "rnokpp") else [q]
         # no «Прізвище І.Б.» search: the register does not honour the phrase with initials and returned 121 k unrelated
         # decisions for «Сальдо В. В.»; full name only (plus the cases found through summons notices below)

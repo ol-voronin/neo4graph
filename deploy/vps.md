@@ -8,7 +8,7 @@ Why: a Ukrainian IP for the registry worker (the cloud cannot reach reyestr.cour
 - SSH key only (`/etc/ssh/sshd_config.d/00-hardening.conf`: no passwords, root by key), ufw allows OpenSSH only,
   fail2ban, unattended-upgrades, timezone Europe/Kyiv.
 - Code: `/opt/neo4graph` (user `neo4graph`, clone of main, venv `.venv`), updated daily by `neo4graph-update.timer`.
-- Secrets: `/etc/neo4graph.env` (root:neo4graph 640): `DATABASE_URL`, `API_BASE`, `INGEST_TOKEN`. Not in the repo.
+- Secrets: `/etc/neo4graph.env` (root:neo4graph 640): `DATABASE_URL`, `API_BASE`, `INGEST_TOKEN`, `TAX_CABINET_TOKEN` (token of the public part of the owner's Електронний кабінет ДПС, Налаштування → Токени відкритої частини; 1000 requests/day, then revoked). Not in the repo.
 
 ## Services (systemd)
 | unit | what | when |

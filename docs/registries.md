@@ -60,6 +60,11 @@ in code:
 - For individuals only region, locality and postal code are stored; street, house and flat from ProZorro are dropped at
   ingest (`src/lake_prozorro.py`). Full addresses are kept for legal entities only.
 - The API response for a 10-digit query carries a note saying where the number comes from.
+- **Exception (owner's decision, 2026-10-26): a РНОКПП typed as a query is resolved to a name through the ДПС service
+  «Дізнайся більше про свого бізнес-партнера»** (public-part API of the Електронний кабінет, `registers/registration` +
+  `registers/ev`, token `TAX_CABINET_TOKEN` on the VPS). The record (name, registration status and date, КВЕД, locality;
+  no street) is stored as a `tax_reg` registry hit under the number, and the worker then runs the person's own chain under
+  the name. The number is never searched on the web beyond pages that quote it verbatim.
 
 ## How it is built
 

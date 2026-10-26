@@ -256,6 +256,12 @@ export function assemble(R, base = null) {
         edge(who, cid, L.rel, null, L.attrs);
         if (p.proc_num && /^\d{17}$/.test(p.proc_num)) edge(cid, node("erdr:" + p.proc_num, "case", "Провадження ЄРДР " + p.proc_num, { ref: p.proc_num, kind: "erdr" }), "proceeding", null);
       }
+    } else if (h.source === "tax_reg") {
+      // ДПС registration record for a tax number (local worker, cabinet.tax.gov.ua): the number's node points at the named person
+      if (p.name) {
+        const pid = node("person:" + norm(p.name).toLowerCase(), "person", norm(p.name), { tin: p.tin, stan: p.stan, since: p.since, kved: p.kved, locality: p.locality, src: "ДПС" });
+        if (pid !== who) edge(who, pid, "taxpayer_record", null, { detail: `${h.title}; ${h.snippet || ""}`, src: "cabinet.tax.gov.ua" });
+      }
     } else if (h.source === "edr_fop") {
       const fid = node("fop:" + h.ref, "registry", h.title, { stan: p.stan, text: h.snippet, src: "ЄДР (ФОП)" });
       const L = byName(h, "fop_record", { detail: h.snippet, src: "ЄДР" }, "ФОП");
