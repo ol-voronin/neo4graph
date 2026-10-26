@@ -135,8 +135,9 @@ def main():
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
         run([py, "src/spending.py", "--from-db", "--query", q] + (["--edrpou", q] if kind == "edrpou" else []), log, "spending.gov.ua: public money received (2 years)")
     elif kind == "rnokpp":
+        # only pages that quote the code are kept (web_mentions.py). No ЄДРСР step here: the open-data index has no texts,
+        # so a code cannot be matched in it; the UA worker (local/ua_worker.py) does the full-text search of the register.
         run([py, "src/web_mentions.py", q], log, "web: public mentions of tax code (RNOKPP)")
-        run([py, "src/edrsr_index.py", "--years", a.years, "--from-db", "--texts", str(a.texts)], log, "ЄДРСР: court decisions referencing RNOKPP")
     elif kind == "person":
         run([py, "src/corpus_mentions.py", q], log, "corpus: posts and statements mentioning the name")
         run([py, "src/web_mentions.py", q], log, "web: public mentions (search engine)")
