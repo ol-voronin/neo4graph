@@ -55,6 +55,7 @@ def ensure_dumps(max_age_days=7):
 CAUSE_RE = re.compile(r"^\d{1,4}/\d{1,6}/\d{2}(?:-[\w/]+)?$")
 ORG_RE = re.compile(r"^(тов|пат|прат|ат|тдв|дп|кп|пп|фг|го|бф|ооо|фоп)\b|[«»\"]", re.I)
 NAME_RE = re.compile(r"^[^\W\d_][^\W\d_'’-]+(\s+[^\W\d_][^\W\d_'’.-]+){1,2}$")
+cap = lambda name: " ".join(w[:1].upper() + w[1:].lower() for w in str(name).split())  # noqa: E731  ВОРОНІН ОЛЕКСІЙ -> Воронін Олексій
 
 cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
@@ -658,28 +659,37 @@ def tax_registration(env, tin):
 # ---------------------------------------------------------------- YouControl public FOP page (КВЕД etc.)
 def yc_fop(name, limit=5):
     """YouControl's public ФОП pages carry what the open ЄДР dump no longer has: КВЕД (main + others), registration date,
-    status and city. Only exact full-name matches are taken; street/house is not kept (city level only)."""
+    status and city. By name only exact full-name matches are taken; by a 10-digit РНОКПП the search itself redirects to
+    the one ФОП page (that redirect is the match). Street/house is not kept (city level only)."""
+    code = name if re.fullmatch(r"\d{10}", name.strip()) else ""
     try:
-        page = get("https://youcontrol.com.ua/search/?" + urllib.parse.urlencode({"q": name})).decode("utf-8", "ignore")
+        time.sleep(2)
+        with opener.open(urllib.request.Request("https://youcontrol.com.ua/search/?" + urllib.parse.urlencode({"q": name})), timeout=60) as r:
+            page, final = r.read().decode("utf-8", "ignore"), r.geturl()
     except Exception as e:  # noqa: BLE001
         print("youcontrol search failed:", e)
         return []
     out = []
     key = re.sub(r"\s+", " ", name.strip()).upper()
-    for yid in dict.fromkeys(re.findall(r"fop_details/(\d+)", page)):
+    landed = re.search(r"fop_details/(\d+)", final)
+    ids = [landed.group(1)] if code and landed else [] if code else list(dict.fromkeys(re.findall(r"fop_details/(\d+)", page)))
+    for yid in ids:
         if len(out) >= limit:
             break
-        try:
-            h = get(f"https://youcontrol.com.ua/catalog/fop_details/{yid}").decode("utf-8", "ignore")
-        except Exception:  # noqa: BLE001
-            continue
+        if landed and landed.group(1) == yid:
+            h = page
+        else:
+            try:
+                h = get(f"https://youcontrol.com.ua/catalog/fop_details/{yid}").decode("utf-8", "ignore")
+            except Exception:  # noqa: BLE001
+                continue
         t = re.sub(r"<script.*?</script>|<style.*?</style>", "", h, flags=re.S)
         t = html.unescape(re.sub(r"<[^>]+>", "\n", t))
         t = re.sub(r"[ \t]+", " ", t)
         t = re.sub(r"\n\s*\n+", "\n", t)
         m = re.search(r"ФОП ([А-ЯІЇЄҐ'’\- ]+)\n", t)
         full = (m.group(1).strip() if m else "").upper()
-        if not full.startswith(key):
+        if not full or (not code and not full.startswith(key)):
             continue
         kv = re.search(r"Основний:\s*\n\s*(\d{2}\.\d{2} [^\n]+)", t)
         others = re.findall(r"\n\s*(\d{2}\.\d{2} [^\n]+)", t.split("Інші:", 1)[1].split("Адреса", 1)[0]) if "Інші:" in t else []
@@ -690,9 +700,9 @@ def yc_fop(name, limit=5):
         if addr:
             parts = [x.strip() for x in addr.group(1).split(",")]
             city = ", ".join(x for x in parts if re.search(r"обл\.|місто|м\.|район|смт|село", x))[:80]
-        out.append({"yc_id": yid, "name": full.title(), "kved_main": kv.group(1).strip() if kv else None, "kved_other": [x.strip() for x in others][:12],
+        out.append({"yc_id": yid, "name": cap(full), "kved_main": kv.group(1).strip() if kv else None, "kved_other": [x.strip() for x in others][:12],
                     "registration": reg.group(1) if reg else None, "status": st.group(1).strip() if st else None, "city": city,
-                    "url": f"https://youcontrol.com.ua/catalog/fop_details/{yid}"})
+                    "url": f"https://youcontrol.com.ua/catalog/fop_details/{yid}", **({"tin": code} if code else {})})
     return out
 
 
@@ -815,9 +825,19 @@ def process(env, q, kind, pages=2, texts=10, deadline=None):
                              "snippet": "; ".join(x for x in (f"на обліку з {rec['since']}" if rec.get("since") else "", f"КВЕД {rec['kved']}" if rec.get("kved") else "",
                                                              rec.get("locality") or "", f"знято {rec['closed']}" if rec.get("closed") else "") if x), "payload": rec})
                 # the number is now a name: the person's chain (declarations, ЄДР ФОП, roles, court register, debtors)
-                pname = " ".join(w[:1].upper() + w[1:].lower() for w in rec["name"].split())
+                pname = cap(rec["name"])
                 if NAME_RE.match(pname) and tleft():
                     notes.append("далі як особа: " + process(env, pname, "person", pages, texts, deadline))
+            if not rec and tleft():
+                # YouControl's search by a 10-digit code lands on the ФОП page itself (checked 2026-10-26): the one working
+                # РНОКПП -> name path while the ДПС registers are closed for the martial-law period
+                fops = yc_fop(q)
+                notes.append(f"YouControl за ІПН: {len(fops)}")
+                for y in fops:
+                    hits.append({"query": q, "qkind": kind, "source": "yc_fop", "ref": y["yc_id"], "url": y["url"],
+                                 "title": f"ФОП {y['name']} · КВЕД {y['kved_main'] or '?'}", "snippet": f"{y['status'] or ''}; реєстрація {y['registration'] or '?'}; {y['city']}", "payload": y})
+                if fops and NAME_RE.match(fops[0]["name"]) and tleft():
+                    notes.append("далі як особа: " + process(env, fops[0]["name"], "person", pages, texts, deadline))
         exprs = [f'"{q}"'] if kind in ("person", "org", "edrpou", "rnokpp") else [q]
         # no «Прізвище І.Б.» search: the register does not honour the phrase with initials and returned 121 k unrelated
         # decisions for «Сальдо В. В.»; full name only (plus the cases found through summons notices below)

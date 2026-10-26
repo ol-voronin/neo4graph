@@ -65,6 +65,12 @@ in code:
   `registers/ev`, token `TAX_CABINET_TOKEN` on the VPS). The record (name, registration status and date, КВЕД, locality;
   no street) is stored as a `tax_reg` registry hit under the number, and the worker then runs the person's own chain under
   the name. The number is never searched on the web beyond pages that quote it verbatim.
+  Checked 2026-10-26: the ДПС public registers answer «На період дії воєнного стану обмежено доступ до публічних
+  електронних реєстрів» (the token is not even checked), so the step is dormant. The working path meanwhile is
+  YouControl: its search by a 10-digit code redirects to the ФОП page, which the worker parses as a `yc_fop` hit
+  (КВЕД, status, registration date, city) and then runs the person chain under the name. Search by РНОКПП is a product
+  goal of the owner (2026-10-26), not something to avoid; a frozen VAT-payer register (data.gov.ua, 2022-02-23, carries
+  the payer's ІПН) is a possible further source for the lake.
 
 ## How it is built
 
