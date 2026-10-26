@@ -208,9 +208,10 @@ async function registryGroup(q, kind) {
   };
   if (kind === "code" || /^\d{8}$|^\d{10}$/.test(digits)) {
     if (!/^\d{8}$|^\d{10}$/.test(digits)) return { items: [] };
-    const r = await byCode(digits);
-    return { items: r.rows.map((x) => item(x, { tier: 0, exact: true })),
-      note: digits.length === 10 ? "РНОКПП є лише у ФОП, яких ProZorro публікує як постачальників; ЄДР і реєстр боржників його не публікують. Дивіться «Суди»: тексти рішень, де є цей код." : undefined };
+    const [r, live] = await Promise.all([byCode(digits), digits.length === 10 ? soft(liveByTin(digits, g), 2600).catch(() => []) : []]);
+    const items = dedupe([...live, ...r.rows.map((x) => item(x, { tier: 0, exact: true }))]);
+    return { items, note: digits.length === 10 && !items.length
+      ? "Жоден публічний реєстр не публікує РНОКПП приватної особи. Знаходимо лише ФОП: ProZorro, YouControl, Clarity Project, тексти судових рішень («Суди»). Ніде немає — у відкритих даних цієї особи немає." : undefined };
   }
   const jobs = [];
   const fopOnly = kind === "fop";
@@ -231,6 +232,42 @@ async function registryGroup(q, kind) {
   return { items: dedupe(lists.flat().sort(rank)) };
 }
 const ROLE = { founder: "засновник", beneficiary: "бенефіціар", signer: "підписант / керівник" };
+
+// A 10-digit РНОКПП, live, while the user waits (no queue): YouControl's search redirects to the ФОП page when it has one
+// for that code; Clarity Project has a page for ФОП that ProZorro published. Both answer from a cloud IP in < 1 s. A hit
+// is written to registry_hits as the local worker would (so the graph and later searches have it); nothing is stored when
+// nothing is found. A private person who is not a ФОП is in neither, by design of the public data.
+const UA_HDR = { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36", "accept-language": "uk" };
+const cap = (name) => name.split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+const keep = (row) => query(`INSERT INTO registry_hits(query, qkind, source, ref, title, snippet, url, payload) VALUES ($1, 'rnokpp', $2, $3, $4, $5, $6, $7)
+  ON CONFLICT (query, source, ref) DO UPDATE SET title = EXCLUDED.title, snippet = EXCLUDED.snippet, url = EXCLUDED.url, payload = EXCLUDED.payload`, row).catch(() => {});
+async function liveByTin(tin, g) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2300);
+  const grab = async (url) => { const r = await fetch(url, { headers: UA_HDR, redirect: "follow", signal: ctl.signal }); return { url: r.url, ok: r.ok, html: r.ok ? (await r.text()).slice(0, 200000) : "" }; };
+  const [yc, cl] = await Promise.all([grab("https://youcontrol.com.ua/search/?q=" + tin).catch(() => null), grab("https://clarity-project.info/edr/" + tin).catch(() => null)]);
+  clearTimeout(t);
+  const out = [];
+  const yid = yc?.url.match(/fop_details\/(\d+)/)?.[1];
+  if (yid) {
+    const title = yc.html.match(/<title>(.*?)<\/title>/s)?.[1] || "";
+    const m = title.match(/ФОП\s+([^,—|]+?)\s*(?:,\s*([^—|]+?))?\s*[—|]/);
+    const name = cap((m?.[1] || "").trim()), city = (m?.[2] || "").trim();
+    const kved = yc.html.replace(/<[^>]+>/g, "\n").match(/Основний:\s*\n\s*(\d{2}\.\d{2} [^\n]+)/)?.[1]?.trim();
+    if (name) {
+      const url = `https://youcontrol.com.ua/catalog/fop_details/${yid}/`, payload = { yc_id: yid, name, tin, city, kved_main: kved || null, url };
+      out.push({ id: "fopx:" + yid, type: "registry", label: `ФОП ${name}${kved ? " · КВЕД " + kved : ""}`, sub: `ІПН ${tin} · ${city || "YouControl"}`, tier: 0, exact: true, in_graph: !!g?.byId?.has("fopx:" + yid) });
+      keep([tin, "yc_fop", yid, `ФОП ${name} · КВЕД ${kved || "?"}`, city, url, JSON.stringify(payload)]);
+    }
+  }
+  const ct = cl?.ok ? (cl.html.match(/<title>(.*?)<\/title>/s)?.[1] || "") : "";
+  const cm = ct.match(new RegExp("^\\s*(.+?)\\s*\\(ЄДРПОУ\\s*" + tin + "\\)"));
+  if (cm) {
+    const name = cap(cm[1].replace(/^ФОП\s+/i, "")), url = "https://clarity-project.info/edr/" + tin;
+    out.push({ id: "person:" + norm(name).toLowerCase(), type: "person", label: name, sub: `ІПН ${tin} · ФОП у ProZorro (Clarity Project)`, tier: 0, exact: true, in_graph: !!g?.byId?.has("person:" + norm(name).toLowerCase()) });
+    keep([tin, "clarity_fop", tin, `ФОП ${name}`, "ФОП-постачальник у ProZorro", url, JSON.stringify({ name, tin, url })]);
+  }
+  return out;
+}
 
 // case numbers (exact / prefix), judges by name, decision texts (trigram index) that contain the words
 async function courtsGroup(q, kind, C) {

@@ -256,11 +256,13 @@ export function assemble(R, base = null) {
         edge(who, cid, L.rel, null, L.attrs);
         if (p.proc_num && /^\d{17}$/.test(p.proc_num)) edge(cid, node("erdr:" + p.proc_num, "case", "Провадження ЄРДР " + p.proc_num, { ref: p.proc_num, kind: "erdr" }), "proceeding", null);
       }
-    } else if (h.source === "tax_reg") {
-      // ДПС registration record for a tax number (local worker, cabinet.tax.gov.ua): the number's node points at the named person
+    } else if (h.source === "tax_reg" || h.source === "clarity_fop") {
+      // a tax number resolved to a named ФОП (ДПС record via the local worker, or Clarity Project's page of a ProZorro ФОП,
+      // fetched live by api/search.js): the number's node points at the person
       if (p.name) {
-        const pid = node("person:" + norm(p.name).toLowerCase(), "person", norm(p.name), { tin: p.tin, stan: p.stan, since: p.since, kved: p.kved, locality: p.locality, src: "ДПС" });
-        if (pid !== who) edge(who, pid, "taxpayer_record", null, { detail: `${h.title}; ${h.snippet || ""}`, src: "cabinet.tax.gov.ua" });
+        const src = h.source === "tax_reg" ? "ДПС" : "ProZorro (Clarity Project)";
+        const pid = node("person:" + norm(p.name).toLowerCase(), "person", norm(p.name), { tin: p.tin, stan: p.stan, since: p.since, kved: p.kved, locality: p.locality, src });
+        if (pid !== who) edge(who, pid, "taxpayer_record", null, { detail: `${h.title}; ${h.snippet || ""}`, src: h.source === "tax_reg" ? "cabinet.tax.gov.ua" : h.url || "clarity-project.info" });
       }
     } else if (h.source === "edr_fop") {
       const fid = node("fop:" + h.ref, "registry", h.title, { stan: p.stan, text: h.snippet, src: "ЄДР (ФОП)" });
