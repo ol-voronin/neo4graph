@@ -120,7 +120,7 @@ export const GROUPS = [["graph", "Граф"], ["registry", "Реєстри"], ["
 const SCOPE = {
   all: ["graph", "registry", "wanted", "courts", "mentions", "places", "channels"],
   person: ["graph", "registry", "wanted", "courts", "mentions"], org: ["graph", "registry", "courts", "mentions"], fop: ["graph", "registry", "mentions"],
-  code: ["graph", "registry", "mentions"], case: ["courts", "graph", "mentions"], place: ["places", "registry", "mentions"],
+  code: ["graph", "registry", "courts", "mentions"], case: ["courts", "graph", "mentions"], place: ["places", "registry", "mentions"],
   channel: ["channels", "mentions"], post: ["mentions"], erdr: ["graph", "courts", "mentions"],
 };
 const ADDRESS = /(^|\s)(вул\.?|вулиця|просп\.?|проспект|пров\.?|провулок|бульв\.?|бульвар|площа|пл\.|ул\.|улица|шосе|набережна)(\s|$)|\d+\s*(кв|оф)\.?\s*\d/i;
@@ -207,7 +207,7 @@ async function registryGroup(q, kind) {
     if (!/^\d{8}$|^\d{10}$/.test(digits)) return { items: [] };
     const r = await byCode(digits);
     return { items: r.rows.map((x) => item(x, { tier: 0, exact: true })),
-      note: digits.length === 10 ? "РНОКПП показуємо лише для ФОП, яких ProZorro публікує як постачальників" : undefined };
+      note: digits.length === 10 ? "РНОКПП є лише у ФОП, яких ProZorro публікує як постачальників; ЄДР і реєстр боржників його не публікують. Дивіться «Суди»: тексти рішень, де є цей код." : undefined };
   }
   const jobs = [];
   const fopOnly = kind === "fop";
