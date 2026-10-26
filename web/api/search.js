@@ -77,10 +77,13 @@ export function sources(q, C) {
       // ІПН / РНОКПП (10 digits): ФОП records and ЄДР founder lines that carry it
       const pat = "%" + t + "%";
       const [fop, edr] = await Promise.all([
-        query(`SELECT DISTINCT ON (source, ref) source, ref, title FROM registry_hits WHERE source IN ('edr_fop', 'yc_fop') AND (payload::text LIKE $1 OR snippet LIKE $1) LIMIT 10`, [pat]).catch(() => []),
+        query(`SELECT DISTINCT ON (source, ref) source, ref, title, snippet, payload FROM registry_hits WHERE source IN ('edr_fop', 'yc_fop', 'tax_reg') AND (payload::text LIKE $1 OR snippet LIKE $1) LIMIT 10`, [pat]).catch(() => []),
         query(`SELECT edrpou, short_name, name FROM edr_orgs WHERE (founders || signers || beneficiaries)::text LIKE $1 LIMIT 10`, [pat]),
       ]);
-      return [...fop.map((r) => ({ id: REG[r.source] + r.ref, type: "registry", label: r.title, sub: "ІПН " + t, tier: 0 })),
+      // tax_reg: the ДПС registration record the local worker fetched for this number -> the named person
+      return [...fop.map((r) => (r.source === "tax_reg" && r.payload?.name
+          ? { id: "person:" + norm(r.payload.name).toLowerCase(), type: "person", label: norm(r.payload.name), sub: `ДПС: ІПН ${t} · ${r.payload.stan || ""}${r.snippet ? " · " + r.snippet : ""}`, tier: 0, exact: true }
+          : { id: REG[r.source] + r.ref, type: "registry", label: r.title, sub: "ІПН " + t, tier: 0 })),
         ...edr.map((r) => ({ id: "registry:" + r.edrpou, type: "registry", label: r.short_name || r.name, sub: `ІПН ${t} у записі ЄДР ${r.edrpou}`, tier: 0 }))];
     },
     cases: async () => {
