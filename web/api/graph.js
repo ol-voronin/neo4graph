@@ -1,9 +1,11 @@
 import { sql, json } from "./_db.js";
 import { getGraph, overview, around } from "./_graph.js";
 import { lawyerRows, lawyerGraph } from "./_lawyers.js";
+import { paths } from "./_connect.js";
 
 // GET /api/graph                                -> overview: the most connected nodes and the edges between them (light)
 // GET /api/graph?around=<id>&depth=2&limit=150  -> that node's neighbourhood, ranked by distance then degree, capped
+// GET /api/graph?path=<id>&to=<id>              -> shortest chains between two objects (≤ 5 hops, up to 3), each step with its evidence
 //     &fresh=<unique>                           -> merge rows written since the graph snapshot first (a registry run just added
 //                                                  data; a few KB from Neon, see _graph.js); a unique value misses the CDN
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -27,6 +29,8 @@ export default async function handler(req, res) {
   const p = new URL(req.url, "http://x").searchParams;
   try {
     const g = await getGraph(p.has("fresh"));
+    const pa = p.get("path"), pb = p.get("to");
+    if (pa && pb) return json(res, 200, { from: pa, to: pb, paths: paths(g, [pa], [pb], 5, 3) });
     const id = p.get("around");
     if (!id) return json(res, 200, overview(g, clamp(+p.get("n") || 300, 50, 800)));
     const r = await withLawyers(around(g, id, clamp(+p.get("depth") || 2, 1, 5), clamp(+p.get("limit") || 150, 10, 600)), id);
