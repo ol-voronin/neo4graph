@@ -95,6 +95,11 @@ def main():
     q = " ".join(sys.argv[1:]).strip()
     if len(q) < 3:
         sys.exit("query too short")
+    # A bare code (ЄДРПОУ / РНОКПП) is searched as an exact phrase; semantic engines (Tavily) otherwise return pages that
+    # merely look numeric (car parts for «…2170»). Hits are kept only when the code itself is on the page.
+    code = q if re.fullmatch(r"\d{8}|\d{10}", q) else ""
+    if code:
+        q = f'"{code}"'
     key, cx, bk, tk = os.environ.get("GOOGLE_CSE_KEY"), os.environ.get("GOOGLE_CSE_ID"), os.environ.get("BRAVE_API_KEY"), os.environ.get("TAVILY_API_KEY")
     # Google "search the entire web" is gone for engines created after 2026-01-20, so Brave is the whole-web engine and a
     # Google engine (if any) is a curated-sites engine (up to 50 domains); both are used when both keys exist.
@@ -122,6 +127,11 @@ def main():
         before = len(hits)
         hits = [h for h in hits if name_matches(q, (h.get("title") or "") + " " + (h.get("snippet") or ""))]
         print(f"name filter: {before} -> {len(hits)}")
+    if code:
+        before = len(hits)
+        hits = [h for h in hits if code in ((h.get("title") or "") + " " + (h.get("snippet") or "") + " " + (h.get("url") or ""))]
+        print(f"code filter: {before} -> {len(hits)}")
+        q = code  # stored under the bare code: web/api/_mentions.js looks the query up by the label of the node
     # Snippets are stored as the search engine returns them (quotes of public pages); the project's limits are on what we
     # search BY (never phone, address, tax id of a person), not on quoting a public page.
     print(f"{q!r}: {len(hits)} hits via {'+'.join(engines) or 'nothing'}")
