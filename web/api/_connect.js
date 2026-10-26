@@ -27,7 +27,7 @@ async function side(x) {
 }
 
 // BFS from every source id at once, parents kept; paths to any target id, shortest first, at most `max`
-function paths(g, from, to, maxDepth = 4, max = 6) {
+export function paths(g, from, to, maxDepth = 4, max = 6) {
   const targets = new Set(to.filter((t) => g.byId.has(t)));
   const starts = from.filter((s) => g.byId.has(s));
   if (!targets.size || !starts.length) return [];

@@ -87,6 +87,11 @@ select,input[type=date]{font:inherit;font-size:12px;padding:3px 6px;border:1px s
 .node circle{stroke:var(--panel);stroke-width:1.5px;cursor:pointer}
 .node.center circle,.node:focus-visible circle{stroke:var(--accent);stroke-width:3px}
 svg.hl-on .node:not(.hl){opacity:.15}svg.hl-on .link:not(.hl){opacity:.06}svg.hl-on .link.hl{stroke:var(--accent);stroke-opacity:1}
+.node.sel circle{stroke:#d97706;stroke-width:3px}.node.sel text{display:inline}.link.path{stroke:var(--accent)!important;stroke-width:3px!important;stroke-opacity:1!important}
+.canvas .cmenu{position:absolute;z-index:40;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:6px;min-width:230px;display:flex;flex-direction:column}.cmenu button{all:unset;cursor:pointer;padding:7px 10px;border-radius:6px;font-size:13px;color:var(--fg)}.cmenu button:hover,.cmenu button:focus-visible{background:var(--accent-soft)}.cmenu .cm-h{font-size:11px;color:var(--muted);padding:4px 10px 6px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-bottom:1px solid var(--line);margin-bottom:4px}
+.canvas .selbar{position:absolute;left:10px;right:10px;bottom:30px;z-index:4;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;box-shadow:0 6px 20px rgba(0,0,0,.12);font-size:13px}.selbar select,.selbar input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg)}
+.canvas .gstart{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;background:var(--panel);border-radius:inherit}.gstart h3{margin:0;font-size:22px}.gstart .group{justify-content:center}
+.pathbox{background:var(--accent-soft);border-radius:8px;padding:8px 10px;margin:6px 0}.pathbox ol{margin:4px 0 0;padding-left:18px;font-size:13px}.pathbox li{margin:3px 0}
 .canvas .glist{position:absolute;inset:0;overflow:auto;background:var(--panel);padding:52px 14px 16px;z-index:2;border-radius:inherit}.glist h4{margin:12px 0 4px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.glist ul{list-style:none;margin:0;padding:0}.glist li{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}.glist li button{all:unset;cursor:pointer;font-weight:500;display:inline-flex;gap:6px;align-items:center}.glist li button:hover{color:var(--accent)}.glist .via{font-size:12px;color:var(--muted)}
 .canvas .gctl{z-index:3;position:absolute;right:10px;top:30px;display:flex;gap:6px}
 .canvas.full{position:fixed;inset:0;z-index:55;border-radius:0;border:0}
@@ -334,7 +339,7 @@ details.tbl th,details.tbl td{border-bottom:1px solid var(--line);padding:3px 6p
   <div class="hints" id="fhints"></div>
 </div>
 <div class="main">
-  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><div class="glist" id="glist" hidden></div><span class="meta count" id="count"></span><button type="button" class="chip moren" id="moren" hidden>показати ще</button><div class="gctl"><button type="button" class="chip" id="gview" aria-pressed="false" title="Ті самі обʼєкти й звʼязки списком: рівні від вибраного, через кого звʼязано">список</button><button type="button" class="chip" id="gfit" title="Показати весь граф у вікні">вмістити</button><button type="button" class="chip" id="gfull" aria-pressed="false" title="Граф на весь екран (Esc — вийти)">на весь екран</button></div><span class="hint">клік по вузлу — перебудувати навколо нього · перетягування — пересунути</span><div class="tip" id="tip" hidden></div><button type="button" class="chip tod" id="todetails" hidden>деталі ↓</button></div>
+  <div class="canvas"><svg id="svg" role="img" aria-label="Граф зв'язків вибраного об'єкта"></svg><div class="glist" id="glist" hidden></div><div class="gstart" id="gstart" hidden></div><div class="cmenu" id="cmenu" role="menu" hidden></div><div class="selbar" id="selbar" hidden></div><span class="meta count" id="count"></span><button type="button" class="chip moren" id="moren" hidden>показати ще</button><div class="gctl"><button type="button" class="chip" id="gview" aria-pressed="false" title="Ті самі обʼєкти й звʼязки списком: рівні від вибраного, через кого звʼязано">список</button><button type="button" class="chip" id="gfit" title="Показати весь граф у вікні">вмістити</button><button type="button" class="chip" id="gfull" aria-pressed="false" title="Граф на весь екран (Esc — вийти)">на весь екран</button></div><span class="hint">клік по вузлу — перебудувати навколо нього · правий клік — меню · перетягування — пересунути</span><div class="tip" id="tip" hidden></div><button type="button" class="chip tod" id="todetails" hidden>деталі ↓</button></div>
   <aside class="panel" id="panel"><p class="empty">Введіть об'єкт у пошук або натисніть вузол.</p></aside>
 </div>
 <div class="legend" id="legend"></div>
@@ -755,13 +760,15 @@ async function loadAround(id,o={}){if(!CAN_QUEUE)return null;const key=id+'|'+st
 let OVC=null;
 function visible(){
   // overview: placeholders dropped, then only nodes with an edge to another drawn node (half of it used to be lone dots); cached
-  if(!state.center){const key=G.edges.length+'|'+state.cap;if(OVC&&OVC.key===key)return OVC.v;
+  if(!state.center){if(!OVW)return {nodes:[],edges:[],all:{nodes:[],edges:[]},more:0};const key=G.edges.length+'|'+state.cap;if(OVC&&OVC.key===key)return OVC.v;
     const cand=[...OVER].map(id=>byId.get(id)).filter(n=>!isJunk(n)).sort((a,b)=>deg(b)-deg(a)).slice(0,state.cap*2),cs=new Set(cand.map(n=>n.id)),linked=new Set();
     for(const n of cand)for(const e of adj.get(n.id)||[])if(e.source===n.id&&cs.has(e.target)){linked.add(e.source);linked.add(e.target)}
     let ns=cand.filter(n=>linked.has(n.id)).slice(0,state.cap),ids=new Set(ns.map(n=>n.id));const es=[];for(const n of ns)for(const e of adj.get(n.id)||[])if(e.source===n.id&&ids.has(e.target))es.push(e);
     const has=new Set(es.flatMap(e=>[e.source,e.target]));ns=ns.filter(n=>has.has(n.id));  // partners cut by the cap
     OVC={key,v:{nodes:ns,edges:es,all:{nodes:ns,edges:es},more:Math.max(0,OVER.size-ns.length)}};return OVC.v}
-  const {nodes,edges,dist}=ego(state.center,state.depth),a=AROUND.get(state.center+'|'+state.depth),server=a&&a.limit<600?Math.max(0,a.total-a.shown):0;  // the server sends at most 600
+  let {nodes,edges,dist}=ego(state.center,state.depth);const a=AROUND.get(state.center+'|'+state.depth),server=a&&a.limit<600?Math.max(0,a.total-a.shown):0;  // the server sends at most 600
+  // the chain from the previous object (showPath) is drawn with the neighbourhood even beyond the depth
+  if(PATH&&PATH.to===state.center&&PATH.edges.length){nodes=nodes.slice();edges=edges.slice();const ids=new Set(nodes.map(n=>n.id)),ek=new Set(edges.map(fbKey));for(const id of PATH.ids){const n=byId.get(id);if(n&&!ids.has(id)){nodes.push(n);ids.add(id)}}for(const e of PATH.edges)if(!ek.has(fbKey(e))){edges.push(e);ek.add(fbKey(e))}}
   if(nodes.length<=state.cap)return {nodes,edges,all:{nodes,edges},more:server,dist};
   const keep=nodes.slice().sort((x,y)=>dist.get(x.id)-dist.get(y.id)||deg(y)-deg(x)).slice(0,state.cap),ids=new Set(keep.map(n=>n.id));
   return {nodes:keep,edges:edges.filter(e=>ids.has(e.source)&&ids.has(e.target)),all:{nodes,edges},more:nodes.length-keep.length+server,dist}}
@@ -826,7 +833,7 @@ async function applyGraphActions(acts){let reload=false;
     else if(a.type==='remove_filter')state.f=state.f.filter(f=>f.k!==a.facet);
     else if(a.type==='clear_filters')state.f=[];
     else if(a.type==='text'&&a.value)state.f.push({k:'text',v:String(a.value).toLowerCase()});
-    else if(a.type==='depth'&&[1,2,3].includes(+a.value)){state.depth=+a.value;document.getElementById('depth').value=state.depth;reload=true}
+    else if(a.type==='depth'&&[1,2,3,4,5].includes(+a.value)){state.depth=+a.value;document.getElementById('depth').value=state.depth;reload=true}
     else if(a.type==='view'&&['list','graph'].includes(a.value))state.view=a.value;
     else if(a.type==='focus'&&byId.has(a.id)){await select(a.id);continue}}
   save();drawF();render();if(reload&&state.center&&await loadAround(state.center))render()}
@@ -840,10 +847,70 @@ function drawList(v){const L=document.getElementById('glist'),on=state.view==='l
     h+=`<h4>Рівень ${k} · ${xs.length}</h4><ul>${xs.map(n=>{const [p,e]=by.get(n.id)||[];const pn=p&&byId.get(p);return `<li><button type="button" data-id="${esc(n.id)}"><span class="dot" style="background:${COLORS[n.type]}"></span>${esc(n.label)}</button><span class="via">${esc(TYPES[n.type]||n.type)}${e?` · ${esc(REL[e.rel]||e.rel)}${pn&&p!==state.center?` ← ${esc(pn.label.length>40?pn.label.slice(0,38)+'…':pn.label)}`:''}`:''}${e&&FB.get(fbKey(e))==='yes'?' · ✓ підтверджено':''}${e?.probable?' · можливо':''}</span></li>`}).join('')}</ul>`}
   L.innerHTML=h;L.querySelectorAll('button[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id));
   const ch=()=>{state.sort={by:document.getElementById('lsort').value,dir:document.getElementById('ldir').value};save();render()};document.getElementById('lsort').onchange=ch;document.getElementById('ldir').onchange=ch}
+// ---------- right-click menu, multi-select, manual links, the chain from the previous object, the start card ----------
+const SEL=new Set();let LINKFROM=null,LINKFORM=null,PATH=null,PATHE=new Set(),PATHQ='',OVW=false;
+Object.assign(REL,{same_person:'та сама особа',owner:'володіє',related:'повʼязані',taxpayer_record:REL.taxpayer_record||'платник податків за цим ІПН'});
+const cmenu=document.getElementById('cmenu');
+function closeCtx(){cmenu.hidden=true;cmenu.innerHTML=''}
+function openCtx(d,ev){const n=d.n;const items=[['Побудувати навколо',()=>select(n.id)]];
+  if(CAN_QUEUE)items.push(['Уточнити в AI-чаті',()=>window.__ask&&window.__ask(`Що відомо про «${n.label}» і звідки це в базі?`)]);
+  items.push([SEL.has(n.id)?'Зняти відмітку':'Відмітити (вибрати кілька)',()=>toggleSel(n.id)]);
+  if(CAN_QUEUE&&SEL.size&&!SEL.has(n.id))items.push([`Як повʼязано з відміченими (${SEL.size})?`,()=>{SEL.add(n.id);askSel()}]);
+  if(CAN_QUEUE)items.push(['Звʼязати з іншим обʼєктом…',()=>startLink(n.id)]);
+  if(n.url)items.push(['Відкрити джерело ↗',()=>window.open(n.url,'_blank','noopener')]);
+  cmenu.innerHTML=`<div class="cm-h">${esc(TYPES[n.type]||n.type)} · ${esc(n.label)}</div>`+items.map((x,i)=>`<button type="button" role="menuitem" data-i="${i}">${x[0]}</button>`).join('');
+  const r=canvas.getBoundingClientRect();let x=ev.clientX-r.left,y=ev.clientY-r.top;cmenu.hidden=false;
+  if(x+cmenu.offsetWidth>r.width-8)x=Math.max(8,r.width-cmenu.offsetWidth-8);if(y+cmenu.offsetHeight>r.height-8)y=Math.max(8,r.height-cmenu.offsetHeight-8);
+  cmenu.style.left=x+'px';cmenu.style.top=y+'px';
+  cmenu.querySelectorAll('button').forEach(b=>b.onclick=()=>{closeCtx();items[+b.dataset.i][1]()});cmenu.querySelector('button')?.focus()}
+svg.on('contextmenu',ev=>{ev.preventDefault();closeCtx()});
+document.addEventListener('click',e=>{if(!e.target.closest('#cmenu'))closeCtx()},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();if(LINKFROM||LINKFORM){LINKFROM=null;LINKFORM=null;selbar()}}});
+function toggleSel(id){if(SEL.has(id))SEL.delete(id);else SEL.add(id);node.classed('sel',d=>SEL.has(d.id));selbar()}
+const selLabels=()=>[...SEL].map(id=>byId.get(id)?.label||id);
+function askSel(){if(!window.__ask)return;const ls=selLabels();window.__ask(`Як повʼязані ${ls.map(l=>'«'+l+'»').join(', ')}? Покажи ланцюжок і джерело кожного кроку.`)}
+function startLink(id){LINKFROM=id;LINKFORM=null;selbar()}
+function finishLink(a,b){LINKFROM=null;LINKFORM={a,b,rel:'related',note:''};selbar()}
+const LINKRELS=[['family','член сімʼї'],['same_person','та сама особа'],['taxpayer_record','платник податків за цим ІПН'],['owner','володіє'],['director','керівник'],['founder','засновник'],['related','повʼязані'],['other','інше (вписати)']];
+async function saveLink(){const f=LINKFORM;if(!f)return;const rel=f.rel==='other'?(f.custom||'').trim():f.rel;if(!rel)return;
+  const r=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({link:{a:f.a,b:f.b,rel,note:f.note}})}).then(r=>r.json()).catch(()=>({error:'мережа'}));
+  if(r.error){alert('Не вдалося зберегти: '+r.error);return}
+  addEdge({source:f.a,target:f.b,rel,src:'analyst',detail:`вказано аналітиком ${new Date().toISOString().slice(0,10)}${f.note?': '+f.note:''}`});
+  LINKFORM=null;SEL.clear();panelKey='';render()}
+function selbar(){const b=document.getElementById('selbar');
+  if(LINKFROM){b.hidden=false;b.innerHTML=`<span>Звʼязати «${esc((byId.get(LINKFROM)?.label||LINKFROM).slice(0,40))}» з… <span class="meta">клацніть другий обʼєкт на графі</span></span><span style="flex:1"></span><button type="button" class="chip" id="lk-cancel">скасувати</button>`;b.querySelector('#lk-cancel').onclick=()=>{LINKFROM=null;selbar()};return}
+  if(LINKFORM){const f=LINKFORM,L=id=>esc((byId.get(id)?.label||id).slice(0,36));b.hidden=false;
+    b.innerHTML=`<span>«${L(f.a)}»</span><select id="lk-rel">${LINKRELS.map(([k,l])=>`<option value="${k}"${f.rel===k?' selected':''}>${l}</option>`).join('')}</select><input id="lk-custom" placeholder="своя формулювання" style="width:150px"${f.rel==='other'?'':' hidden'}><span>«${L(f.b)}»</span><input id="lk-note" placeholder="підстава (документ, джерело)" style="flex:1;min-width:160px" value="${esc(f.note||'')}"><button type="button" class="chip" id="lk-save">Зберегти</button><button type="button" class="chip" id="lk-cancel">скасувати</button>`;
+    b.querySelector('#lk-rel').onchange=e=>{f.rel=e.target.value;b.querySelector('#lk-custom').hidden=f.rel!=='other'};b.querySelector('#lk-custom').oninput=e=>{f.custom=e.target.value};b.querySelector('#lk-note').oninput=e=>{f.note=e.target.value};
+    b.querySelector('#lk-save').onclick=saveLink;b.querySelector('#lk-cancel').onclick=()=>{LINKFORM=null;selbar()};return}
+  if(!SEL.size){b.hidden=true;return}
+  const ids=[...SEL];b.hidden=false;
+  b.innerHTML=`<span class="meta">Вибрано ${ids.length}:</span>`+ids.map(id=>{const n=byId.get(id);return `<button type="button" class="chip" data-un="${esc(id)}" title="зняти відмітку"><span class="dot" style="background:${COLORS[n?.type]||'#999'}"></span>${esc((n?.label||id).slice(0,30))} ×</button>`}).join('')+`<span style="flex:1"></span>`
+    +(CAN_QUEUE&&ids.length>=2?`<button type="button" class="chip" id="sel-ask">Як це повʼязано?</button>`:'')+(CAN_QUEUE&&ids.length===2?`<button type="button" class="chip" id="sel-link">Зʼєднати вручну</button>`:'')+`<button type="button" class="chip" id="sel-clear">Очистити</button>`;
+  b.querySelectorAll('[data-un]').forEach(x=>x.onclick=()=>toggleSel(x.dataset.un));b.querySelector('#sel-ask')?.addEventListener('click',askSel);
+  b.querySelector('#sel-link')?.addEventListener('click',()=>finishLink(ids[0],ids[1]));b.querySelector('#sel-clear').onclick=()=>{SEL.clear();node.classed('sel',false);selbar()}}
+// the chain: when another object is opened, the shortest path from the previous one (api/graph?path=) is drawn and listed
+async function showPath(a,b){const key=a+'>'+b;if(PATHQ===key)return;PATHQ=key;let r;try{r=await (await fetch(`/api/graph?path=${encodeURIComponent(a)}&to=${encodeURIComponent(b)}`)).json()}catch(_){return}
+  if(state.center!==b||PATHQ!==key)return;const p=(r.paths||[])[0];
+  if(!p||!p.steps.length){PATH={from:a,to:b,steps:[],ids:[],edges:[]};PATHE=new Set();panelKey='';render();return}
+  const ids=new Set(),edges=[];
+  for(const s of p.steps){addNode({id:s.from.id,type:s.from.type,label:s.from.label});addNode({id:s.to.id,type:s.to.type,label:s.to.label});ids.add(s.from.id);ids.add(s.to.id);
+    const find=()=>(adj.get(s.from.id)||[]).find(e=>e.rel===s.rel&&(e.target===s.to.id||e.source===s.to.id));let e=find();
+    if(!e){addEdge({source:s.from.id,target:s.to.id,rel:s.rel,detail:s.detail,src:s.src,probable:s.probable,date:s.date,msgs:s.msgs||[]});e=find()}if(e)edges.push(e)}
+  PATH={from:a,to:b,steps:p.steps,ids:[...ids],edges,n:(r.paths||[]).length};PATHE=new Set(edges.map(fbKey));panelKey='';render()}
+function pathHtml(P){const A=byId.get(P.from);if(!P.steps.length)return `<div class="meta" style="margin:6px 0">Шляху від «${esc((A?.label||P.from).slice(0,40))}» у межах 5 кроків не знайдено.</div>`;
+  return `<div class="pathbox"><div class="meta">Звʼязок із попереднім обʼєктом «${esc((A?.label||P.from).slice(0,40))}» · ${P.steps.length} ${P.steps.length===1?'крок':'кроки'}${P.n>1?` · ще ${P.n-1}`:''}</div><ol>${P.steps.map(s=>`<li><button type="button" data-id="${esc(s.from.id)}">${esc(s.from.label)}</button> <span class="meta">${esc(REL[s.rel]||s.rel)}${s.probable?' · можливо':''}${s.src?' · '+esc(SRC[s.src]||s.src):''}</span> → <button type="button" data-id="${esc(s.to.id)}">${esc(s.to.label)}</button>${s.detail?`<div class="meta">${esc(String(s.detail).slice(0,160))}</div>`:''}</li>`).join('')}</ol></div>`}
+// the start: an empty canvas with a question, not the hairball of the most connected objects (that is one click away)
+function startCard(){const g=document.getElementById('gstart');const top=G.nodes.filter(n=>n.type==='case'&&!isJunk(n)).sort((a,b)=>deg(b)-deg(a)).slice(0,3);
+  g.innerHTML=`<h3>Почніть із запиту</h3><p class="meta" style="max-width:560px;font-size:13px">Особа, компанія, справа, ЄДРПОУ або ІПН у полі вгорі. Клік по обʼєкту будує граф навколо нього; правий клік — меню: уточнити в чаті, відмітити кілька, звʼязати вручну. Другий відкритий обʼєкт показує шлях від попереднього.</p>`
+    +(top.length?`<div class="meta">або відкрийте справу:</div><div class="group">${top.map(n=>`<button type="button" class="chip" data-id="${esc(n.id)}">${esc(n.label.length>40?n.label.slice(0,38)+'…':n.label)} <span class="meta">${deg(n)}</span></button>`).join('')}</div>`:'')
+    +`<button type="button" class="lnk" id="ovw">показати огляд бази: найзвʼязаніші обʼєкти</button>`;
+  g.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{const n=byId.get(b.dataset.id);if(n)q.value=n.label;select(b.dataset.id)});
+  g.querySelector('#ovw').onclick=()=>{OVW=true;render()}}
 function render(){
   const v=visible(),{nodes,edges}=v;DIST=v.dist||null;drawList(v);
   document.getElementById('count').textContent=`${nodes.length} вузлів · ${edges.length} зв'язків`+(state.center?'':' · найзв’язніші в базі');
-  moreB.hidden=!(v.more>0);moreB.textContent=`показати ще (${v.more})`;
+  moreB.hidden=!(v.more>0);moreB.textContent=`показати ще (${v.more})`;document.getElementById('gstart').hidden=!!state.center||OVW;selbar();
   const W=svg.node().clientWidth||600,H=svg.node().clientHeight||400,[vx,vy]=d3.zoomTransform(svg.node()).invert([W/2,H/2]);
   const prev=new Set(sim.nodes().map(d=>d.id)),placed=new Map(nodes.filter(n=>prev.has(n.id)).map(n=>[n.id,pos.get(n.id)]));let added=0;
   // a node back from a filter toggle around the same centre returns to where it was (no new layout pass for it)
@@ -854,7 +921,7 @@ function render(){
   const ls=edges.map(e=>({source:pos.get(e.source),target:pos.get(e.target),rel:e.rel,w:e.nmsgs||(e.msgs||[]).length,k:e.source+'|'+e.target+'|'+e.rel,e}));
   NB=new Map();for(const l of ls){(NB.get(l.source.id)||NB.set(l.source.id,new Set()).get(l.source.id)).add(l.target.id);(NB.get(l.target.id)||NB.set(l.target.id,new Set()).get(l.target.id)).add(l.source.id)}
   link=gl.selectAll('line').data(ls,d=>d.k).join(en=>en.append('line').on('mousemove',(ev,d)=>{const r=svg.node().getBoundingClientRect();tip.hidden=false;tip.textContent=linkTip(d);tip.style.left=(ev.clientX-r.left)+'px';tip.style.top=(ev.clientY-r.top)+'px'}).on('mouseleave',()=>{tip.hidden=true}))
-    .attr('class',d=>'link'+(['registry_record','founder','beneficiary','signer'].includes(d.rel)?' reg':'')+(FB.get(fbKey(d.e))==='yes'?' ok':d.e.probable?' prob':'')).attr('stroke-width',d=>Math.min(4,1+d.w*.6));
+    .attr('class',d=>'link'+(['registry_record','founder','beneficiary','signer'].includes(d.rel)?' reg':'')+(FB.get(fbKey(d.e))==='yes'?' ok':d.e.probable?' prob':'')+(PATHE.has(d.k)?' path':'')).attr('stroke-width',d=>Math.min(4,1+d.w*.6));
   // namesakes («ФОП Кравченко Олександр …» around «Кравченко Олександр»): next to the node only the part that tells them apart;
   // the full label is in the tooltip
   const crowded=ns.length>140,cw=(byId.get(state.center)?.label||'').replace(/^(ФОП|ПП|ТОВ)\s+/i,'').split(/\s+/).slice(0,2);let pre=null;
@@ -867,9 +934,10 @@ function render(){
       .on('mouseenter',(ev,d)=>hl(d.id)).on('mouseleave',()=>{hl(null);tip.hidden=true})
       .on('focus',(ev,d)=>{hl(d.id);const t=d3.zoomTransform(svg.node());tipAt(d,t.applyX(d.x),t.applyY(d.y)-d.r*t.k)}).on('blur',()=>{hl(null);tip.hidden=true})
       .on('keydown',(ev,d)=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();select(d.id)}});
-    g.append('circle').on('click',(ev,d)=>{ev.stopPropagation();select(d.id)})
+    g.on('contextmenu',(ev,d)=>{ev.preventDefault();ev.stopPropagation();openCtx(d,ev)});
+    g.append('circle').on('click',(ev,d)=>{ev.stopPropagation();closeCtx();if(LINKFROM&&LINKFROM!==d.id){finishLink(LINKFROM,d.id);return}select(d.id)})
       .on('mousemove',(ev,d)=>{const r=svg.node().getBoundingClientRect();tipAt(d,ev.clientX-r.left,ev.clientY-r.top)});g.append('text').attr('dy','.35em');return g})
-    .attr('class',d=>'node'+(d.id===state.center?' center':'')).attr('aria-label',d=>d.n.label);
+    .attr('class',d=>'node'+(d.id===state.center?' center':'')+(SEL.has(d.id)?' sel':'')).attr('aria-label',d=>d.n.label);
   node.select('circle').attr('r',d=>d.r).attr('fill',d=>COLORS[d.n.type]||'var(--c-post)');
   node.select('text').attr('dx',d=>d.r+3).text(d=>d.lbl);
   node.filter(d=>d.id===state.center).raise();  // its label above neighbour circles
@@ -934,6 +1002,7 @@ function panel(nodes,edges){
   const mine=edges.filter(e=>e.source===n.id||e.target===n.id);
   // 1. what is selected: type, origin, path of clicks
   let html=`<div class="path">${hist.map((id,i)=>{const x=byId.get(id);return `<button type="button" class="crumb" data-id="${esc(id)}"${i===hist.length-1?' aria-current="true"':''}><span class="dot" style="background:${COLORS[x.type]}"></span>${esc(x.label.length>28?x.label.slice(0,27)+'…':x.label)}</button>`}).join('<span class="meta">›</span>')}</div>`;
+  if(PATH&&PATH.to===n.id)html+=pathHtml(PATH);
   html+=`<div class="meta">${TYPES[n.type]||n.type} · ${esc(provOf(n))}${n.src?' · '+esc(SRC[n.src]||n.src):''}</div><h2>${esc(n.label)}</h2>`;
   html+=`<div class="explain" id="nexplain"><span class="meta">Що це: завантажую…</span></div>`;
   if(n.type==='person'&&CAN_QUEUE)html+=`<div class="meta" id="declst" style="margin:4px 0"></div>`;
@@ -1032,7 +1101,7 @@ async function expandAround(id,ex){if(!CAN_QUEUE)return null;let pr=EXPANDED.get
 const DETAIL_POSTS=new Map();
 // select: draw what is known at once, then fetch the capped neighbourhood and merge it in (same SVG, positions kept)
 let selSeq=0;
-async function select(id,o={}){const seq=++selSeq;if(id!==state.center)state.cap=CAP;state.center=id;if(window.matchMedia('(max-width:760px)').matches)document.getElementById('todetails').hidden=false;
+async function select(id,o={}){const seq=++selSeq;const prev=state.center;if(PATH&&PATH.to!==id){PATH=null;PATHE=new Set()}if(id!==state.center)state.cap=CAP;state.center=id;if(window.matchMedia('(max-width:760px)').matches)document.getElementById('todetails').hidden=false;
   if(byId.has(id)){drawF();render()}else{panelKey='';document.getElementById('panel').innerHTML='<p class="empty">Завантажую оточення…</p>'}
   const had=byId.has(id),n0=G.nodes.length,e0=G.edges.length;const a=await loadAround(id,o);if(seq!==selSeq)return byId.has(id);
   // not in the server graph (a registry hit, a judge, a topic of post mentions): build its neighbourhood on the fly and merge it
@@ -1040,7 +1109,7 @@ async function select(id,o={}){const seq=++selSeq;if(id!==state.center)state.cap
   if(o.expand&&(!a||!a.total||id.startsWith('topic:')||(o.expand.lake&&a.total<=8))){const x=await expandAround(id,o.expand);if(seq!==selSeq)return byId.has(id)}
   if(!byId.has(id)&&o.placeholder)addNode({...o.placeholder});
   if(!byId.has(id)){state.center=null;save();document.getElementById('panel').innerHTML=`<p class="empty">Обʼєкта «${esc(id.slice(id.indexOf(':')+1))}» ще немає в графі.</p>`;render();return false}
-  if(!had||G.nodes.length!==n0||G.edges.length!==e0){drawF();render()}return true}
+  if(!had||G.nodes.length!==n0||G.edges.length!==e0){drawF();render()}if(prev&&prev!==id&&CAN_QUEUE)showPath(prev,id);return true}
 document.getElementById('todetails').onclick=()=>document.getElementById('panel').scrollIntoView({behavior:'smooth',block:'start'});
 // resize (window, chat column, full screen): one refit per frame, no re-render and no simulation restart
 let rzF=0;window.addEventListener('resize',()=>{if(rzF)return;rzF=requestAnimationFrame(()=>{rzF=0;if(!svg.node().clientWidth)return;if(fitPending||!userZoomed)fit(false);else labels()})});
@@ -1073,6 +1142,7 @@ if(CAN_QUEUE){const chat=document.getElementById('chat');chat.hidden=false;const
     grip.onpointermove=m=>chat.style.setProperty('--chatw',clampW(w0+m.clientX-x0)+'px');grip.onpointerup=()=>{grip.onpointermove=null;saveUI();relayout()}};
   grip.onkeydown=e=>{if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;e.preventDefault();chat.style.setProperty('--chatw',clampW(chat.getBoundingClientRect().width+(e.key==='ArrowRight'?24:-24))+'px');saveUI();relayout()};
   const openChat=o=>{chat.classList.toggle('open',o);if(o)setTimeout(()=>ta.focus(),50)};
+  window.__ask=t=>{if(PH())openChat(true);ta.value=t;form.requestSubmit()};
   document.getElementById('chatfab').onclick=()=>openChat(true);document.getElementById('chatclose').onclick=()=>openChat(false);
   const EX=['справа Міндіча','Які удари по Харкову були вчора і що писали російські канали напередодні?','що відомо про Кацубу і його компанії','24584661','знайди справи за 2025 рік щодо земельних питань'];
   const ex=document.getElementById('chatex');EX.forEach(x=>{const b=document.createElement('button');b.className='chip';b.type='button';b.textContent=x;b.onclick=()=>{ta.value=x;form.requestSubmit()};ex.appendChild(b)});
@@ -1097,7 +1167,7 @@ async function emptyState(){document.getElementById('panel').innerHTML=`<div cla
    for(const [t,l] of [['case','Справи'],['person','Особи'],['org','Компанії']]){const xs=top(t);if(!xs.length)continue;const d=document.createElement('div');d.innerHTML=`<div class="meta" style="margin:6px 0 4px">${l}</div>`;const g=document.createElement('div');g.className='group';
      xs.forEach(n=>{const b=document.createElement('button');b.type='button';b.className='chip';b.innerHTML=`${esc(n.label.length>48?n.label.slice(0,46)+'…':n.label)} <span class="meta">${deg(n)}</span>`;b.onclick=()=>{q.value=n.label;select(n.id)};g.appendChild(b)});d.appendChild(g);el.appendChild(d)}}
   const EXQ=[['932/2641/25','номер справи'],['Кацуба Александр','особа'],['ТОВ "ГАЗ-МДС"','компанія'],['24253556','ЄДРПОУ'],['https://nabu.gov.ua/news','сторінка як джерело']];const ex=document.getElementById('ex-q');EXQ.forEach(([v,l])=>{const b=document.createElement('button');b.type='button';b.className='chip';b.innerHTML=`${esc(v)} <span class="meta">${l}</span>`;b.onclick=()=>{q.value=v;q.dispatchEvent(new Event('input'));q.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))};ex.appendChild(b)});
-  state.center=null;render();
+  startCard();state.center=null;render();
   if(!CAN_QUEUE)return;
   try{const r=await (await fetch('/api/queue')).json();
     const w=r.worker;const st=document.getElementById('stats');if(w&&w.seen_at){const ago=Math.round((Date.now()-new Date(w.seen_at))/60000);if(!st.textContent.includes('воркер UA'))st.textContent+=` · воркер UA: ${ago<=6?'онлайн':'офлайн '+(ago<120?ago+' хв':Math.round(ago/60)+' год')}`}}catch(e){}}
