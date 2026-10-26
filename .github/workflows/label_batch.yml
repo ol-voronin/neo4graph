@@ -1,12 +1,12 @@
 name: label-batch
 
 # Bulk labeling via Anthropic Message Batches (src/label_batch.py). submit: build + send; fetch: write finished batches.
-# Batches finish within 24 h; the scheduled fetch picks them up. Needs ANTHROPIC_API_KEY and DATABASE_URL.
+# Batches finish within 24 h. Needs ANTHROPIC_API_KEY and DATABASE_URL.
+# The schedule runs on the VPS since 2026-10-26 (neo4graph-label.timer, every 3 h: fetch, then submit the newest
+# 1,500 unlabeled posts; deploy/vps.md). GitHub kept submitting once a day ~5 h late. This workflow is manual only
+# (bulk submits, re-labels, drop); its batch ids live in the Actions cache, the VPS ones in /opt/neo4graph/data/batches.
 
 on:
-  schedule:
-    - cron: "35 */6 * * *"   # fetch finished batches (batches take hours; one Neon wake per 6 h)
-    - cron: "40 3 * * *"     # submit the day's new posts, newest first, capped (~$0.4/day at Haiku 5.5 batch prices)
   workflow_dispatch:
     inputs:
       cmd:

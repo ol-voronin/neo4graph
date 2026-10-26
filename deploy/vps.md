@@ -20,6 +20,9 @@ Why: a Ukrainian IP for the registry worker (the cloud cannot reach reyestr.cour
 | `neo4graph-drain.service` | `scripts/drain_loop.sh`: the cloud leg of the registry queue (web search, LLM, ЄДР, ЄДРСР) — takes an item within ~10 s; waits until the keys are set | always on |
 | `neo4graph-edrsr.timer` → `.service` | `src/edrsr_index.py --years <this year> --build-index --refresh`: re-downloads the current year's court dump and rebuilds its parquet index (older years are indexed once) | daily 03:40 |
 | `neo4graph-decl.timer` → `.service` | `local/decl_judges.py --max-seconds 14400`: NAZK declarations of the judges in court_decisions (anti-corruption, appeal, Supreme Court first), done names in decl_scan, re-checked after 30 days | nightly 00:30 |
+| `neo4graph-label.timer` → `.service` | `src/label_batch.py fetch && submit --newest --limit 1500`: Haiku labels of the rhetoric posts through Message Batches (moved from GitHub `label-batch.yml`, which is manual now) | every 3 h at :15 |
+| `neo4graph-ualarm.timer` → `.service` | `src/collect_ukrainealarm.py alarms`: map.ukrainealarm.com alarms with level and reason into `ua_alarms`; one poll, the 26 oblast lists only when the active set changed | every 5 min |
+| `neo4graph-utargets.timer` → `.service` | `src/collect_ukrainealarm.py targets --days 2`: targets the map tracked (Shahed, jet Shahed, КАБ, missile, Banderol) per day / hour / region into `ua_targets_day` / `ua_targets_region`; the source keeps ~7 days | hourly at :50 |
 | `neo4graph-nightly.timer` → `.service` | `src/person_cases.py build`: lawyers named in decision texts → person_case_links (fresh lawyers.parquet from the lake release) | daily 05:10 |
 
 Keys for the drain (in `/etc/neo4graph.env`, set by the owner): `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID`, `TAVILY_API_KEY` (and/or `BRAVE_API_KEY`, `GOOGLE_CSE_KEY` + `GOOGLE_CSE_ID`), `GEMINI_API_KEY`. Court dumps and indexes: `/opt/neo4graph/data/edrsr` (~10 GB).
