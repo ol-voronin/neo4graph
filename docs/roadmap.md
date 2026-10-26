@@ -45,3 +45,9 @@ forecast (AUC ≈ 0.7, CI touches zero).
 Analogy: Google Drive for the container model (projects as files in folders, sharing by link with viewer / commenter /
 editor roles, organisations), Figma for the editing model (one live canvas per project, presence, comments pinned to
 nodes, branches with merge). Sign-in: magic link + Google; the site key becomes an organisation invite.
+
+## Closed registers through the professional's own access (owner, 2026-10-26)
+A notary, lawyer or executor who rents the system connects the registers closed to the public (ДРАЦС, Спадковий,
+Довіреності, full ЄДР, ДРРП) through their own КЕП; results land only in their private project. Design and legal
+frame: docs/notary-access.md. Comes after projects (weeks 1–4), ДРРП first.
+

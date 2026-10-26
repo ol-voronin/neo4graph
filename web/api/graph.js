@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     const g = await getGraph(p.has("fresh"));
     const id = p.get("around");
     if (!id) return json(res, 200, overview(g, clamp(+p.get("n") || 300, 50, 800)));
-    const r = await withLawyers(around(g, id, clamp(+p.get("depth") || 2, 1, 3), clamp(+p.get("limit") || 150, 10, 600)), id);
+    const r = await withLawyers(around(g, id, clamp(+p.get("depth") || 2, 1, 5), clamp(+p.get("limit") || 150, 10, 600)), id);
     if (r) return json(res, 200, r);
     if (id.startsWith("post:")) {  // a post found by text search that is not (yet) evidence for anything in the graph
       const m = (await sql`SELECT source_id s, ts_published::date t, url u, left(regexp_replace(text, '[[:space:]]+', ' ', 'g'), 260) x FROM messages WHERE id = ${id.slice(5)}`)[0];
