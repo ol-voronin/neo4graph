@@ -1516,7 +1516,8 @@ const FEAT={base:'базова частота масованих днів в о�
   acled_l:'події ударів, обстрілів і збиттів в області за останній опублікований тиждень ACLED (log)',acled_m8:'те саме, середнє за 8 тижнів — реальна частота ударів по області',
   tcg_ru_1:'частка погрозливих російських постів, що згадують цю область І енергетику, дата-центри чи залізницю (доба до 15:00)',tcg_ru_m3:'те саме, середнє за 3 дні'};
 function pgTip(r,pair,PG){const f=r.features||{},cov=(PG.coverage||[]).find(c=>c.region===r.region),cand=!!PM[r.model]?.vs;
-  let h=`<b>${pct1(r.p)}</b> — оцінка моделі, що ${r.region&&r.region!=='ukraine'?'в області «'+esc(rn(r.region))+'»':'в Україні'} ${esc(r.d)} буде масований удар`+(r.model.startsWith('ua_oblast')?' (за добу ≥7 ракет або ≥20 ударних дронів, FPV не рахуються)':'')+`. Випущено ${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}, до початку дня, і більше не змінюється.<br><br>`;
+  const expl=r.model.includes('_expl');
+  let h=`<b>${pct1(r.p)}</b> — оцінка моделі, що ${r.region&&r.region!=='ukraine'?'в області «'+esc(rn(r.region))+'»':'в Україні'} ${esc(r.d)} `+(expl?'будуть вибухи (щонайменше одне повідомлення каналів-моніторів про вибухи в області за добу; це не масований удар)':'буде масований удар'+(r.model.startsWith('ua_oblast')?' (за добу ≥7 ракет або ≥20 ударних дронів, FPV не рахуються)':''))+`. Випущено ${esc(new Date(r.issued_at).toLocaleString('uk-UA',{timeZone:'Europe/Kyiv'}))}, до початку дня, і більше не змінюється.<br><br>`;
   h+=`<b>Звідки число.</b> Логістична регресія, навчена на ${r.n_train||'?'} відомих ${r.model.startsWith('ua_oblast')?'область-днях':'днях'}: вона зважує ці ознаки й перетворює їх на ймовірність:<br>`;
   const known=f.y2_known===0?' (невідомо — підставлено базову частоту)':'';
   h+=Object.entries(f).filter(([k])=>FEAT[k]).map(([k,v])=>`• ${FEAT[k]}: <b>${k==='y2'&&!known?(v?'так':'ні'):k.startsWith('acled')?(v==null?'—':'≈'+Math.round(Math.expm1(v))+' на тиждень'):pct1(v)}</b>${k==='y2'?known:''}`).join('<br>');
@@ -1525,6 +1526,7 @@ function pgTip(r,pair,PG){const f=r.features||{},cov=(PG.coverage||[]).find(c=>c
   h+=`<br><br><b>Як модель влучала досі:</b> `+(b&&b.n?`коли давала ${20*b.bin}–${20*b.bin+20}%, подія сталася в ${b.hits} з ${b.n} випадків (${pct1(b.hits/b.n)}).`:'для цього діапазону ще немає оцінених днів.');
   if(r.model.includes('massive3'))h+='<br><br><b>Мітки v3:</b> як у v2, плюс кожен день тижня, коли ACLED не зафіксував в області жодного удару, обстрілу чи збиття, — відомий «ні». Тому тилові області більше не позичають частоту в Харківщини.';
   else if(r.model.includes('massive2'))h+='<br><br><b>Мітки v2:</b> «не було масованого удару» береться з повних зведень ОВА і з днів без жодної повітряної тривоги в області (коли стрічка тривог працювала); дні без доказів — невідомі, а не нулі.';
+  else if(expl)h+='<br><br><b>Мітки v4:</b> день з вибухами — коли монітори повідомили про вибухи в області; день без — коли стрічка моніторів працювала, а повідомлень не було. Тилові області тут мають власну історію, а не позичену.';
   else if(cov&&(cov.complete===0||cov.known<cov.days*0.6))h+=`<br><br>⚠ <b>Ненадійно для цієї області:</b> повних щоденних зведень немає (${cov.complete} з ${cov.days} днів), відомі ${cov.known} днів — переважно ті, коли про удари писали. Тому базова частота тут завищена і спирається на середнє по областях (переважно Харківщина). Не читайте це як реальні ${pct1(r.p)}.`;
   return h+'<br><br><span style="opacity:.8">Дослідження, не попередження про загрозу.</span>'}
 // ---- query queue (/api/queue): both legs of every registry chain, cancel / retry / add ----
@@ -1567,6 +1569,8 @@ async function loadPG(){try{const PG=await (await fetch('/api/predictions')).jso
   const pairOf=r=>{const o=PM[r.model]?.vs||Object.keys(PM).find(k=>PM[k].vs===r.model);return o?rows.find(x=>x.model===o&&x.d===r.d&&x.region===r.region):null};
   const tipA2=r=>esc(pgTip(r,pairOf(r),PG));
   const cur=rows.filter(r=>r.d===last),reg={};cur.forEach(r=>{(reg[r.region]??={})[r.model===C?'c':'b']=r});
+  // the v4 model (explosion reports) on the same map, its newest day; the table below lists every model, the map one at a time
+  const EM='ua_oblast_expl_v1',lastE=rows.filter(r=>r.model===EM).reduce((m,r)=>r.d>m?r.d:m,'');rows.filter(r=>r.model===EM&&r.d===lastE).forEach(r=>{(reg[r.region]??={}).e=r});
   // live: the current estimate of the v3 candidate (recomputed every 30 min on the newest posts), shown for its own target day
   const LV=(PG.live||[]).filter(r=>r.model==='ua_oblast_massive3_v1'),lvd=LV[0]?.d;LV.forEach(r=>{(reg[r.region]??={}).l={...r,live:1}});
   const liveTipRaw=r=>{const sr=(PG.live_series||{})[r.region]||[],ps=sr.map(x=>x[1]),fz=reg[r.region]?.c;
@@ -1577,7 +1581,7 @@ async function loadPG(){try{const PG=await (await fetch('/api/predictions')).jso
   document.getElementById('pgregh').textContent=last?`Масований удар по областях (≥7 ракет або ≥20 ударних дронів), ${last}`:'Масований удар по областях: прогнозів ще немає';
   const H0=document.getElementById('pgregh').textContent;
   const regMap=async which=>{const G=UAMAP||(UAMAP=await (await fetch('/ua-oblasts.json')).json()),box=document.getElementById('pgregs');
-    document.getElementById('pgregh').textContent=which==='l'?`Масований удар по областях: поточна оцінка на ${lvd} (оновлюється кожні 30 хв)`:H0;
+    document.getElementById('pgregh').textContent=which==='l'?`Масований удар по областях: поточна оцінка на ${lvd} (оновлюється кожні 30 хв)`:which==='e'?`Вибухи в області (v4: ≥1 повідомлення моніторів про вибухи за добу), ${lastE}`:H0;
     const fill=p=>{const i=Math.max(0,Math.min(RAMP.length-1,Math.round(p*(RAMP.length-1))));return [RAMP[i],i>=6?'#fff':'#0b0b0b']};
     const shape=(k,g)=>{const v=reg[k],r=v&&v[which];if(!r)return g.d?`<path class="na" d="${g.d}"><title>${esc(rn(k)==k?'Крим':rn(k))}: прогнозу немає</title></path>`:'';
       const [bg]=fill(r.p),attr=`class="o" fill="${bg}" tabindex="0" role="button" data-reg="${esc(k)}" aria-label="${esc(rn(k))}: ${pct1(r.p)}, відкрити подробиці" data-tip="${esc(`<b>${esc(rn(k))}</b> · ${pct1(r.p)}<br><span style="opacity:.75">клацніть — подробиці</span>`)}"`;
@@ -1586,9 +1590,9 @@ async function loadPG(){try{const PG=await (await fetch('/api/predictions')).jso
       return k==='kyiv-city'?`<text class="halo" x="${x}" y="${y}">${pct1(r.p)}</text>`:`<text class="nm" x="${x}" y="${y-8}" fill="${fg}">${esc(shortRn(k))}</text><text x="${x}" y="${y+4}" fill="${fg}">${pct1(r.p)}</text>`};
     const E=Object.entries(G.regions),order=E.filter(([k])=>k!=='kyiv-city').concat(E.filter(([k])=>k==='kyiv-city'));
     box.innerHTML=`<svg viewBox="${G.viewBox}" role="group" aria-label="Карта ймовірностей масованого удару по областях" style="color:var(--fg)">${order.map(([k,g])=>shape(k,g)).join('')}${order.map(([k,g])=>label(k,g)).join('')}</svg>
-      <div class="side2"><div role="group" aria-label="Модель" style="display:flex;gap:6px"><button type="button" class="chip" data-m="c" aria-pressed="${which==='c'}">з риторикою</button><button type="button" class="chip" data-m="b" aria-pressed="${which==='b'}">база</button>${LV.length?`<button type="button" class="chip" data-m="l" aria-pressed="${which==='l'}">зараз · ${esc(lvd)}</button>`:''}</div>
+      <div class="side2"><div role="group" aria-label="Модель" style="display:flex;gap:6px"><button type="button" class="chip" data-m="c" aria-pressed="${which==='c'}">з риторикою</button><button type="button" class="chip" data-m="b" aria-pressed="${which==='b'}">база</button>${lastE?`<button type="button" class="chip" data-m="e" aria-pressed="${which==='e'}">вибухи (v4)</button>`:''}${LV.length?`<button type="button" class="chip" data-m="l" aria-pressed="${which==='l'}">зараз · ${esc(lvd)}</button>`:''}</div>
       <div class="ramp">0%${RAMP.filter((_,i)=>i%2===0).map(c=>`<span style="background:${c}"></span>`).join('')}100%</div>
-      <span>Колір і число — ймовірність масованого удару за добу. Клацніть область (або Tab + Enter) — праворуч відкриються подробиці: звідки число, історія прогнозів і як модель влучала досі.</span>
+      <span>Колір і число — ймовірність ${which==='e'?'повідомлень про вибухи':'масованого удару'} за добу. Клацніть область (або Tab + Enter) — праворуч відкриються подробиці: звідки число, історія прогнозів і як модель влучала досі.</span>
       <span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--line);margin-right:4px;vertical-align:-1px"></i>прогнозу немає</span>
       <span>Межі: © OpenStreetMap (ODbL).</span></div>`;
     // hovered outline on top of neighbours: a copy drawn last (moving the path itself in the DOM cancelled the click)
@@ -1604,7 +1608,7 @@ async function loadPG(){try{const PG=await (await fetch('/api/predictions')).jso
     const latest=Object.keys(PM).filter(m=>PM[m].vs).map(m=>rows.filter(x=>x.model===m&&x.region===k).reduce((a,x)=>!a||x.d>a.d?x:a,null)).filter(Boolean),bOf=x=>rows.find(y=>y.model===PM[x.model].vs&&y.region===k&&y.d===x.d);
     const hist=rows.filter(x=>x.region===k&&x.model===C).sort((a,b)=>b.d<a.d?-1:1).slice(0,14),base=d=>rows.find(x=>x.model===Bm&&x.region===k&&x.d===d);
     const sr=(PG.live_series||{})[k]||[];
-    b.innerHTML=`<div class="rpnum"><b>${pct1(r?.p)}</b><span class="meta">${which==='l'?'поточна оцінка на '+esc(lvd):which==='b'?'база, '+esc(last):'з риторикою, '+esc(last)}</span></div>`+
+    b.innerHTML=`<div class="rpnum"><b>${pct1(r?.p)}</b><span class="meta">${which==='l'?'поточна оцінка на '+esc(lvd):which==='e'?'вибухи (v4), '+esc(lastE):which==='b'?'база, '+esc(last):'з риторикою, '+esc(last)}</span></div>`+
       (v.c&&v.b?`<p class="meta">З риторикою ${pct1(v.c.p)} · база без риторики ${pct1(v.b.p)}${v.l?` · зараз ${pct1(v.l.p)}`:''}</p>`:'')+
       (sr.length>1?`<p class="meta">Поточна оцінка за добу: від ${pct1(Math.min(...sr.map(x=>x[1])))} до ${pct1(Math.max(...sr.map(x=>x[1])))} (${sr.length} перерахунків).</p>`:'')+
       `<h3>Усі моделі по області</h3><table class="rpt"><thead><tr><th>модель, день</th><th>з ритор.</th><th>база</th><th>сталося</th></tr></thead><tbody>${latest.map(x=>`<tr><td>${esc(PM[x.model].t)}<div class="meta">${esc(x.d)}</div></td><td>${pct1(x.p)}</td><td>${pct1(bOf(x)?.p)}</td><td>${x.outcome==null?'<span class="meta">ще невідомо</span>':x.outcome?'<b>так</b>':'ні'}</td></tr>`).join('')}</tbody></table>`+
