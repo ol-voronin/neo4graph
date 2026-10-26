@@ -51,3 +51,9 @@ A notary, lawyer or executor who rents the system connects the registers closed 
 Довіреності, full ЄДР, ДРРП) through their own КЕП; results land only in their private project. Design and legal
 frame: docs/notary-access.md. Comes after projects (weeks 1–4), ДРРП first.
 
+## Manual links (owner, 2026-10-26)
+The owner must be able to link any two elements by hand (e.g. a РНОКПП to a ФОП record, two people as family) with a
+relation and a note. The store exists (analyst_links, /api/ingest kind "links"; drawn by _graph.js with src "analyst",
+labelled «вказано аналітиком»); what is missing is the page: «Звʼязати» on a card, pick the second element from search,
+choose the relation, note, undo. Goes into weeks 1–2 with projects; inside a project a manual link is the project's own.
+
