@@ -22,6 +22,11 @@ ENVOY_RE = r"(віткоф|уиткоф|уіткоф|witkoff|кушнер|kushne
 IRAN_RE = r"(іран|иран|iran|пакистан|pakistan|ісламабад|исламабад|islamabad)"
 PEACE_RE = r"(переговор|перемир|мирн\w* (угод|план|процес|соглаш)|peace (talks|deal|plan)|ceasefire)"
 PANEL_START = "2026-03-31"
+# oblast model v5 (docs/forecast_v5.md): the frame starts in 2022 and reads the history aggregates of migration 038 up to
+# PANEL_HIST_END (last target day whose feature window lies inside panel_posts.parquet), the live SQL after it
+HIST_START = "2022-04-01"
+PANEL_HIST_END = pd.Timestamp("2026-04-01")
+MON_NAT = ["mon_posts", "mon_strat", "mon_sea", "mon_warn"]
 # Target classes named in threat posts (model ua_oblast_massive2_*): what the threat is about, not where
 TC_RE = {
     "energy": r"(енерг|энерг|тец|тэц|тес\M|тэс\M|підстанц|подстанц|електростанц|электростанц|енергосистем|энергосистем|укренерго|укрэнерго)",
@@ -141,14 +146,14 @@ ACLED_SUB = ("Air/drone strike", "Shelling/artillery/missile attack", "Disrupted
 ACLED_LAG_DAYS = 13  # an ACLED week (Sat .. Fri) is in the export about a week after it ends: week start + 13 <= D - 1
 
 
-def acled_weekly(conn) -> pd.DataFrame:
+def acled_weekly(conn, start=PANEL_START) -> pd.DataFrame:
     """(region_id, week, ev): ACLED strike events per oblast and week (src/acled.py, migration 026), zero-filled over the
     weeks the export covers (the aggregate omits empty cells). Empty frame if the table is absent."""
     try:
         with conn.cursor() as cur:
             cur.execute("""SELECT region_id, week, sum(events) FILTER (WHERE sub_event_type = ANY(%s))::int
                            FROM acled_weekly WHERE country = 'Ukraine' AND region_id IS NOT NULL AND week >= %s::date - 120 GROUP BY 1, 2""",
-                        (list(ACLED_SUB), PANEL_START))
+                        (list(ACLED_SUB), start))
             df = pd.DataFrame(cur.fetchall(), columns=["region_id", "week", "ev"])
     except Exception as e:  # noqa: BLE001
         conn.rollback()
@@ -191,12 +196,12 @@ def acled_join(df: pd.DataFrame, aw: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=["_wk", "_ord"])
 
 
-def explosion_daily(conn) -> pd.DataFrame:
+def explosion_daily(conn, start=PANEL_START) -> pd.DataFrame:
     """(region_id, d, expl_reports, ob_expl) from explosion_daily (src/explosions.py, migration 030); ob_expl is NaN on
     unknown days. Empty frame if the table is absent."""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT region_id, d, reports, known FROM explosion_daily WHERE d >= %s::date - 30", (PANEL_START,))
+            cur.execute("SELECT region_id, d, reports, known FROM explosion_daily WHERE d >= %s::date - 30", (start,))
             df = pd.DataFrame(cur.fetchall(), columns=["region_id", "d", "expl_reports", "known"])
     except Exception as e:  # noqa: BLE001
         conn.rollback()
@@ -241,6 +246,44 @@ def rhetoric_geo(conn, cutoff_hour: int) -> pd.DataFrame:
         df = pd.DataFrame(columns=["d", "region_id", "n_thr_geo_ru", "n_tcg_ru"])
     df["d"] = pd.to_datetime(df["d"])
     return df
+
+
+def _table(conn, sql, cols, params=(), what="") -> pd.DataFrame:
+    """Rows of a v5 history table (migration 038) as a frame; empty frame (-> no forecast) if the table is absent."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            df = pd.DataFrame(cur.fetchall(), columns=cols)
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        print(f"{what} unavailable ({str(e).splitlines()[0][:120]}): v5 features will be missing")
+        df = pd.DataFrame(columns=cols)
+    df["d"] = pd.to_datetime(df["d"])
+    return df
+
+
+def rhetoric_hist5(conn, cutoff_hour: int) -> pd.DataFrame:
+    """National rhetoric of the 12-channel panel before the live range, from the Parquet (hist5.py): the columns of
+    rhetoric() that the v5 specs use."""
+    cols = ["d", "posts_ru", "thr_ru", "l2_ru", "tgt_ru", "tc_energy_ru", "tc_dc_ru", "tc_rail_ru", "tc_vpk_ru"]
+    return _table(conn, f"SELECT {', '.join(cols)} FROM rhetoric_daily_hist5 WHERE cutoff_hour = %s", cols, (cutoff_hour,), "rhetoric_daily_hist5")
+
+
+def rhetoric_region_hist5(conn, cutoff_hour: int) -> pd.DataFrame:
+    cols = ["d", "region_id", "n_thr_geo_ru", "n_tcg_ru"]
+    return _table(conn, f"SELECT {', '.join(cols)} FROM rhetoric_region_hist5 WHERE cutoff_hour = %s", cols, (cutoff_hour,), "rhetoric_region_hist5")
+
+
+def monitor_features(conn, cutoff_hour: int, regions) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(nat: d + MON_NAT, reg: d, region_id, mon_reg): the monitors' Parquet aggregates up to monitors.HIST_END, the live
+    posts in Neon after it, one function (monitors.daily) for both. Raw counts; build_long takes log1p."""
+    from monitors import HIST_END, daily, live_posts
+    hn = _table(conn, f"SELECT d, {', '.join(MON_NAT)} FROM monitor_daily_hist5 WHERE cutoff_hour = %s", ["d"] + MON_NAT, (cutoff_hour,), "monitor_daily_hist5")
+    hr = _table(conn, "SELECT d, region_id, mon_reg FROM monitor_region_hist5 WHERE cutoff_hour = %s", ["d", "region_id", "mon_reg"], (cutoff_hour,), "monitor_region_hist5")
+    ln, lr = daily(live_posts(conn, HIST_END - pd.Timedelta(days=2)), cutoff_hour, regions)
+    nat = pd.concat([hn[hn.d <= HIST_END], ln[ln.d > HIST_END]], ignore_index=True)
+    reg = pd.concat([hr[hr.d <= HIST_END], lr[lr.d > HIST_END]], ignore_index=True)
+    return nat, reg
 
 
 def label_oblast(gt: pd.DataFrame, cov: pd.DataFrame, ee_min_extracted: int) -> pd.DataFrame:
@@ -288,7 +331,8 @@ def label_oblast2(df: pd.DataFrame, cov: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.DataFrame, start, end, regions,
-               ee_min_extracted: int = 100, aw: pd.DataFrame | None = None, ex: pd.DataFrame | None = None) -> pd.DataFrame:
+               ee_min_extracted: int = 100, aw: pd.DataFrame | None = None, ex: pd.DataFrame | None = None,
+               mon: pd.DataFrame | None = None, monr: pd.DataFrame | None = None) -> pd.DataFrame:
     """Pure assembly (no DB): regions x days grid with national rhetoric (per d), regional rhetoric (per region, d),
     ground truth and targets. Rows sorted by (region_id, d) with a fresh RangeIndex."""
     days = pd.date_range(start, end, freq="D")
@@ -309,16 +353,34 @@ def build_long(nat: pd.DataFrame, geo: pd.DataFrame, gt: pd.DataFrame, cov: pd.D
     if "posts_ru" in df:
         df["thr_geo_ru"] = df["n_thr_geo_ru"] / df["posts_ru"].where(df["posts_ru"] > 0)
         df["tcg_ru"] = df["n_tcg_ru"] / df["posts_ru"].where(df["posts_ru"] > 0)
+    # monitors (v5): national counts per day; per-region explosion reports in the window, 0 on a day the monitors were
+    # read and the region was not named, NaN on days outside the data; all as log1p
+    if mon is not None and len(mon):
+        df = df.merge(mon, on="d", how="left")
+    if monr is not None and len(monr):
+        df = df.merge(monr, on=["region_id", "d"], how="left")
+        df["mon_reg"] = df["mon_reg"].where(df["mon_reg"].notna() | ~df.d.isin(set(monr.d)), 0)
+    for c in MON_NAT + ["mon_reg"]:
+        if c in df:
+            df[c] = np.log1p(df[c].astype(float))
     return df.sort_values(["region_id", "d"]).reset_index(drop=True)
 
 
-def frame_long(conn, cutoff_hour: int, until=None, regions=None, ee_min_extracted: int = 100) -> pd.DataFrame:
+def frame_long(conn, cutoff_hour: int, until=None, regions=None, ee_min_extracted: int = 100, history: bool = False) -> pd.DataFrame:
+    """history (v5 specs): the frame starts at HIST_START; rhetoric before PANEL_HIST_END and the monitors' aggregates come
+    from the migration-038 tables, the rest from the live SQL; the monitor features are added."""
     from oblasts import PANEL_REGIONS
+    regions = regions or PANEL_REGIONS
     end = pd.Timestamp(until) if until is not None else pd.Timestamp.now(tz="Europe/Kyiv").tz_localize(None).normalize() + pd.Timedelta(days=1)
-    nat = rhetoric(conn, cutoff_hour)
+    nat, geo, start, mon, monr = rhetoric(conn, cutoff_hour), rhetoric_geo(conn, cutoff_hour), PANEL_START, None, None
+    if history:
+        hn, hr = rhetoric_hist5(conn, cutoff_hour), rhetoric_region_hist5(conn, cutoff_hour)
+        nat = pd.concat([hn[hn.d <= PANEL_HIST_END], nat[nat.d > PANEL_HIST_END]], ignore_index=True)
+        geo = pd.concat([hr[hr.d <= PANEL_HIST_END], geo[geo.d > PANEL_HIST_END]], ignore_index=True)
+        mon, monr = monitor_features(conn, cutoff_hour, regions)
+        start = HIST_START
     gt, cov = oblast_gt(conn)
-    return build_long(nat, rhetoric_geo(conn, cutoff_hour), gt, cov, PANEL_START, end, regions or PANEL_REGIONS, ee_min_extracted,
-                      acled_weekly(conn), explosion_daily(conn))
+    return build_long(nat, geo, gt, cov, start, end, regions, ee_min_extracted, acled_weekly(conn, start), explosion_daily(conn, start), mon, monr)
 
 
 def design_long(df: pd.DataFrame, spec: dict, signal_shift: int = 0) -> pd.DataFrame:
