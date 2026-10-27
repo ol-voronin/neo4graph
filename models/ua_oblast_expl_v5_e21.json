@@ -1,0 +1,38 @@
+{
+  "name": "ua_oblast_expl_v5_e21",
+  "role": "candidate",
+  "compare_to": "ua_oblast_expl_base_v5",
+  "panel": "oblast",
+  "target": "ob_expl",
+  "target_doc": "explosion day D (Kyiv calendar day) in the oblast: >= 1 monitoring-channel report of explosions naming the oblast (src/explosions.py, explosion_daily). Known negative: no report while the monitor feed was alive (>= 30 posts that day); occupied oblasts (Luhansk, Crimea) have no negatives. Otherwise unknown. Same label as v4",
+  "lag_target": "ob_expl",
+  "acled": true,
+  "history": true,
+  "deadline_hour": 24,
+  "deadline": "D 00:00 Europe/Kyiv",
+  "shrink": 20,
+  "ee_min_extracted": 100,
+  "C": 1.0,
+  "min_train": 60,
+  "refit_days": 7,
+  "frozen": "2026-10-27",
+  "features_doc": "region indicators, region base rate shrunk toward the all-oblast rate (shrink = pseudo-days), own target at D-2 and its 7-day mean, acled_l / acled_m8; frame from 2022-04-01 (history: rhetoric_daily_hist5 / rhetoric_region_hist5 before 2026-04-01, monitor_*_hist5 before 2026-10-23, live SQL after; docs/forecast_v5.md). refit_days: the backtest reuses a fit for 7 days; live predictions refit daily",
+  "cutoff_hour": 21,
+  "signals": [
+    "l2_ru",
+    "tc_energy_ru",
+    "tc_dc_ru",
+    "tc_rail_ru",
+    "tc_vpk_ru",
+    "mon_posts",
+    "mon_strat",
+    "mon_sea",
+    "mon_warn"
+  ],
+  "region_signals": [
+    "thr_geo_ru",
+    "tcg_ru",
+    "mon_reg"
+  ],
+  "signals_doc": "l2_ru: share of RU panel posts with rule threat level >= 2; tc_<class>_ru: share of RU panel posts that are threats AND name a target class (features.TC_RE); thr_geo_ru / tcg_ru: share of RU panel posts that are threats naming THIS region / and an infrastructure class. 24 h window ending at the cutoff on D-1 (as v4); monitors (src/monitors.py, 4 channels of history.MONITORS), 24 h window ending at the cutoff on D-1, log1p counts: mon_posts posts; mon_strat posts naming strategic aviation (Ту-95/160/22, Оленья, Енгельс, Шайковка, МіГ-31, Кинджал...); mon_sea carriers at sea (Калібр, носії, акваторія, фрегат, підводний...); mon_warn warnings (масований, суттєва загроза, попередження, Іскандер, балістика, комбінований...); mon_reg: explosion reports naming THIS region inside the window (what already happened before the cutoff) (window ending 21:00 on D-1, issued 21:00-24:00)"
+}

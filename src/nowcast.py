@@ -52,7 +52,7 @@ def has_region(conn):
 def get_frame(conn, spec, until=None, cutoff=None):
     c = spec["cutoff_hour"] if cutoff is None else cutoff
     if is_panel(spec):
-        return frame_long(conn, c, until=until, ee_min_extracted=spec.get("ee_min_extracted", 100))
+        return frame_long(conn, c, until=until, ee_min_extracted=spec.get("ee_min_extracted", 100), history=bool(spec.get("history")))
     return frame(conn, c, until=until)
 
 
@@ -75,17 +75,24 @@ def fit_predict(F, y, train_mask, row, C):
     return (None if p is None else float(p[0])), n
 
 
-def fit_predict_rows(F, y, train_mask, rows, C):
-    """Logistic regression on the rows in train_mask with known features; predict `rows` (all must have features)."""
+def fit_model(F, y, train_mask, C):
+    """Logistic regression on the rows in train_mask with known features -> (scaler, model, n_train) or (None, None, n)."""
     from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import StandardScaler
     tr = F[train_mask].dropna()
     ytr = y[tr.index]
-    if len(tr) < 10 or ytr.nunique() < 2 or F.loc[rows].isna().any(axis=None):
-        return None, len(tr)
+    if len(tr) < 10 or ytr.nunique() < 2:
+        return None, None, len(tr)
     sc = StandardScaler().fit(tr)
-    m = LogisticRegression(C=C, max_iter=1000).fit(sc.transform(tr), ytr.astype(int))
-    return m.predict_proba(sc.transform(F.loc[rows]))[:, 1], len(tr)
+    return sc, LogisticRegression(C=C, max_iter=1000).fit(sc.transform(tr), ytr.astype(int)), len(tr)
+
+
+def fit_predict_rows(F, y, train_mask, rows, C):
+    """Fit on train_mask, predict `rows` (all must have features)."""
+    sc, m, n = fit_model(F, y, train_mask, C)
+    if m is None or F.loc[rows].isna().any(axis=None):
+        return None, n
+    return m.predict_proba(sc.transform(F.loc[rows]))[:, 1], n
 
 
 def window_open(spec, target_date, now):
@@ -235,15 +242,18 @@ def backtest_spec(df, s, signal_shift=0):
     out = []
     if is_panel(s):
         days = np.sort(df.d.unique())
+        step, fit, last_fit = int(s.get("refit_days", 1)), (None, None), None
         for i, d in enumerate(days):
             if i < s["min_train"]:
                 continue
             rows = [r for r in df.index[(df.d == d) & y.notna()] if not F.loc[r].isna().any()]
             if not rows:
                 continue
-            p, _ = fit_predict_rows(F, y, (df.d < d - pd.Timedelta(days=1)) & y.notna(), rows, s["C"])
-            if p is not None:
-                out += [(d, df.region_id[r], int(y[r]), float(pr)) for r, pr in zip(rows, p)]
+            if last_fit is None or i - last_fit >= step:  # refit_days: the backtest reuses a fit for `step` days (speed)
+                fit, last_fit = fit_model(F, y, (df.d < d - pd.Timedelta(days=1)) & y.notna(), s["C"])[:2], i
+            sc, m = fit
+            if m is not None:
+                out += [(d, df.region_id[r], int(y[r]), float(pr)) for r, pr in zip(rows, m.predict_proba(sc.transform(F.loc[rows]))[:, 1])]
     else:
         for row in df.index:
             if row < s["min_train"] or pd.isna(y[row]):
@@ -276,12 +286,14 @@ def cmd_backtest(a):
         for s in specs(a.model):
             todo = [s] + ([all_specs[s["compare_to"]]] if a.model and s.get("compare_to") in all_specs else [])
             for t in todo:
-                key = (is_panel(t), t["cutoff_hour"], t.get("ee_min_extracted"))
+                key = (is_panel(t), t["cutoff_hour"], t.get("ee_min_extracted"), bool(t.get("history")))
                 if key not in frames:
                     frames[key] = get_frame(conn, t)
                 if t["name"] not in res:
                     res[t["name"]] = (t, frames[key], backtest_spec(frames[key], t))
     report = {}
+    if a.since:  # score only target days from --since (training still uses everything before each day)
+        res = {k: (s, df, r[r.d >= pd.Timestamp(a.since)].reset_index(drop=True)) for k, (s, df, r) in res.items()}
     for name, (s, df, r) in res.items():
         m = metrics(r.y, r.p, r.region_id if is_panel(s) else None) if len(r) else {"n": 0}
         line = f"{name:24s} n {m['n']:5d}  pos {m.get('positives', 0):4d}  AUC {m.get('auc') if m.get('auc') is None else round(m['auc'], 3)}" \
@@ -299,7 +311,8 @@ def cmd_backtest(a):
                     n_days = df.d.nunique()
                     null = []
                     for k in rng.integers(7, max(8, n_days - 7), a.controls):
-                        dk, _, _ = compare(backtest_spec(df, s, int(k)), base[2], is_panel(s))
+                        rk = backtest_spec(df, s, int(k))
+                        dk, _, _ = compare(rk[rk.d >= pd.Timestamp(a.since)] if a.since else rk, base[2], is_panel(s))
                         if dk is not None:
                             null.append(dk)
                     if null:
@@ -342,5 +355,6 @@ if __name__ == "__main__":
     ap.add_argument("--now", help="Kyiv local time, for testing the issue window")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--controls", type=int, default=0, help="backtest: number of shuffled-date control runs per candidate")
+    ap.add_argument("--since", help="backtest: score only target days from this date (e.g. 2026-05-30 to compare with v4)")
     a = ap.parse_args()
     {"predict": cmd_predict, "evaluate": cmd_evaluate, "backtest": cmd_backtest, "report": cmd_report, "live": cmd_live}[a.cmd](a)
