@@ -5,14 +5,18 @@
 
 targets: /api/data/targetHistory?date=D. The page keeps ~7 days, so today and yesterday are re-fetched each run and the
   rows overwritten (the source revises a day while it lasts). --days 8 backfills what is still there.
-alarms: one /api/v2/data/mapUpdate poll; only when the set of active alerts changed since the previous poll (state in
+alarms: one poll of the active alerts; only when the set changed since the previous poll (state in
   data/ukrainealarm_state.json) or with --all, the 26 per-oblast /api/data/lastAlerts/<id> lists (last 20 alarms each)
-  are fetched and upserted. Quiet hours cost one request per run.
+  are fetched and upserted. Quiet hours cost one request per run. The poll is the official API
+  (api.ukrainealarm.com/api/v3/alerts, same schema and region ids) when UKRAINEALARM_TOKEN is set, else or when it
+  fails the map's /api/v2/data/mapUpdate. The official API allows ~1 request a minute and its history has no level,
+  reason or id, so the lastAlerts lists stay on the map.
 The live target tracks of the map are encrypted by the site and are not read.
 """
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -27,6 +31,7 @@ from oblasts import OBLASTS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = "https://map.ukrainealarm.com"
+API = "https://api.ukrainealarm.com/api/v3"
 HDR = {"User-Agent": "Mozilla/5.0 (rhetoric-strikes research; once per run)", "Referer": BASE + "/",
        "Accept": "application/json"}
 STATE = ROOT / "data" / "ukrainealarm_state.json"
@@ -78,16 +83,32 @@ def ts(s):
     return None if not s or s.startswith("0001-") else s
 
 
+def active_alerts():
+    """The regions with active alerts and the source they came from: the official API with a token, else the map."""
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+    token = os.environ.get("UKRAINEALARM_TOKEN")
+    if token:
+        try:
+            r = requests.get(API + "/alerts", headers={"Authorization": token, "User-Agent": HDR["User-Agent"],
+                                                       "Accept": "application/json"}, timeout=30)
+            r.raise_for_status()
+            return r.json(), "api"
+        except (requests.RequestException, ValueError) as e:
+            print(f"official API: {e}; polling the map instead")
+    return get("/api/v2/data/mapUpdate").get("alerts", []), "map"
+
+
 def alarms(a):
-    upd = get("/api/v2/data/mapUpdate")
+    regions, src = active_alerts()
     active = sorted((x["regionId"], al["type"], lv["alertLevel"], lv.get("reason", ""))
-                    for x in upd.get("alerts", []) for al in x.get("activeAlerts", []) for lv in al.get("activeAlertLevels", []))
+                    for x in regions for al in x.get("activeAlerts", []) for lv in al.get("activeAlertLevels", []))
     sig = hashlib.sha1(json.dumps(active).encode()).hexdigest()
     try:
         prev = json.loads(STATE.read_text()).get("sig")
     except (OSError, ValueError):
         prev = None
-    print(f"active alert levels: {len(active)}")
+    print(f"active alert levels: {len(active)} ({src})")
     if sig == prev and not a.all:
         print("no change since the previous poll")
         return
