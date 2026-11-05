@@ -9,3 +9,4 @@ local/.env
 local/data/
 node_modules/
 .claude/
+.sdlc/
