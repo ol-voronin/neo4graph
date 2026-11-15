@@ -1,8 +1,30 @@
-import { neon } from "@neondatabase/serverless";
+import pg from "pg";
 
-export const sql = neon(process.env.DATABASE_URL);
-// Parameterised query with a text string: driver 0.10.x takes sql(text, params); 1.x moved it to sql.query(text, params).
-export const query = (text, params = []) => (typeof sql.query === "function" ? sql.query(text, params) : sql(text, params));
+const { Pool } = pg;
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  max: 5,
+  idleTimeoutMillis: 20000,
+});
+
+export async function query(text, params = []) {
+  const { rows } = await pool.query(text, params);
+  return rows;
+}
+
+export function sql(stringsOrText, ...values) {
+  if (Array.isArray(stringsOrText) && Object.prototype.hasOwnProperty.call(stringsOrText, "raw")) {
+    let text = stringsOrText[0];
+    for (let i = 0; i < values.length; i++) {
+      text += `$${i + 1}${stringsOrText[i + 1]}`;
+    }
+    return query(text, values);
+  }
+  return query(stringsOrText, values[0] || []);
+}
+sql.query = query;
 
 export function json(res, status, body) {
   res.statusCode = status;
